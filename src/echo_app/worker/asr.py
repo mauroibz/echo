@@ -41,6 +41,19 @@ class ModelsMissing(RuntimeError):
     pass
 
 
+class NotEnoughMemory(RuntimeError):
+    pass
+
+
+OOM_MESSAGE = ("Not enough GPU memory for the transcription model (it needs about 5 GB free). "
+               "Close other programs that use the GPU and try again.")
+
+
+def is_oom(e: BaseException) -> bool:
+    """CUDA out-of-memory arrives as OutOfMemoryError or as a generic AcceleratorError."""
+    return e.__class__.__name__ == "OutOfMemoryError" or "out of memory" in str(e).lower()
+
+
 def _quiet_libraries() -> None:
     os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
     os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
@@ -131,21 +144,33 @@ class Engine:
         cuda = self.use_gpu and torch.cuda.is_available()
         self.device = "cuda" if cuda else "cpu"
         dtype = torch.bfloat16 if cuda else torch.float32
-        model = CohereAsrForConditionalGeneration.from_pretrained(
-            base, dtype=dtype, attn_implementation="sdpa", use_safetensors=True)
-        model.to(self.device).eval()
-        self._model = model
         try:
+            model = CohereAsrForConditionalGeneration.from_pretrained(
+                base, dtype=dtype, attn_implementation="sdpa", use_safetensors=True)
+            model.to(self.device).eval()
             from peft import PeftModel
 
-            self._peft = PeftModel.from_pretrained(model, models.snapshot_dir(models.ADAPTER)).eval()
-        except Exception:  # noqa: BLE001 - the base model still works without the adapter
-            log.exception("could not load the Spanish adapter; continuing with the base model")
-            self._peft = None
+            peft = PeftModel.from_pretrained(model, models.snapshot_dir(models.ADAPTER)).eval()
+        except Exception as e:
+            if is_oom(e):
+                self._release()
+                raise NotEnoughMemory(OOM_MESSAGE) from e
+            raise
+        self._model, self._peft = model, peft
         if not cuda:
             torch.set_num_threads(max(1, (os.cpu_count() or 2) - 1))
             self.batch_size = 1
         log.info("model loaded on %s", self.device)
+
+    def _release(self) -> None:
+        import gc
+
+        import torch
+
+        self._model = self._peft = None
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
     @property
     def adapter_available(self) -> bool:
@@ -203,10 +228,12 @@ class Engine:
         self.load()
         try:
             return self._run(clips, adapter, context, bare)
-        except torch.OutOfMemoryError:
+        except Exception as e:
+            if not is_oom(e):
+                raise
             torch.cuda.empty_cache()
             if len(clips) == 1:
-                raise
+                raise NotEnoughMemory(OOM_MESSAGE) from e
             mid = len(clips) // 2
             self.batch_size = max(1, mid)
             log.warning("GPU out of memory; batch size now %d", self.batch_size)

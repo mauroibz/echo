@@ -333,7 +333,10 @@ class RecorderPanel(QWidget):
             self.record_btn.setToolTip("Start recording (Ctrl+R)")
         self.record_btn.setAccessibleName(self.record_btn.text())
         self.record_btn.setEnabled(not self._busy)
+        self.pause_btn.setVisible(rec)
         self.pause_btn.setEnabled(rec and not self._busy)
+        if not rec:
+            self.elapsed.setText("0:00:00")
 
     # ---- ticking ----
     def _tick(self):

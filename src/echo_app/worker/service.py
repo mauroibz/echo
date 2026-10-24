@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import fcntl
 import json
 import logging
 import os
@@ -17,7 +16,7 @@ from typing import Any, Protocol
 import numpy as np
 
 from ..audio import ffmpeg
-from ..fsutil import atomic_write_json, read_json
+from ..fsutil import atomic_write_json, flock_with_retry, read_json
 from ..library import ERROR, PROGRESS, READY, REQUESTED, TRANSCRIPT, Library, Recording
 from . import planning
 
@@ -25,7 +24,6 @@ log = logging.getLogger(__name__)
 
 SAMPLE_RATE = 16000
 PARTIAL = "transcript.partial.json"
-LOCK = ".worker.lock"
 POLL = 2.0
 
 
@@ -44,13 +42,24 @@ class Cancelled(Exception):
 
 
 def try_lock(lib: Library):
-    f = open(lib.data_dir / LOCK, "a+")
-    try:
-        fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError:
-        f.close()
+    """One worker per user (the GPU holds one model), recording which folder it serves."""
+    from .. import transcription
+
+    f = flock_with_retry(transcription.lock_path())
+    if f is None:
         return None
+    f.seek(0)
+    f.truncate()
+    f.write(json.dumps({"pid": os.getpid(), "data_dir": str(lib.data_dir)}))
+    f.flush()
     return f
+
+
+def _other_folder_waiting(lib: Library) -> bool:
+    from .. import transcription
+
+    wanted = transcription.wanted_dir()
+    return wanted is not None and wanted != str(lib.data_dir)
 
 
 def queued(lib: Library) -> list[tuple[float, Recording]]:
@@ -121,6 +130,9 @@ class Worker:
                     if time.monotonic() - idle_since > self.idle_seconds:
                         log.info("idle; exiting")
                         break
+                    if _other_folder_waiting(self.lib):
+                        log.info("another recordings folder has work; handing over")
+                        break
                     time.sleep(POLL)
                     continue
                 self.process(jobs[0][1])
@@ -167,8 +179,10 @@ class Worker:
         except Exception as e:  # noqa: BLE001 - every failure is reported on the recording
             log.exception("%s: transcription failed", rec.id)
             msg = str(e) or e.__class__.__name__
-            if e.__class__.__name__ == "OutOfMemoryError":
-                msg = "Not enough GPU memory. Close other GPU programs and retry."
+            if "out of memory" in msg.lower() and "GPU memory" not in msg:
+                from .asr import OOM_MESSAGE
+
+                msg = OOM_MESSAGE
             rec.path(ERROR).write_text(msg + "\n", encoding="utf-8")
             rec.path(REQUESTED).unlink(missing_ok=True)
             rec.path(PROGRESS).unlink(missing_ok=True)

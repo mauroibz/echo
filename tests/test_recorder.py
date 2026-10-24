@@ -124,12 +124,12 @@ def test_verification_failure_keeps_takes(lib, monkeypatch):
     def broken(*a, **k):
         raise ffmpeg.FFmpegError("FLAC verification mismatch")
 
-    monkeypatch.setattr(ffmpeg, "encode_flac_verified", broken)
-    assert recorder.finalize(rec) == "failed"
+    with monkeypatch.context() as m:
+        m.setattr(ffmpeg, "encode_flac_verified", broken)
+        assert recorder.finalize(rec) == "failed"
     rec.reload()
     assert rec.meta.state == NEEDS_FINALIZE and "mismatch" in rec.meta.error
     assert recorder.take_files(rec) and not (rec.folder / "audio.flac").exists()
-    monkeypatch.undo()
     assert recorder.finalize(rec) == "ready" and rec.reload().meta.state == READY
 
 

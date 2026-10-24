@@ -216,3 +216,40 @@ def test_single_worker_lock(lib):
     assert held is not None
     assert Worker(lib, StubEngine(), idle_seconds=0).run() == 0  # exits immediately
     held.close()
+
+
+def test_worker_hands_over_to_another_folder(tmp_path):
+    from echo_app import transcription
+
+    a = Library(tmp_path / "a")
+    b = Library(tmp_path / "b")
+    w = Worker(a, StubEngine(), idle_seconds=60)
+    t = threading.Thread(target=w.run)
+    t.start()
+    assert _wait(lambda: transcription.worker_info() is not None)
+    assert transcription.worker_running(a) and not transcription.worker_running(b)
+    # Pretend transcription is installed and spawning is a no-op: only the handover note matters.
+    import echo_app.transcription as tr
+
+    tr._wanted_path().write_text(str(b.data_dir))
+    t.join(timeout=10)
+    assert not t.is_alive(), "worker should hand over instead of idling for a minute"
+
+
+def _wait(cond, timeout=5):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if cond():
+            return True
+        time.sleep(0.05)
+    return False
+
+
+def test_oom_variants_are_recognized():
+    from echo_app.worker.asr import is_oom
+
+    class AcceleratorError(RuntimeError):
+        pass
+
+    assert is_oom(AcceleratorError("CUDA error: out of memory"))
+    assert not is_oom(RuntimeError("shape mismatch"))

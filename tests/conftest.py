@@ -16,7 +16,9 @@ def isolated_home(tmp_path, monkeypatch):
         monkeypatch.delenv(var, raising=False)
     for var in ("ECHO_DATA_DIR", "ECHO_CONFIG_DIR", "ECHO_STATE_DIR"):
         monkeypatch.delenv(var, raising=False)
-    # XDG_RUNTIME_DIR stays real: PipeWire's socket lives there.
+    # XDG_RUNTIME_DIR stays real (PipeWire's socket lives there); Echo's own locks do not.
+    monkeypatch.setenv("ECHO_RUNTIME_DIR", str(tmp_path / "run"))
+    monkeypatch.setenv("ECHO_NO_WORKER", "1")
     return home
 
 

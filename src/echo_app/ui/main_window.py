@@ -86,6 +86,7 @@ class MainWindow(QMainWindow):
         self.search.textChanged.connect(lambda _t: self._search_timer.start())
 
         self.model = LibraryModel(self.library, self)
+        self.model.modelReset.connect(lambda: QTimer.singleShot(0, self._update_empty))
         self.list = QListView()
         self.list.setModel(self.model)
         self.list.setItemDelegate(RowDelegate(self.list))
@@ -352,6 +353,8 @@ class MainWindow(QMainWindow):
             self.worker_label.setText("Transcription not installed")
             return
         busy = [r for r in self.model._all.values() if r.meta.state == READY and r.transcript_status() in (T_RUNNING, T_QUEUED)]
+        if busy and not transcription.worker_running(self.library):
+            transcription.ensure_worker(self.library)  # e.g. after another folder's worker handed over
         if busy:
             self.worker_label.setText(f"Transcribing · {len(busy)} in queue" if len(busy) > 1 else "Transcribing")
         elif transcription.worker_running(self.library):

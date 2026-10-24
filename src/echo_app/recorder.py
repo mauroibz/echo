@@ -31,7 +31,7 @@ from typing import Any
 
 from . import features, selfcmd
 from .audio import ffmpeg, pipewire
-from .fsutil import atomic_write_json, free_bytes, fsync_dir, fsync_path, read_json
+from .fsutil import atomic_write_json, flock_with_retry, free_bytes, fsync_dir, fsync_path, read_json
 from .library import NEEDS_FINALIZE, READY, RECORDING, Library, Recording
 
 log = logging.getLogger(__name__)
@@ -491,7 +491,7 @@ class Supervisor:
         self._note("Recorder restarted after a crash; capture continued", kind="info")
 
     def run(self) -> int:
-        lock = try_lock(self.lib)
+        lock = flock_with_retry(_lock_path(self.lib))
         if lock is None:
             log.error("another recording is active; supervisor for %s exiting", self.rec.id)
             if not self.adopt and recorded_bytes(self.rec) == 0:

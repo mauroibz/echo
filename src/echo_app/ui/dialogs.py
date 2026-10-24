@@ -8,8 +8,8 @@ from pathlib import Path
 from PySide6.QtCore import QProcess, Qt, QTimer, Signal
 from PySide6.QtGui import QFont, QGuiApplication
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QFrame,
-                               QGridLayout, QHBoxLayout, QLabel, QLineEdit, QProgressBar, QPushButton, QSpinBox,
-                               QVBoxLayout, QWidget)
+                               QGridLayout, QHBoxLayout, QLabel, QLineEdit, QProgressBar, QPushButton,
+                               QSpinBox, QVBoxLayout, QWidget)
 
 from .. import APP_NAME, __version__, doctor, features, models, selfcmd, settings
 from .common import icon, run_task
@@ -36,6 +36,28 @@ def _dim(text: str) -> QLabel:
     pal.setColor(lbl.foregroundRole(), c)
     lbl.setPalette(pal)
     return lbl
+
+
+class FittedDialog(QDialog):
+    """Fixed-width dialog whose height follows its word-wrapped content.
+
+    Top-level windows do not apply height-for-width by themselves, so wrapped labels would be
+    clipped; the height is recomputed whenever the dialog is shown or its content changes.
+    """
+
+    def fit(self):
+        lay = self.layout()
+        if lay is None:
+            return
+        lay.invalidate()
+        lay.activate()
+        h = lay.totalHeightForWidth(self.width()) if lay.hasHeightForWidth() else lay.totalSizeHint().height()
+        self.setMinimumHeight(h)
+        self.resize(self.width(), h)
+
+    def showEvent(self, e):
+        super().showEvent(e)
+        self.fit()
 
 
 # ---- model download -----------------------------------------------------------------------------
@@ -178,11 +200,11 @@ class ModelDownload(QWidget):
             self.proc.waitForFinished(2000)
 
 
-class ModelDialog(QDialog):
+class ModelDialog(FittedDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Transcription model")
-        self.setMinimumWidth(520)
+        self.setFixedWidth(560)
         lay = QVBoxLayout(self)
         lay.addWidget(_heading("Transcription model"))
         self.dl = ModelDownload()
@@ -198,11 +220,11 @@ class ModelDialog(QDialog):
 
 # ---- welcome ------------------------------------------------------------------------------------
 
-class WelcomeDialog(QDialog):
+class WelcomeDialog(FittedDialog):
     def __init__(self, recorder_panel, parent=None):
         super().__init__(parent)
         self.setWindowTitle(f"Welcome to {APP_NAME}")
-        self.setMinimumWidth(560)
+        self.setFixedWidth(580)
         lay = QVBoxLayout(self)
         lay.setSpacing(12)
         lay.addWidget(_heading(f"Welcome to {APP_NAME}", 1.5))
@@ -352,11 +374,11 @@ class SettingsDialog(QDialog):
 
 # ---- setup check --------------------------------------------------------------------------------
 
-class DoctorDialog(QDialog):
+class DoctorDialog(FittedDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Check setup")
-        self.setMinimumWidth(640)
+        self.setFixedWidth(680)
         lay = QVBoxLayout(self)
         lay.addWidget(_heading("Check setup"))
         self.grid_host = QWidget()
@@ -384,12 +406,14 @@ class DoctorDialog(QDialog):
             self.grid.addWidget(ic, r, 0, Qt.AlignmentFlag.AlignTop)
             name = QLabel(f"<b>{c.name}</b>")
             self.grid.addWidget(name, r, 1, Qt.AlignmentFlag.AlignTop)
-            text = c.detail + (f"<br><span style='opacity:.75'>{c.fix}</span>" if c.fix and c.status != doctor.OK else "")
+            detail = c.detail.replace("/", "/\u200b")  # let long paths wrap
+            text = detail + (f"<br><span style='opacity:.75'>{c.fix}</span>" if c.fix and c.status != doctor.OK else "")
             d = QLabel(text)
             d.setWordWrap(True)
             d.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
             self.grid.addWidget(d, r, 2)
         self.copy_btn.setEnabled(True)
+        QTimer.singleShot(0, self.fit)
 
     def _copy(self):
         QGuiApplication.clipboard().setText(doctor.render(self._checks, color=False))

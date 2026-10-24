@@ -34,8 +34,11 @@ def default_data_dir() -> Path:
 
 def runtime_dir() -> Path:
     """Sockets and locks. Falls back to the state dir if XDG_RUNTIME_DIR is unset."""
-    base = os.environ.get("XDG_RUNTIME_DIR")
-    path = Path(base) / "echo" if base else state_dir() / "run"
+    if v := os.environ.get("ECHO_RUNTIME_DIR"):
+        path = Path(v)
+    else:
+        base = os.environ.get("XDG_RUNTIME_DIR")
+        path = Path(base) / "echo" if base else state_dir() / "run"
     path.mkdir(parents=True, exist_ok=True, mode=0o700)
     return path
 
