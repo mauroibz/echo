@@ -96,6 +96,10 @@ cp "$root/data/echo-app.svg" "$icon_dir/echo-app.svg"
 sed "s|@LAUNCHER@|$root/bin/echo-app|" "$root/data/echo-app.desktop.in" > "$apps_dir/echo-app.desktop"
 command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database -q "$apps_dir" 2>/dev/null || true
 command -v kbuildsycoca6 >/dev/null 2>&1 && kbuildsycoca6 --noincremental >/dev/null 2>&1 || true
+# A running Plasma panel reads the icon folders once at login; without this it shows Echo with a
+# blank icon until the next login. The signal is KDE's own "icons changed" broadcast.
+command -v gdbus >/dev/null 2>&1 && gdbus emit --session --object-path /KIconLoader \
+    --signal org.kde.KIconLoader.iconChanged 0 >/dev/null 2>&1 || true
 
 echo
 "$root/bin/echo-app" doctor --no-gpu || true

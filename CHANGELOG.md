@@ -56,6 +56,8 @@ tag.
 
 - `./install.sh` failed with Fedora's packaged `uv`, which turns automatic Python downloads
   off; it now installs the pinned Python explicitly.
+- On KDE, a Plasma session started before the first install showed Echo without its icon until
+  the next login; `./install.sh` now tells running KDE apps to reload their icons.
 
 ## 0.1.0 - 2026-10-24
 
