@@ -77,6 +77,7 @@ class Meta:
     error: str | None = None
     context_line: str = ""  # "who is speaking, what about": context for this recording's transcription
     markers: list[dict[str, Any]] = field(default_factory=list)  # [{"at": seconds of audio, "note": str}]
+    language: str | None = None  # transcription language code; None = the default in settings
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "Meta":

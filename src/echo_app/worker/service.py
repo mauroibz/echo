@@ -34,8 +34,9 @@ class EngineLike(Protocol):
 
     def load(self) -> None: ...
     def speech_regions(self, audio: np.ndarray, progress=None) -> list[tuple[float, float]]: ...
-    def transcribe(self, clips: list[np.ndarray], adapter: bool = True, context: str | None = None) -> list[str]: ...
-    def model_info(self, adapter: bool) -> dict: ...
+    def transcribe(self, clips: list[np.ndarray], adapter: bool = True, context: str | None = None,
+                   language: str = "es") -> list[str]: ...
+    def model_info(self, adapter: bool, language: str = "es") -> dict: ...
 
 
 class Cancelled(Exception):
@@ -161,14 +162,15 @@ class Worker:
     def process(self, rec: Recording) -> None:
         req = self._request(rec) or {}
         requested_at = req.get("requested")
-        adapter = bool(req.get("adapter", True))
+        language = req.get("language") or "es"
+        adapter = bool(req.get("adapter", True)) and language == "es"  # the adapter is Spanish only
         context = req.get("context") or None
         started = time.time()
         try:
             self._progress(rec, "loading", 0, 1, None, started)
             self.engine.load()
             self._check(rec, requested_at)
-            self._transcribe(rec, requested_at, adapter, context, started)
+            self._transcribe(rec, requested_at, adapter, context, started, language)
         except Cancelled:
             log.info("%s: cancelled", rec.id)
             try:
@@ -193,13 +195,14 @@ class Worker:
             except OSError:
                 log.exception("%s: could not record the failure", rec.id)
 
-    def _transcribe(self, rec: Recording, requested_at, adapter: bool, context: str | None, started: float) -> None:
+    def _transcribe(self, rec: Recording, requested_at, adapter: bool, context: str | None, started: float,
+                    language: str = "es") -> None:
         audio, offset = decode(rec)
         total_s = len(audio) / SAMPLE_RATE
-        info = self.engine.model_info(adapter)
+        info = self.engine.model_info(adapter, language)
         key = {"audio": rec.meta.sha256, "crop": [rec.meta.crop_start, rec.meta.crop_end],
                "model": info.get("base"), "adapter": info.get("adapter"), "context": context,
-               "style": info.get("style_context")}
+               "style": info.get("style_context"), "language": language}
         partial = self._load_partial(rec, key)
         if partial.get("regions") is None:
             last = [0.0]
@@ -229,7 +232,7 @@ class Worker:
             self._check(rec, requested_at)
             batch = todo[pos:pos + max(1, self.engine.batch_size)]
             clips = [audio[int(passages[i].start * SAMPLE_RATE):int(passages[i].end * SAMPLE_RATE)] for i in batch]
-            texts = self.engine.transcribe(clips, adapter=adapter, context=context)
+            texts = self.engine.transcribe(clips, adapter=adapter, context=context, language=language)
             for i, text in zip(batch, texts):
                 results[str(i)] = text
             atomic_write_json(rec.path(PARTIAL), partial)
@@ -245,12 +248,12 @@ class Worker:
                      "text": results.get(str(i), ""), "paragraph": p.paragraph}
                     for i, p in enumerate(passages)]
         transcript = {
-            "version": 1, "language": "es",
+            "version": 1, "language": language,
             "created": datetime.now().astimezone().isoformat(timespec="seconds"),
             "model": {k: info.get(k) for k in ("base", "adapter", "adapter_enabled")},
             "device": info.get("device"), "audio_sha256": rec.meta.sha256,
             "crop": [rec.meta.crop_start, rec.meta.crop_end], "duration": round(total_s, 2),
-            "segments": segments, "text": planning.join_text(segments),
+            "segments": segments, "text": planning.join_text(segments, language),
             "elapsed_s": round(time.time() - started, 1),
         }
         if context:

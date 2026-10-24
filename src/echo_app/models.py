@@ -31,6 +31,16 @@ ADAPTER = ModelRef(
 )
 ALL = (BASE, ADAPTER)
 
+# Languages the pinned processor accepts (transformers' cohere_asr LANGUAGES). The tokenizer has
+# language tokens for many more, but the processor refuses them; tests/test_languages.py checks
+# that this copy matches the installed processor. Kept here so the window, which never imports
+# torch or transformers, can list them.
+PROCESSOR_LANGUAGES = ("ar", "de", "el", "en", "es", "fr", "it", "ja", "ko", "nl", "pl", "pt", "vi", "zh")
+LANGUAGE_NAMES = {"es": "Spanish", "en": "English", "pt": "Portuguese", "fr": "French", "it": "Italian",
+                  "de": "German", "nl": "Dutch", "pl": "Polish", "el": "Greek", "ar": "Arabic", "ja": "Japanese",
+                  "ko": "Korean", "zh": "Chinese", "vi": "Vietnamese"}
+DEFAULT_LANGUAGE = "es"
+
 # Only data files: never download the repos' Python code, assets or demos.
 ALLOW_PATTERNS = ["*.json", "*.safetensors", "tokenizer.model"]
 
@@ -66,3 +76,23 @@ def download(progress=None) -> None:
         if progress:
             progress(f"Downloading {ref.repo}")
         snapshot_download(ref.repo, revision=ref.revision, allow_patterns=ALLOW_PATTERNS)
+
+
+def supported_languages() -> list[str]:
+    """Language codes the model can transcribe: its tokenizer's language tokens that the processor
+    accepts, Spanish first, then by name. Without the downloaded model, the processor's list."""
+    import json
+    import re
+
+    codes = set(PROCESSOR_LANGUAGES)
+    try:
+        with open(snapshot_dir(BASE) / "tokenizer.json", encoding="utf-8") as f:
+            tokens = {t.get("content", "") for t in json.load(f).get("added_tokens", [])}
+        codes &= {m[2:4] for m in tokens if re.fullmatch(r"<\|[a-z]{2}\|>", m)}
+    except (OSError, ValueError):
+        pass
+    return sorted(codes, key=lambda c: (c != DEFAULT_LANGUAGE, language_name(c)))
+
+
+def language_name(code: str) -> str:
+    return LANGUAGE_NAMES.get(code, code)

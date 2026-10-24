@@ -113,6 +113,14 @@ time.
 4. Passages are transcribed in batches of 8, halving the batch on GPU out-of-memory. Finished
    passages are saved as they complete, so a restarted job resumes where it stopped.
 
+Each recording has a language (`meta.json`, else the default in settings), stored in the request
+and the transcript. The model's tokenizer has tokens for about 180 languages, but the pinned
+processor accepts 14; `models.PROCESSOR_LANGUAGES` mirrors that list so the window can offer it
+without importing transformers, and a test compares the two. The Spanish adapter is applied to
+Spanish only, Spanish and English have a style sentence, and the others get only the dictionary's
+context. Chinese and Japanese passages are joined without spaces and their words are counted as
+two characters each for the short-output check.
+
 The model's decoder accepts text in its context slot, though the model card does not say so.
 Echo puts a style sentence there ("El texto que sigue está escrito en español correcto, con
 mayúsculas, tildes y signos de puntuación."). In one 102-passage test chapter it cut the

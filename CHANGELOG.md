@@ -26,6 +26,8 @@ tag.
 - Markers: press M while recording (or use the tray, or `echo-app mark --note`) to mark a
   moment, with an optional note. They show on the waveform and beside the transcript, can be
   moved, edited and removed, and Alt+arrows jump between them.
+- Transcription in 13 more languages besides Spanish (the transcript's menu, Settings, or
+  `echo-app transcribe --language`); the Spanish adapter is used for Spanish only.
 
 ### Fixed
 

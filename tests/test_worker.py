@@ -48,7 +48,8 @@ class StubEngine:
             progress(1.0)
         return regions
 
-    def transcribe(self, clips, adapter=True, context=None):
+    def transcribe(self, clips, adapter=True, context=None, language="es"):
+        self.languages = getattr(self, "languages", []) + [language]
         if self.fail:
             raise self.fail
         self.calls.append([len(c) for c in clips])
@@ -57,7 +58,7 @@ class StubEngine:
         time.sleep(self.delay)
         return [f"texto {len(c) // 16000}s" for c in clips]
 
-    def model_info(self, adapter):
+    def model_info(self, adapter, language="es"):
         return {"base": "stub@1", "adapter": "stub-adapter@1" if adapter else None,
                 "adapter_enabled": adapter, "device": "stub"}
 

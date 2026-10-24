@@ -19,17 +19,31 @@ LANGUAGE = "es"
 # drops into an unpunctuated, lower-case style for whole passages (48 of 102 passages in one
 # test chapter); with it, 47 of those 48 come out punctuated, while clean passages stay
 # unchanged (99.8% word agreement over a 20-minute chapter). Measured 2026-10-23.
-STYLE_CONTEXT = ("El texto que sigue está escrito en español correcto, con mayúsculas, tildes y "
-                 "signos de puntuación.")
+STYLE_CONTEXTS = {
+    "es": "El texto que sigue está escrito en español correcto, con mayúsculas, tildes y signos de puntuación.",
+    "en": "The following text is written in correct English, with capital letters and punctuation.",
+}
+STYLE_CONTEXT = STYLE_CONTEXTS["es"]
+NO_SPACE_LANGUAGES = {"ja", "zh"}  # written without spaces between words
 
 
-def build_context(extra: str | None) -> str:
+def build_context(extra: str | None, language: str = LANGUAGE) -> str | None:
     """Caller-provided context (e.g. a sentence naming known people and terms), then the style primer.
 
     Order matters: with terms appended after the primer the model returned nothing on one test
-    clip; with the terms sentence first it transcribed correctly and used the terms.
+    clip; with the terms sentence first it transcribed correctly and used the terms. Languages
+    without a style sentence get the caller's context alone.
     """
-    return f"{extra.strip()} {STYLE_CONTEXT}" if extra and extra.strip() else STYLE_CONTEXT
+    style = STYLE_CONTEXTS.get(language)
+    parts = [p for p in ((extra or "").strip(), style) if p]
+    return " ".join(parts) or None
+
+
+def word_count(text: str, language: str = LANGUAGE) -> int:
+    """Words in a passage; for Chinese and Japanese, about one word per two characters."""
+    if language in NO_SPACE_LANGUAGES:
+        return len("".join(text.split())) // 2
+    return len(text.split())
 
 
 def min_words(seconds: float) -> int:
@@ -265,38 +279,42 @@ class Engine:
         return [(t["start"] / SAMPLE_RATE, t["end"] / SAMPLE_RATE) for t in ts]
 
     # ---- recognition ----
-    def transcribe(self, clips: list[np.ndarray], adapter: bool = True, context: str | None = None) -> list[str]:
-        """Transcribe int16 16 kHz clips (each at most ~30 s).
+    def transcribe(self, clips: list[np.ndarray], adapter: bool = True, context: str | None = None,
+                   language: str = LANGUAGE) -> list[str]:
+        """Transcribe int16 16 kHz clips (each at most ~30 s) in `language`.
 
         A passage whose text is implausibly short for its length is retried with simpler
         context, keeping the fullest result, so a context quirk can never silently drop speech.
+        The Spanish adapter is only ever applied to Spanish.
         """
-        texts = self._transcribe_batch(clips, adapter, context)
-        short = [i for i, (c, t) in enumerate(zip(clips, texts)) if len(t.split()) < min_words(len(c) / SAMPLE_RATE)]
+        adapter = adapter and language == "es"
+        words = lambda t: word_count(t, language)  # noqa: E731
+        texts = self._transcribe_batch(clips, adapter, context, language=language)
+        short = [i for i, (c, t) in enumerate(zip(clips, texts)) if words(t) < min_words(len(c) / SAMPLE_RATE)]
         for fallback in ((None, False), (None, True)) if short else ():
             extra, bare = fallback
             if not short:
                 break
-            retry = self._transcribe_batch([clips[i] for i in short], adapter, extra, bare=bare)
+            retry = self._transcribe_batch([clips[i] for i in short], adapter, extra, bare=bare, language=language)
             still = []
             for i, t in zip(short, retry):
-                if len(t.split()) > len(texts[i].split()):
+                if words(t) > words(texts[i]):
                     log.info("passage retried with %s context: %d -> %d words", "no" if bare else "style-only",
-                             len(texts[i].split()), len(t.split()))
+                             words(texts[i]), words(t))
                     texts[i] = t
-                if len(texts[i].split()) < min_words(len(clips[i]) / SAMPLE_RATE):
+                if words(texts[i]) < min_words(len(clips[i]) / SAMPLE_RATE):
                     still.append(i)
             short = still
         return texts
 
     def _transcribe_batch(self, clips: list[np.ndarray], adapter: bool, context: str | None,
-                          bare: bool = False) -> list[str]:
+                          bare: bool = False, language: str = LANGUAGE) -> list[str]:
         """Halves the batch on GPU out-of-memory."""
         import torch
 
         self.load()
         try:
-            return self._run(clips, adapter, context, bare)
+            return self._run(clips, adapter, context, bare, language)
         except Exception as e:
             if not is_oom(e):
                 raise
@@ -308,19 +326,20 @@ class Engine:
             self.batch_size = max(1, mid)
             log.warning("out of %smemory; batch size now %d", "GPU " if self.device != "cpu" else "",
                         self.batch_size)
-            return (self._transcribe_batch(clips[:mid], adapter, context, bare)
-                    + self._transcribe_batch(clips[mid:], adapter, context, bare))
+            return (self._transcribe_batch(clips[:mid], adapter, context, bare, language)
+                    + self._transcribe_batch(clips[mid:], adapter, context, bare, language))
 
-    def _run(self, clips: list[np.ndarray], adapter: bool, context: str | None, bare: bool = False) -> list[str]:
+    def _run(self, clips: list[np.ndarray], adapter: bool, context: str | None, bare: bool = False,
+             language: str = LANGUAGE) -> list[str]:
         import contextlib
 
         import torch
 
         audio = [c.astype(np.float32) / 32768.0 for c in clips]
-        inputs = self._processor(audio, sampling_rate=SAMPLE_RATE, return_tensors="pt", language=LANGUAGE)
+        inputs = self._processor(audio, sampling_rate=SAMPLE_RATE, return_tensors="pt", language=language)
         inputs.pop("audio_chunk_index", None)
         prompt = inputs["decoder_input_ids"]
-        context = None if bare else build_context(context)
+        context = None if bare else build_context(context, language)
         if context:
             ctx = self._processor.tokenizer.encode(context, add_special_tokens=False)
             row = prompt[0].tolist()
@@ -345,8 +364,10 @@ class Engine:
         texts = self._processor.decode(out[:, prompt_len:], skip_special_tokens=True)
         return [t.strip() for t in texts]
 
-    def model_info(self, adapter: bool) -> dict:
-        return {"style_context": STYLE_CONTEXT,"base": f"{models.BASE.repo}@{models.BASE.revision}",
+    def model_info(self, adapter: bool, language: str = LANGUAGE) -> dict:
+        adapter = adapter and language == "es"
+        return {"style_context": STYLE_CONTEXTS.get(language),
+                "base": f"{models.BASE.repo}@{models.BASE.revision}",
                 "adapter": f"{models.ADAPTER.repo}@{models.ADAPTER.revision}" if adapter and self.adapter_available else None,
                 "adapter_enabled": bool(adapter and self.adapter_available),
                 "device": self.device}

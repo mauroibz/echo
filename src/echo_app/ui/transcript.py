@@ -365,6 +365,8 @@ class TranscriptPanel(QWidget):
         menu.addSeparator()
         self.act_retx = menu.addAction(icon("transcribe"), "Transcribe again", lambda: self.request(None))
         self.act_retx_base = menu.addAction("Transcribe again without the Spanish adapter", lambda: self.request(False))
+        self.lang_menu = menu.addMenu(icon("languages"), "Language")
+        self.lang_menu.aboutToShow.connect(self._fill_languages)
         self.act_revert = menu.addAction(icon("revert"), "Revert to model output…", self.revert)
         self.more_btn.setMenu(menu)
         bar.addWidget(self.more_btn)
@@ -601,6 +603,8 @@ class TranscriptPanel(QWidget):
         t = rec.transcript() or {}
         when = fmt_date(t.get("created", "")) if t else ""
         model = "Spanish adapter" if (t.get("model") or {}).get("adapter_enabled") else "base model"
+        if t.get("language", "es") != "es":
+            model = models.language_name(t["language"])
         if rec.is_edited():
             self.status.setText("Edited" + (f" · model transcript from {when}" if when else ""))
         elif t:
@@ -612,7 +616,7 @@ class TranscriptPanel(QWidget):
         self.act_revert.setEnabled(rec.is_edited() and bool(t))
         installed = features.transcription_installed()
         self.act_retx.setEnabled(installed)
-        self.act_retx_base.setEnabled(installed)
+        self.act_retx_base.setEnabled(installed and transcription.language_of(rec) == "es")
 
     def _update_notice(self, rec: Recording, st: str):
         n = self.notice
@@ -843,6 +847,39 @@ class TranscriptPanel(QWidget):
         dictionary.undo(rec, edit)
         self._shown_signature = None
         self.refresh()
+        self.changed.emit(rec.id)
+
+    def _fill_languages(self):
+        """The languages the model can transcribe; choosing one transcribes the recording in it."""
+        m = self.lang_menu
+        m.clear()
+        rec = self.rec
+        if rec is None:
+            return
+        cfg, _ = settings.load()
+        default = cfg.language or models.DEFAULT_LANGUAGE
+        a = m.addAction(f"Default ({models.language_name(default)})", lambda: self.set_language(None))
+        a.setCheckable(True)
+        a.setChecked(rec.meta.language is None)
+        m.addSeparator()
+        for code in models.supported_languages():
+            a = m.addAction(models.language_name(code), lambda c=code: self.set_language(c))
+            a.setCheckable(True)
+            a.setChecked(rec.meta.language == code)
+
+    def set_language(self, code: str | None):
+        rec = self.rec
+        if rec is None or rec.meta.language == code:
+            return
+        before = transcription.language_of(rec)
+        rec.update(language=code)
+        after = transcription.language_of(rec)
+        name = models.language_name(after)
+        if after != before and rec.transcript() and features.transcription_installed():
+            self.request(None)
+            self.message.emit(f"Transcribing again in {name}.")
+        else:
+            self.message.emit(f"This recording will be transcribed in {name}.")
         self.changed.emit(rec.id)
 
     # ---- actions ----

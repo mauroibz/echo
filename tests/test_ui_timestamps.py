@@ -47,3 +47,21 @@ def test_copy_with_timestamps(window, lib, tmp_path):
     pump(100)
     window.a_copy_times.trigger()
     assert QApplication.clipboard().text() == "[0:00] Hola mundo.\n\n[0:02] Segunda parte.\n"
+
+
+def test_language_menu_sets_the_recording_language(window, lib, tmp_path, monkeypatch):
+    from echo_app import transcription
+
+    rec = _transcribed(lib, tmp_path)
+    window._select(rec.id)
+    pump(100)
+    tp = window.transcript
+    requested = []
+    monkeypatch.setattr(tp, "request", lambda adapter: requested.append(adapter))
+    tp._fill_languages()
+    names = [a.text() for a in tp.lang_menu.actions() if a.text()]
+    assert names[0] == "Default (Spanish)" and "English" in names
+    english = next(a for a in tp.lang_menu.actions() if a.text() == "English")
+    english.trigger()
+    assert lib.get(rec.id).meta.language == "en" and transcription.language_of(lib.get(rec.id)) == "en"
+    assert requested == [None]  # transcribed again in the new language

@@ -482,6 +482,13 @@ class SettingsDialog(QDialog):
         self.auto = QCheckBox("Transcribe new recordings and imports automatically")
         self.auto.setChecked(self.cfg.auto_transcribe)
         form.addRow("Transcription", self.auto)
+        self.language = QComboBox()
+        for code in models.supported_languages():
+            self.language.addItem(models.language_name(code), code)
+        self.language.setCurrentIndex(max(0, self.language.findData(self.cfg.language)))
+        self.language.setToolTip("Language of new recordings and imports. Each recording can be changed in the "
+                                 "transcript's menu.")
+        form.addRow("Transcription language", self.language)
         self.adapter = QCheckBox("Use the Spanish robustness adapter")
         self.adapter.setChecked(self.cfg.use_adapter)
         self.adapter.setToolTip("Improves accuracy on noisy or phone-quality audio such as voice notes; "
@@ -495,7 +502,7 @@ class SettingsDialog(QDialog):
         form.addRow("Free GPU memory after", self.idle)
         lay.addLayout(form)
         if not features.transcription_installed():
-            for wdg in (self.auto, self.adapter, self.idle):
+            for wdg in (self.auto, self.adapter, self.idle, self.language):
                 wdg.setEnabled(False)
             lay.addWidget(_dim("Transcription is not installed (./install.sh --with-transcription)."))
         lay.addStretch(1)
@@ -533,6 +540,7 @@ class SettingsDialog(QDialog):
         self.cfg.channels = self.channels.currentData()
         self.cfg.auto_transcribe = self.auto.isChecked()
         self.cfg.use_adapter = self.adapter.isChecked()
+        self.cfg.language = self.language.currentData() or "es"
         self.cfg.worker_idle_minutes = self.idle.value()
         self.cfg.theme = self.theme.currentData()
         settings.save(self.cfg)

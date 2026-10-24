@@ -525,7 +525,7 @@ def apply(rec, d: Dictionary | None = None) -> bool:
         return False
     segs = [{**s, "text": tx} for s, tx in zip(t.get("segments", []), texts)]
     atomic_write_json(path, {"version": 1, "transcript_created": created, "dictionary": d.version(),
-                             "segments": texts, "text": join_text(segs), "edits": edits, "rejected": rejected})
+                             "segments": texts, "text": join_text(segs, t.get("language", "es")), "edits": edits, "rejected": rejected})
     return True
 
 

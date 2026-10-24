@@ -129,6 +129,11 @@ Model versions are pinned, and only weights and configuration are downloaded, ne
   times), find with Ctrl+F, export with Ctrl+E. View → Passage times (Ctrl+T) shows when each
   passage starts. While playing, the current passage is highlighted, in edited text too.
   Subtitles and timed exports use your edited text, placed on the passages it came from.
+- **Other languages.** Spanish is the default. The transcript's menu (⋯ → Language) sets a
+  recording's language and transcribes it again; Settings → Transcription language changes the
+  default. The model handles Arabic, Chinese, Dutch, English, French, German, Greek, Italian,
+  Japanese, Korean, Polish, Portuguese and Vietnamese too; the Spanish adapter is used for
+  Spanish only.
 - **Names and terms.** When you correct a name in a transcript ("zurus" to "Surus"), a small
   suggestion under the text offers to add it to the dictionary; one click, and Echo spells it
   that way in new transcripts and fixes the old spelling in existing ones. Corrections Echo
@@ -158,7 +163,7 @@ echo-app mark [--note TEXT]       add a marker to the active recording
 echo-app markers ID               list a recording's markers
 echo-app sources                  list inputs (* marks the default)
 echo-app import PATH...           import files or folders
-echo-app transcribe ID... | --all [--wait] [--no-adapter] [--context TEXT]
+echo-app transcribe ID... | --all [--wait] [--no-adapter] [--context TEXT] [--language CODE]
 echo-app cancel ID
 echo-app list [QUERY]             list or search recordings
 echo-app export ID [--format txt|md|srt|vtt|json] [--out PATH]

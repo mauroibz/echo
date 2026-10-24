@@ -93,7 +93,10 @@ def _limit_paragraphs(passages: list[Passage]) -> None:
         length += p.duration
 
 
-def join_text(segments: Sequence[dict]) -> str:
+def join_text(segments: Sequence[dict], language: str = "es") -> str:
+    """Passages joined with a space, or nothing for languages written without spaces; a blank
+    line before each paragraph."""
+    sep = "" if language in ("ja", "zh") else " "
     paragraphs: list[list[str]] = []
     for seg in segments:
         text = (seg.get("text") or "").strip()
@@ -103,4 +106,4 @@ def join_text(segments: Sequence[dict]) -> str:
             paragraphs.append([text])
         else:
             paragraphs[-1].append(text)
-    return "\n\n".join(" ".join(p) for p in paragraphs)
+    return "\n\n".join(sep.join(p) for p in paragraphs)

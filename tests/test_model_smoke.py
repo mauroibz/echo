@@ -43,7 +43,7 @@ def test_short_output_is_retried(tmp_path, real_models, monkeypatch):
     e = asr.Engine()
     clip = speech(tmp_path)
     # A context known to make the model return nothing on this clip must not lose the speech.
-    monkeypatch.setattr(asr, "build_context", lambda extra: asr.STYLE_CONTEXT + " Términos: Surus, Mauro.")
+    monkeypatch.setattr(asr, "build_context", lambda extra, language="es": asr.STYLE_CONTEXT + " Términos: Surus, Mauro.")
     text = e.transcribe([clip], context="x")[0]
     assert "Mauro" in text and len(text.split()) >= asr.min_words(len(clip) / 16000)
 

@@ -95,13 +95,22 @@ def build_context(rec: Recording, line: str | None = None) -> str:
     return text
 
 
+def language_of(rec: Recording, cfg: settings.Settings | None = None) -> str:
+    """The recording's language, else the default from settings."""
+    if rec.meta.language:
+        return rec.meta.language
+    cfg = cfg or settings.load()[0]
+    return cfg.language or "es"
+
+
 def request(lib: Library, rec: Recording, adapter: bool | None = None, context: str | None = None,
-            start_worker: bool = True) -> bool:
-    """Queue a transcription. `context` replaces the recording's context line for this job."""
+            start_worker: bool = True, language: str | None = None) -> bool:
+    """Queue a transcription. `context` replaces the recording's context line for this job, and
+    `language` its language."""
+    cfg, _ = settings.load()
     if adapter is None:
-        cfg, _ = settings.load()
         adapter = cfg.use_adapter
-    options = {"adapter": adapter}
+    options = {"adapter": adapter, "language": language or language_of(rec, cfg)}
     sentence = build_context(rec, context)
     if sentence:
         options["context"] = sentence
