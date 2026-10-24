@@ -1,0 +1,40 @@
+[project]
+name = "echo-app"
+version = "0.1.0"
+description = "Record long-form audio and transcribe Spanish speech locally."
+readme = "README.md"
+requires-python = ">=3.14,<3.15"
+license = "Apache-2.0"
+authors = [{ name = "Mauro" }]
+dependencies = [
+    "PySide6-Essentials>=6.11",
+    "numpy>=2.3",
+]
+
+[project.optional-dependencies]
+# Local transcription. Pulls torch with bundled CUDA libraries (~3.5 GB).
+worker = [
+    "torch>=2.10",
+    "transformers>=5.12",
+    "peft>=0.19",
+    "silero-vad>=6.2",
+]
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[tool.uv]
+# The app is run from the source tree by bin/echo-app; uv installs dependencies only,
+# so no build backend is needed.
+package = false
+# Never fall back to /usr/bin/python3.
+python-preference = "only-managed"
+# Refuse packages published after this date. Bump deliberately when updating the lock,
+# keeping a margin of at least two weeks behind the current date.
+exclude-newer = "2026-10-09T00:00:00Z"
+# Wheels only: no third-party build scripts run at install time.
+no-build = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

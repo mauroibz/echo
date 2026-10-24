@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=Echo
+GenericName=Audio Recorder and Transcriber
+Comment=Record long-form audio and transcribe Spanish speech locally
+Exec=@LAUNCHER@ %F
+Icon=echo-app
+Terminal=false
+Categories=AudioVideo;Audio;Recorder;Utility;
+Keywords=record;transcribe;voice;audio;whatsapp;dictation;
+MimeType=audio/ogg;audio/opus;audio/mpeg;audio/mp4;audio/x-m4a;audio/aac;audio/flac;audio/x-flac;audio/wav;audio/x-wav;audio/amr;audio/webm;
+StartupNotify=true
+StartupWMClass=echo-app
+SingleMainWindow=true

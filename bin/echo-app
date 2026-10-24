@@ -1,0 +1,10 @@
+#!/bin/sh
+# Launcher: runs Echo from this source tree with the project's uv-managed environment.
+set -e
+self=$(readlink -f "$0")
+root=$(dirname "$(dirname "$self")")
+if [ ! -x "$root/.venv/bin/python" ]; then
+    echo "Echo is not installed. Run $root/install.sh" >&2
+    exit 1
+fi
+PYTHONPATH="$root/src" exec "$root/.venv/bin/python" -P -m echo_app "$@"
