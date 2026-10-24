@@ -28,6 +28,10 @@ from .transcript import TranscriptPanel
 log = logging.getLogger(__name__)
 
 
+def _esc(text: str) -> str:
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
 class _SpaceFilter(QObject):
     """Space toggles playback when focus is on the list or the waveform."""
 
@@ -160,6 +164,35 @@ class MainWindow(QMainWindow):
         self.tag_bar = TagBar()
         self.tag_bar.toggled.connect(self._toggle_tag)
         sl.addWidget(self.tag_bar)
+        # After an import: notes that look like one burst, offered for linking in one click.
+        self.banner = QFrame()
+        self.banner.setObjectName("banner")
+        bl = QHBoxLayout(self.banner)
+        bl.setContentsMargins(10, 6, 4, 6)
+        bl.setSpacing(6)
+        glyph = QLabel()
+        glyph.setPixmap(icon("set", "foam").pixmap(16, 16))
+        bl.addWidget(glyph)
+        self.banner_text = QLabel()
+        self.banner_text.setWordWrap(True)
+        self.banner_text.setTextFormat(Qt.TextFormat.RichText)
+        self.banner_text.linkActivated.connect(lambda _l: self._select_offer())
+        bl.addWidget(self.banner_text, 1)
+        self.banner_link = QToolButton()
+        self.banner_link.setObjectName("linkbtn")
+        self.banner_link.setIcon(icon("link", "deep_top"))
+        self.banner_link.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.banner_link.clicked.connect(self._accept_offer)
+        bl.addWidget(self.banner_link)
+        self.banner_close = QToolButton()
+        self.banner_close.setIcon(icon("close", "on_deep"))
+        self.banner_close.setToolTip("Not one conversation: don't ask again")
+        self.banner_close.setAccessibleName("Dismiss")
+        self.banner_close.clicked.connect(self._dismiss_offer)
+        bl.addWidget(self.banner_close)
+        self.banner.hide()
+        self._offers: list[sets.Offer] = []
+        sl.addWidget(self.banner)
         self.list_label = QLabel("RECORDINGS")
         self.list_label.setFont(theme.display_font(0.78, QFont.Weight.ExtraBold))
         theme.set_role(self.list_label, eyebrow=True)
@@ -745,6 +778,7 @@ class MainWindow(QMainWindow):
             self.model.refresh()
             if imported:
                 self._select(imported[0].recording.id)
+                self._look_for_bursts([r.recording.id for r in imported])
             parts = []
             if imported:
                 parts.append(f"Imported {len(imported)}")
@@ -1131,6 +1165,83 @@ class MainWindow(QMainWindow):
 
         self.model.refresh()
         self.show_message(watch.summary(res))
+        ids = [r.recording.id for r in res.imported if r.recording is not None]
+        if ids:
+            self._look_for_bursts(ids)
+
+    # ---- offers to link a burst ----
+    def _look_for_bursts(self, ids: list[str]):
+        run_task(sets.bursts, self.library, ids, on_done=self._got_offers,
+                 on_error=lambda m: log.warning("looking for bursts failed: %s", m))
+
+    def _got_offers(self, offers):
+        dismissed = set(self.state.get("dismissed_offers") or [])
+        known = {o.key for o in self._offers}
+        self._offers += [o for o in offers if o.key not in dismissed and o.key not in known]
+        self._show_offer()
+
+    def _show_offer(self):
+        if not self._offers:
+            self.banner.hide()
+            return
+        o = self._offers[0]
+        first = self.library.get(o.ids[0])
+        day = ""
+        if first is not None:
+            from datetime import datetime
+
+            try:
+                day = f" from {datetime.fromisoformat(first.meta.created).strftime('%-d %b')}"
+            except ValueError:
+                pass
+        n = len(o.ids)
+        what = f"{n} voice notes{day}" if n > 1 else f"This voice note{day}"
+        a = f"<a href='#' style='color: {theme.current().foam}; font-weight: 700; text-decoration: none;'>"
+        if o.set_id:
+            text = f"{a}{what}</a> seem{'s' if n == 1 else ''} to continue “{_esc(o.set_title)}”."
+            self.banner_link.setText("Add to set")
+        else:
+            text = f"{a}{what}</a> look like one conversation."
+            self.banner_link.setText("Link them")
+        if len(self._offers) > 1:
+            text += f" <span>(1 of {len(self._offers)})</span>"
+        self.banner_text.setText(text)
+        self.banner_text.setToolTip("Click to select them in the list")
+        self.banner.show()
+
+    def _select_offer(self):
+        if not self._offers:
+            return
+        sm = self.list.selectionModel()
+        rows = [self.model.row_of(i) for i in self._offers[0].ids]
+        rows = [r for r in rows if r >= 0]
+        if not rows:
+            return
+        self.list.setCurrentIndex(self.model.index(rows[0]))
+        for r in rows[1:]:
+            sm.select(self.model.index(r), QItemSelectionModel.SelectionFlag.Select)
+
+    def _accept_offer(self):
+        if not self._offers:
+            return
+        o = self._offers.pop(0)
+        ids = [i for i in o.ids if self.library.get(i) is not None]
+        try:
+            st = sets.link(self.library, [o.set_id, *ids] if o.set_id else ids)
+        except (KeyError, ValueError, OSError) as e:
+            self.show_message(f"Could not link them: {e}")
+        else:
+            self.model.reload_sets()
+            self._select(st.id)
+            self.show_message(f"Linked into “{st.title}”.")
+        self._show_offer()
+
+    def _dismiss_offer(self):
+        if not self._offers:
+            return
+        o = self._offers.pop(0)
+        self.state.set("dismissed_offers", [*(self.state.get("dismissed_offers") or []), o.key][-200:])
+        self._show_offer()
 
     def _meta_changed(self, rid: str):
         self.model.reload(rid)

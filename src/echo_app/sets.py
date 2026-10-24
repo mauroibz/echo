@@ -120,6 +120,12 @@ def _take_out(library: Library, rids: set[str], keep: str | None = None) -> None
             _save(library, s)
 
 
+def _order(rec: Recording) -> tuple:
+    """Date order; Android voice notes of one day all carry that date, so their number decides."""
+    key = whatsapp_key(rec)
+    return rec.meta.created, key[2] if key and key[0] == "android" else 0.0, rec.id
+
+
 def _default_title(first: Recording | None, n: int) -> str:
     if first is None:
         return "Linked recordings"
@@ -146,7 +152,7 @@ def link(library: Library, ids: list[str], title: str | None = None) -> LinkedSe
         if rec is None:
             raise KeyError(i)
         recs.append(rec)
-    recs.sort(key=lambda r: (r.meta.created, r.id))
+    recs.sort(key=_order)
     if named_sets:
         target = named_sets[0]
         extra = [m for s in named_sets[1:] for m in s.members] + [r.id for r in recs]
@@ -273,3 +279,96 @@ def summary(s: LinkedSet, parts: list[Recording]) -> str:
     from .export import stamp
 
     return f"{len(parts)} parts · {stamp(total(timeline(parts)))}"
+
+
+# ---- bursts: voice notes that look like one conversation -------------------------------------------
+# WhatsApp caps a voice note's length, so a long message arrives as several notes. Desktop exports
+# name each note with its time ("WhatsApp Ptt 2026-10-23 at 14.02.11"): a note starting within
+# BURST_GAP_S of the previous one's end continues it. Android exports name them by date and a
+# running number per chat export ("PTT-20261023-WA0004"): the next number, or up to two numbers
+# further (a photo or a file sent in between takes a number too), continues it.
+BURST_GAP_S = 600
+BURST_NUMBER_GAP = 3
+
+
+@dataclass
+class Offer:
+    ids: list[str]  # the recordings to link (or to add), in order
+    set_id: str | None = None  # add them to this set instead of making a new one
+    set_title: str = ""
+
+    @property
+    def key(self) -> str:
+        """Identifies the offer for remembering a dismissal."""
+        return ",".join(sorted(self.ids)) + (f">{self.set_id}" if self.set_id else "")
+
+
+def whatsapp_key(rec: Recording) -> tuple[str, str, float] | None:
+    """("desktop", day, start seconds) or ("android", day, note number) from the original file name."""
+    from .importer import _WA_ANDROID, _WA_DESKTOP
+
+    if rec.meta.origin != "imported" or not rec.meta.source:
+        return None
+    stem = Path(rec.meta.source).stem
+    m = _WA_ANDROID.match(stem)
+    if m:
+        return "android", m["d"], float(m["n"])
+    if _WA_DESKTOP.match(stem):
+        try:
+            when = datetime.fromisoformat(rec.meta.created)
+        except ValueError:
+            return None
+        return "desktop", when.strftime("%Y%m%d"), when.timestamp()
+    return None
+
+
+def _runs(recs: list[Recording]) -> list[list[Recording]]:
+    keyed = [(whatsapp_key(r), r) for r in recs]
+    keyed = [(k, r) for k, r in keyed if k is not None]
+    runs: list[list[Recording]] = []
+    for kind in ("android", "desktop"):
+        items = sorted(((k, r) for k, r in keyed if k[0] == kind), key=lambda x: (x[0][1], x[0][2], x[1].id))
+        run: list[Recording] = []
+        last = None
+        for k, r in items:
+            if last is not None:
+                lk, lr = last
+                if kind == "android":
+                    joined = k[1] == lk[1] and 0 < k[2] - lk[2] <= BURST_NUMBER_GAP
+                else:
+                    joined = k[2] - (lk[2] + (lr.meta.duration or 0)) <= BURST_GAP_S
+                if not joined:
+                    runs.append(run)
+                    run = []
+            run.append(r)
+            last = (k, r)
+        runs.append(run)
+    return [r for r in runs if len(r) >= 2]
+
+
+def bursts(library: Library, new_ids, recordings: list[Recording] | None = None) -> list[Offer]:
+    """Offers to link voice notes that look like one burst, for recordings just imported.
+
+    The pool is the new recordings and the library's recordings from the same days. A run of
+    notes none of which is linked becomes an offer for a new set; a run whose linked notes all
+    belong to one set offers to add the new ones to it. Nothing is linked here.
+    """
+    new = set(new_ids)
+    recs = library.all() if recordings is None else recordings
+    days = {r.meta.created[:10] for r in recs if r.id in new}
+    pool = [r for r in recs if r.meta.created[:10] in days]
+    all_sets = load_all(library)
+    member_of = membership(all_sets)
+    titles = {st.id: st.title for st in all_sets}
+    offers = []
+    for run in _runs(pool):
+        if not any(r.id in new for r in run):
+            continue
+        in_sets = {member_of[r.id] for r in run if r.id in member_of}
+        free = [r.id for r in run if r.id not in member_of]
+        if not in_sets and len(free) >= 2:
+            offers.append(Offer(free))
+        elif len(in_sets) == 1 and any(i in new for i in free):
+            sid = in_sets.pop()
+            offers.append(Offer(free, sid, titles.get(sid, "")))
+    return offers

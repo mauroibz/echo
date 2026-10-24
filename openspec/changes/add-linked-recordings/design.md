@@ -162,3 +162,33 @@ crop handles are hidden in the set view.
 
 None that block implementation; the thresholds (10 minutes, WA number gaps of 2) are set from
 WhatsApp exports on the test data and recorded in `sets.py` with the files they were checked on.
+
+## Decisions made while implementing
+
+- **Actions that belong to one recording stay on the part.** In a set's view, the ⋯ menu keeps
+  Find and Copy with timestamps; Transcribe again, Language, Label speakers and Revert are hidden
+  and naming a speaker in the margin says to open the part. A part's heading opens that part
+  (selected in the list under its expanded set), where all of them work. A part without text shows
+  why under its heading ("Not transcribed yet: select this part to transcribe it") instead of a
+  button inside the text.
+- **Headings in the editor** read "2 · title · Yesterday 14:04 · 1:58" (the list's date style);
+  exports use the full date ("2026-10-23 14:04").
+- **Between rows.** A drop goes into a set only when the row right after the gap is one of its
+  parts; the gap after a set's last part is a gap between top-level rows, so dropping a part there
+  takes it out. Dropping on a part inserts the dragged recordings right after it.
+- **The context line** of a set shows the parts' line when they all share one and is empty
+  otherwise; editing it writes to every part.
+- **The vault** removes a recording's own note when it is linked (if the user has not changed it)
+  and a set's note when the set is unlinked; a synced folder is brought up to date whenever a set
+  changes, since linking changes no recording folder.
+- **Order of Android notes.** Notes of one day exported from Android carry only the date, so the
+  running number in the name breaks ties when a set is ordered.
+- **Kept selection.** The list keeps the selected row (and a multi-selection) when it is rebuilt,
+  by id; before, a rebuilt list could jump to the first row. A recording that went into a set is
+  followed to its set.
+- **The banner's text selects the notes it offers**, so they can be checked before linking; a
+  dismissal is remembered by the offer's members (`UiState`, last 200).
+- **Tests of dragging** send drag-enter, drag-move and drop events to the list's viewport, which
+  exercises Qt's own drop-position logic; a real `QDrag` blocks in the offscreen platform.
+- **Measured hand-over**: three parts of 1.2, 1.0 and 1.2 s (the second cropped) played through
+  PipeWire on this machine took 3.75 s for 3.4 s of audio, about 0.15 s per hand-over.

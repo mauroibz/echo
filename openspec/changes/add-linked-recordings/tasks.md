@@ -29,10 +29,21 @@
 
 ## 5. Burst offers
 
-- [ ] 5.1 `sets.bursts()` with the rules in the design; tests on real WhatsApp file names (Android and desktop exports, numbering gaps, notes far apart, notes already in a set)
-- [ ] 5.2 Banner above the list after imports and watched-folder imports, "Link them" / "Add to <set>" / dismiss remembered in `UiState`, "1 of N" for several offers; UI tests
+- [x] 5.1 `sets.bursts()` with the rules in the design; tests on real WhatsApp file names (Android and desktop exports, numbering gaps, notes far apart, notes already in a set)
+- [x] 5.2 Banner above the list after imports and watched-folder imports, "Link them" / "Add to <set>" / dismiss remembered in `UiState`, "1 of N" for several offers; UI tests
 
 ## 6. Finish
 
-- [ ] 6.1 README (linking, the banner, shortcuts, the set view), `docs/design.md` (set files and why not in `meta.json`, the part map), `docs/sync.md` (the `sets/` folder), Help → Keyboard shortcuts, CHANGELOG
-- [ ] 6.2 Copy test on a copy of the real library: index migrates to schema 3, existing recordings untouched, a set of real voice notes created, edited, played and exported
+- [x] 6.1 README (linking, the banner, shortcuts, the set view), `docs/design.md` (set files and why not in `meta.json`, the part map), `docs/sync.md` (the `sets/` folder), Help → Keyboard shortcuts, CHANGELOG
+- [x] 6.2 Copy test on a copy of the real library: index migrates to schema 3, existing recordings untouched, a set of real voice notes created, edited, played and exported
+
+## Blocked
+
+- **4.3** needs someone listening. Done without a person: the set player's hand-over is covered
+  by tests, and on this machine three parts (1.2, 1.0 cropped from 1.2, and 1.2 s) played through
+  real PipeWire in order, the crop respected, in 3.75 s for 3.4 s of audio (about 0.15 s per
+  hand-over). What a person must do: link three real voice notes of one conversation, select the
+  set, press Space and listen through to the end; the parts must follow each other with no click
+  and no noticeable gap beyond the pause already in the notes. Then click the waveform inside the
+  third part (playback continues from there) and play with the transcript visible (the
+  highlighted passage moves into each next part as it plays).

@@ -56,11 +56,19 @@ POSIX, `msvcrt.locking` on Windows. Every action in the window is also a CLI com
     transcribe.progress.json      written by the worker while it runs
     transcript.partial.json       finished passages, for resuming after a crash
     transcribe.error              last failure
+  sets/<set id>.json              a linked set: title and member ids in order
 ```
 
 Writes are atomic (temporary file, fsync, rename, fsync of the folder). Crop is stored as in
 and out points in `meta.json`; the original audio is never changed. Deleting moves the folder
 to the desktop trash.
+
+A linked set (voice notes that are one message) is a file of its own rather than a field in each
+member's `meta.json`: the member order lives in one place, reordering rewrites one small file
+instead of several, and a recording folder still moves on its own. Members that are missing are
+skipped, not removed, so a recording restored from the trash rejoins its set. A recording is in
+one set at most; if two files claim it (a sync conflict), the newer file wins and the older
+claim is dropped when that file is next written.
 
 ## Recording
 
@@ -280,6 +288,33 @@ palette, one stylesheet, icons tinted at paint time and the wave painter. Custom
 read the current tokens when they paint, so switching appearance is live. Icons (Lucide) and the
 interface typeface (Manrope) are bundled so Echo looks the same on any desktop; transcripts use
 the desktop's own text face.
+
+### Linked sets
+
+A set is one row in the list model (a flat list with heading, recording, set and part rows,
+rather than a tree view restyled for one level of nesting). Selecting it gives the transcript
+panel and the player a set instead of a recording.
+
+The transcript panel shows a set in the same editor as a recording, laid out as fixed lines (each
+part's heading, a status line for a part without text, a blank line between parts) around each
+part's editable text. A part map turns document positions into (part, position) and times into
+set time, so find, follow-along, passage times, flags, dictionary underlines and playing the
+passage at the cursor work unchanged. Three layers keep an edit from landing in the wrong
+recording: the editor refuses keys, pastes and menu actions whose range is not inside one part's
+text; a check after every change undoes one that reached a heading anyway (an input method); and
+saving refuses to split a document whose headings changed. Each part's text is saved only when
+it differs from what was loaded, through the same edited-text file as a single recording.
+
+The player plays a set on one timeline: each part's cropped span, end to end. One ffmpeg decode
+runs per part, and the next part starts when one ends; measured through PipeWire on this machine,
+a hand-over adds about 0.15 s, which falls in the pause between voice notes. The waveform joins
+each part's cached peaks, so a set needs no extra decoding. Crop and markers belong to a part and
+are edited on it.
+
+After an import, WhatsApp notes are checked for bursts: desktop exports carry the time in the
+name (a note starting within 10 minutes of the previous one's end continues it), Android exports
+a running number per day (the next number, or up to two further, continues it). The window
+offers a run in a banner and never links one on its own.
 
 ### System-wide shortcuts
 

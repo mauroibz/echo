@@ -313,3 +313,50 @@ def test_set_playback_hands_over_to_the_next_part(lib):
     pb.seek(20.0)
     pb.play()
     assert pb.inner.calls[-1] == (a.id, 0.0, 10.0)
+
+
+def _import(lib_, tmp_path, name, seconds=1.0):
+    from echo_app import importer
+    from test_ui import wav
+
+    return importer.import_file(lib_, wav(tmp_path / name, seconds, 200 + len(name) * 7 + int(seconds * 13))).recording
+
+
+def test_bursts_of_android_notes(tmp_path):
+    lib_ = Library(tmp_path / "data")
+    a = _import(lib_, tmp_path, "PTT-20261023-WA0004.opus")
+    b = _import(lib_, tmp_path, "PTT-20261023-WA0005.opus")
+    c = _import(lib_, tmp_path, "PTT-20261023-WA0008.opus")  # two numbers skipped: a photo, a file
+    far = _import(lib_, tmp_path, "PTT-20261023-WA0020.opus")
+    other_day = _import(lib_, tmp_path, "PTT-20261024-WA0009.opus")
+    offers = sets.bursts(lib_, [a.id, b.id, c.id, far.id, other_day.id])
+    assert [o.ids for o in offers] == [[a.id, b.id, c.id]] and offers[0].set_id is None
+    # Linked, and a later note arrives from a watched folder: offered as an addition.
+    st = sets.link(lib_, offers[0].ids)
+    d = _import(lib_, tmp_path, "PTT-20261023-WA0009.opus")
+    offers = sets.bursts(lib_, [d.id])
+    assert [(o.ids, o.set_id, o.set_title) for o in offers] == [([d.id], st.id, st.title)]
+    # Nothing new in a run: no offer.
+    assert sets.bursts(lib_, [far.id]) == []
+
+
+def test_bursts_of_desktop_notes_by_time(tmp_path):
+    lib_ = Library(tmp_path / "data")
+    a = _import(lib_, tmp_path, "WhatsApp Ptt 2026-10-23 at 14.02.11.ogg", 120)
+    b = _import(lib_, tmp_path, "WhatsApp Ptt 2026-10-23 at 14.04.30.ogg", 60)
+    c = _import(lib_, tmp_path, "WhatsApp Ptt 2026-10-23 at 14.30.00.ogg", 30)  # 25 minutes later
+    plain = _import(lib_, tmp_path, "entrevista.wav")
+    plain.update(created="2026-10-23T14:05:00-03:00")
+    offers = sets.bursts(lib_, [a.id, b.id, c.id, plain.id])
+    assert [o.ids for o in offers] == [[a.id, b.id]]
+    assert offers[0].key == ",".join(sorted([a.id, b.id]))
+
+
+def test_android_notes_of_one_day_are_ordered_by_number(tmp_path):
+    lib_ = Library(tmp_path / "data")
+    c = _import(lib_, tmp_path, "PTT-20261023-WA0012.opus")
+    a = _import(lib_, tmp_path, "PTT-20261023-WA0010.opus")
+    b = _import(lib_, tmp_path, "PTT-20261023-WA0011.opus")
+    for r in (a, b, c):
+        r.update(created="2026-10-23T00:00:00-03:00")
+    assert sets.link(lib_, [c.id, b.id, a.id]).members == [a.id, b.id, c.id]

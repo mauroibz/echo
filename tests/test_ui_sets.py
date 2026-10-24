@@ -318,3 +318,39 @@ def test_a_part_without_text_and_markers_on_the_set_timeline(window, lib, tmp_pa
     assert tp.editor.toPlainText() == text  # the state line is not editable
     assert window.player.wave.markers == [{"at": 5.0, "note": "ojo"}]  # part 2 starts at 4 s
     assert [m["at"] for _pos, m in tp._marker_anchors()] == [5.0]
+
+
+def test_importing_a_burst_offers_to_link_it(window, lib, tmp_path):
+    files = [wav(tmp_path / f"PTT-20261023-WA000{n}.opus", 1, 300 + 50 * n) for n in (4, 5, 6)]
+    window.import_paths(files)
+    assert wait_until(lambda: window.banner.isVisible(), 10)
+    assert "3 voice notes from 23 Oct" in window.banner_text.text() and window.banner_link.text() == "Link them"
+    window.banner_text.linkActivated.emit("#")
+    assert len(window._selected_keys()) == 3
+    window.banner_link.click()
+    pump(100)
+    st = sets.load_all(lib)[0]
+    assert len(st.members) == 3 and window.current_set()[0].id == st.id and not window.banner.isVisible()
+    # A dismissed offer is not shown again.
+    more = [wav(tmp_path / f"PTT-20261023-WA001{n}.opus", 1, 900 + 50 * n) for n in (1, 2)]
+    window.import_paths(more)
+    assert wait_until(lambda: window.banner.isVisible(), 10)
+    window.banner_close.click()
+    assert not window.banner.isVisible()
+    window._got_offers(sets.bursts(lib, [r.id for r in lib.all() if r.meta.source.startswith("PTT-20261023-WA001")]))
+    assert not window.banner.isVisible()
+
+
+def test_a_watched_folder_note_is_offered_to_its_set(window, lib, tmp_path):
+    from echo_app import watch
+
+    first = [importer.import_file(lib, wav(tmp_path / f"PTT-20261023-WA000{n}.opus", 1, 300 + 50 * n)).recording
+             for n in (4, 5)]
+    st = sets.link(lib, [r.id for r in first], title="Lucía")
+    window.model.reload_sets()
+    res = watch.ScanResult(imported=[importer.import_file(lib, wav(tmp_path / "PTT-20261023-WA0006.opus", 1, 777))])
+    window._watched_import(res)
+    assert wait_until(lambda: window.banner.isVisible(), 10)
+    assert "seems to continue “Lucía”" in window.banner_text.text() and window.banner_link.text() == "Add to set"
+    window.banner_link.click()
+    assert len(sets.get(lib, st.id).members) == 3

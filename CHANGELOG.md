@@ -54,6 +54,10 @@ tag.
 - Ctrl+Shift+F searches all recordings, as in code editors (Ctrl+K still works), and opening a
   result shows its transcript with the searched words already found.
 - An input gain slider under the level meter, usable while recording (PipeWire).
+- Linked recordings: voice notes that belong together become one set, read with the
+  transcripts one under the other, edited in place and played back to back, without merging
+  any audio. Link a selection (Ctrl+L), drag one recording onto another, or accept the offer
+  Echo makes after importing a burst of WhatsApp notes. `echo-app link` and `unlink`.
 
 ### Fixed
 

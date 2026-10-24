@@ -139,6 +139,23 @@ thresholds 0.30 to 0.55 got everything right, and 0.4 is used. End to end, a nam
 recording was suggested for the right speaker in another, made from a different chapter. Limit:
 a passage that straddles a quick turn change gets one speaker.
 
+## Added after the roadmap (same day)
+
+- **Search shortcuts.** Ctrl+Shift+F searches all recordings (Ctrl+K still works); opening a
+  result shows its transcript with the searched words already found. Ctrl+F finds in the open
+  transcript.
+- **Input gain.** A slider under the level meter sets the microphone's PipeWire volume (the same
+  value as the desktop's sound settings), also while recording.
+- **Icon on KDE.** `./install.sh` now tells a running Plasma to reload its icons, so Echo's
+  taskbar entry has its icon without logging out.
+- **Linked recordings** (`add-linked-recordings`). Voice notes that are one message become a
+  set: one row in the list, the transcripts stacked and edited in place (each part saves its own
+  edits), and the parts played back to back. Link a selection with Ctrl+L or the Link button,
+  drag one recording onto another, or accept the one-click offer Echo shows after importing a
+  burst of WhatsApp notes. Checked on a copy of your library: the two recordings linked, opened,
+  edited and exported as one, and the original folder was unchanged. Open: listening to the
+  hand-overs between parts (see that change's `tasks.md`).
+
 ## Things to know before you use it
 
 - **On first start**, KDE asks you to confirm the two global shortcuts. That's the portal's own

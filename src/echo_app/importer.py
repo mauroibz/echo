@@ -44,7 +44,7 @@ class Result:
 
 # ---- names and dates ---------------------------------------------------------------------------
 
-_WA_ANDROID = re.compile(r"^(?P<kind>PTT|AUD)-(?P<d>\d{8})-WA\d+", re.I)
+_WA_ANDROID = re.compile(r"^(?P<kind>PTT|AUD)-(?P<d>\d{8})-WA(?P<n>\d+)", re.I)
 _WA_DESKTOP = re.compile(
     r"^WhatsApp (?P<kind>Audio|Ptt|Voice Note)\s+(?P<d>\d{4}-\d{2}-\d{2})\s+(?:at|a las)\s+"
     r"(?P<h>\d{1,2})[.:](?P<m>\d{2})[.:](?P<s>\d{2})"

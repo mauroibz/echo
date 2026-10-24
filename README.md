@@ -173,12 +173,23 @@ Model versions are pinned, and only weights and configuration are downloaded, ne
   recording, ignoring accents; `#word` in it filters by tag. Opening a result shows its
   transcript with the words already found (Enter or the arrows in the find bar step through
   them). Ctrl+F finds within the open transcript.
+- **Linked recordings.** Voice notes that are one long message (WhatsApp cuts them every few
+  minutes), or a recording you stopped and started again, can be linked into a set without
+  merging any audio. Select them (Ctrl+click or Shift+click) and press Link in the bar under
+  the list, or Ctrl+L, or drag one onto another. After importing notes that look like one
+  burst, a line above the list offers to link them in one click. A set is one row in the list
+  (its arrow shows the parts); selecting it shows the transcripts one under the other, each
+  under its heading, and plays the parts back to back. Edit the text in place: each part keeps
+  its own edits. Click a part's heading to open that part alone (to transcribe it again, crop
+  it or add markers). Drag a part to reorder it (or Alt+Shift+↑/↓), drag it out of the set to
+  unlink it, or right-click the set → Unlink. Copy and Export cover the whole set.
 - **Tags and notes.** Under the title, add tags ("+ tag", with completion) and a note. The most
   used tags show as chips above the list; click one to filter, click again to clear. A long
   library is grouped by month, and each transcribed recording shows its word count, speaking
   rate and share of silence.
 - **Notes in a vault.** File → Export library to folder… writes one Markdown note per
-  recording (title, date, tags, people, markers as headings, the text, a link to the audio) into
+  recording, and one per linked set (title, date, tags, people, markers as headings, the text, a
+  link to the audio) into
   any folder, such as an Obsidian vault, and can keep it up to date while Echo runs.
 - **Close the window while recording** and the recording continues, with a tray icon to stop
   it.
@@ -206,7 +217,9 @@ echo-app transcribe ID... | --all [--wait] [--no-adapter] [--context TEXT] [--la
 echo-app cancel ID
 echo-app list [QUERY] [--tag T]   list or search recordings (#word in QUERY is a tag)
 echo-app tag ID [+TAG ...] [-TAG ...]   show, add or remove tags
-echo-app export ID [--format txt|md|srt|vtt|json] [--out PATH]
+echo-app link ID ID... [--title T]   link recordings into a set (a set id among them: add to it)
+echo-app unlink ID                a set id dissolves the set; a recording id takes it out of its set
+echo-app export ID [--format txt|md|srt|vtt|json] [--out PATH]   (ID may be a set's)
 echo-app export --all FOLDER [--audio link|copy|none] [--timestamps]   Markdown notes for a vault
 echo-app models download | status
 echo-app recover                  repair recordings interrupted by a crash
