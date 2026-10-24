@@ -253,3 +253,16 @@ def test_oom_variants_are_recognized():
 
     assert is_oom(AcceleratorError("CUDA error: out of memory"))
     assert not is_oom(RuntimeError("shape mismatch"))
+
+
+def test_folder_deleted_mid_job_does_not_crash(lib, tmp_path):
+    import shutil
+
+    pattern = []
+    for _ in range(6):
+        pattern += [(20, True), (1, False)]
+    rec = add(lib, tmp_path, "gone", pattern)
+    rec.request_transcription()
+    eng = StubEngine(on_batch=lambda n: shutil.rmtree(rec.folder) if n == 1 else None)
+    Worker(lib, eng).process(rec)  # must return normally
+    assert not rec.folder.exists()

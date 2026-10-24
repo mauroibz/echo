@@ -188,6 +188,6 @@ class UiState:
 
     def save(self) -> None:
         try:
-            atomic_write_json(self.path, self.data)
+            atomic_write_json(self.path, self.data, mkdir=True)
         except OSError:
             log.warning("could not save UI state")

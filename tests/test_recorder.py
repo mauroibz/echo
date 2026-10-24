@@ -158,7 +158,6 @@ def test_supervisor_killed_capture_adopted(lib):
     assert actions[s.rec.id] == "adopted"
     assert s.alive() and s.supervisor_pid != old
     time.sleep(1.0)
-    t_stop = time.monotonic()
     assert s.stop(wait=20) == "ready"
     m = s.rec.reload().meta
     assert any("Recorder restarted" in g["cause"] for g in m.gaps)

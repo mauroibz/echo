@@ -7,14 +7,13 @@ import os
 import unicodedata
 
 from PySide6.QtCore import QSize, Qt, QTimer, Signal
-from PySide6.QtGui import (QAction, QColor, QFont, QKeySequence, QMouseEvent, QPalette, QTextCharFormat, QTextCursor,
-                           QTextFormat)
+from PySide6.QtGui import (QAction, QColor, QFont, QKeySequence, QMouseEvent, QPalette, QTextCharFormat, QTextCursor)
 from PySide6.QtWidgets import (QApplication, QFileDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QMenu, QMessageBox,
                                QPlainTextEdit, QProgressBar, QPushButton, QStackedWidget, QTextEdit, QToolButton,
                                QVBoxLayout, QWidget)
 
 from .. import export, features, models, recorder, transcription
-from ..library import (EDITED, NEEDS_FINALIZE, READY, RECORDING, T_DONE, T_FAILED, T_NONE, T_QUEUED, T_RUNNING,
+from ..library import (EDITED, NEEDS_FINALIZE, READY, RECORDING, T_FAILED, T_QUEUED, T_RUNNING,
                        TRANSCRIPT, Library, Recording)
 from .common import fmt_date, fmt_duration, fmt_eta, icon, run_task
 
@@ -184,8 +183,7 @@ class TranscriptPanel(QWidget):
         self.more_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
         self.more_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         menu = QMenu(self.more_btn)
-        self.act_find = menu.addAction(icon("find"), "Find…", self.open_find)
-        self.act_find.setShortcut(QKeySequence.StandardKey.Find)
+        self.act_find = menu.addAction(icon("find"), "Find…  (Ctrl+F)", self.open_find)
         menu.addSeparator()
         self.act_retx = menu.addAction(icon("transcribe"), "Transcribe again", lambda: self.request(None))
         self.act_retx_base = menu.addAction("Transcribe again without the Spanish adapter", lambda: self.request(False))
@@ -362,6 +360,8 @@ class TranscriptPanel(QWidget):
 
     def _show_editor(self, rec: Recording, st: str):
         self.stack.setCurrentWidget(self.page)
+        if self._autosave.isActive() and self._shown_signature and self._shown_signature[0] == rec.id:
+            self.save()  # unsaved typing becomes the edited text before anything reloads
         sig = self._signature(rec)
         if sig != self._shown_signature and not (self.editor.hasFocus() and self._shown_signature
                                                  and self._shown_signature[0] == rec.id
@@ -685,6 +685,3 @@ class TranscriptPanel(QWidget):
     def sizeHint(self) -> QSize:
         return QSize(500, 400)
 
-
-def _unused():
-    _ = (QTextFormat, T_DONE, T_NONE)

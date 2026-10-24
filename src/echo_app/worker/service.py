@@ -173,9 +173,12 @@ class Worker:
             self._transcribe(rec, requested_at, adapter, context, started)
         except Cancelled:
             log.info("%s: cancelled", rec.id)
-            if self._request(rec) is None:
-                rec.path(PARTIAL).unlink(missing_ok=True)
-            rec.path(PROGRESS).unlink(missing_ok=True)
+            try:
+                if self._request(rec) is None:
+                    rec.path(PARTIAL).unlink(missing_ok=True)
+                rec.path(PROGRESS).unlink(missing_ok=True)
+            except OSError:
+                pass
         except Exception as e:  # noqa: BLE001 - every failure is reported on the recording
             log.exception("%s: transcription failed", rec.id)
             msg = str(e) or e.__class__.__name__
@@ -183,9 +186,14 @@ class Worker:
                 from .asr import OOM_MESSAGE
 
                 msg = OOM_MESSAGE
-            rec.path(ERROR).write_text(msg + "\n", encoding="utf-8")
-            rec.path(REQUESTED).unlink(missing_ok=True)
-            rec.path(PROGRESS).unlink(missing_ok=True)
+            if not rec.folder.exists():
+                return  # deleted while being transcribed
+            try:
+                rec.path(ERROR).write_text(msg + "\n", encoding="utf-8")
+                rec.path(REQUESTED).unlink(missing_ok=True)
+                rec.path(PROGRESS).unlink(missing_ok=True)
+            except OSError:
+                log.exception("%s: could not record the failure", rec.id)
 
     def _transcribe(self, rec: Recording, requested_at, adapter: bool, context: str | None, started: float) -> None:
         audio, offset = decode(rec)

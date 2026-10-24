@@ -5,7 +5,7 @@ import pytest
 
 from echo_app import export
 from echo_app.audio import ffmpeg, peaks
-from echo_app.library import EDITED, TRANSCRIPT, Library
+from echo_app.library import TRANSCRIPT, Library
 
 
 def tone_then_silence(path):

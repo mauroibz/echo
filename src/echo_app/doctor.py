@@ -7,7 +7,6 @@ import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
-from pathlib import Path
 
 from . import features, models, paths, settings
 from .fsutil import free_bytes

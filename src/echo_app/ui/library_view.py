@@ -78,8 +78,8 @@ class LibraryModel(QAbstractListModel):
         self._filter: set[str] | None = None
 
     # ---- Qt model API ----
-    def rowCount(self, parent=QModelIndex()) -> int:
-        return 0 if parent.isValid() else len(self._rows)
+    def rowCount(self, parent=None) -> int:
+        return 0 if parent is not None and parent.isValid() else len(self._rows)
 
     def data(self, index: QModelIndex, role=Qt.ItemDataRole.DisplayRole):
         if not index.isValid() or index.row() >= len(self._rows):

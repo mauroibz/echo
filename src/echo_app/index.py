@@ -7,7 +7,6 @@ Everything here is derived from the recording folders. Deleting the file loses n
 from __future__ import annotations
 
 import sqlite3
-from pathlib import Path
 
 from .library import Library, Recording
 

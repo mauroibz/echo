@@ -23,10 +23,15 @@ def fsync_dir(path: Path) -> None:
         os.close(fd)
 
 
-def atomic_write_bytes(path: Path, data: bytes) -> None:
-    """Write via temp file + fsync + rename, so readers see old or new content, never partial."""
+def atomic_write_bytes(path: Path, data: bytes, mkdir: bool = False) -> None:
+    """Write via temp file + fsync + rename, so readers see old or new content, never partial.
+
+    Parent folders are created only with mkdir=True, so a write can never resurrect a deleted
+    recording folder.
+    """
     path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
+    if mkdir:
+        path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
     os.fchmod(fd, 0o666 & ~_umask())
     try:
@@ -44,12 +49,12 @@ def atomic_write_bytes(path: Path, data: bytes) -> None:
     fsync_dir(path.parent)
 
 
-def atomic_write_text(path: Path, text: str) -> None:
-    atomic_write_bytes(path, text.encode("utf-8"))
+def atomic_write_text(path: Path, text: str, mkdir: bool = False) -> None:
+    atomic_write_bytes(path, text.encode("utf-8"), mkdir=mkdir)
 
 
-def atomic_write_json(path: Path, obj: Any) -> None:
-    atomic_write_text(path, json.dumps(obj, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
+def atomic_write_json(path: Path, obj: Any, mkdir: bool = False) -> None:
+    atomic_write_text(path, json.dumps(obj, ensure_ascii=False, indent=2, sort_keys=True) + "\n", mkdir=mkdir)
 
 
 def read_json(path: Path) -> Any:

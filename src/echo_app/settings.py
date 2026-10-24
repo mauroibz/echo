@@ -85,4 +85,4 @@ def save(s: Settings, path: Path | None = None) -> None:
     lines = ["# Echo settings\n"]
     for k, v in asdict(s).items():
         lines.append(f"# {_COMMENTS.get(k, '')}\n{k} = {_toml_value(v)}\n")
-    atomic_write_text(path, "\n".join(lines))
+    atomic_write_text(path, "\n".join(lines), mkdir=True)

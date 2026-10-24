@@ -310,14 +310,38 @@ class MainWindow(QMainWindow):
                 self.transcript.refresh()
         elif self.model.rowCount() and not self.list.currentIndex().isValid():
             self.list.setCurrentIndex(self.model.index(0))
-        if self.recorder_panel.session is None:
-            sess = recorder.active(self.library) if any(
-                r.meta.state == RECORDING for r in self.model._all.values()) else None
+        recording = [r for r in self.model._all.values() if r.meta.state == RECORDING]
+        if self.recorder_panel.session is None and recording:
+            sess = recorder.active(self.library)
             if sess is not None:
                 self.recorder_panel.attach(sess)
+        self._recover_orphans(recording)
         self._update_title()
         self._update_worker_label()
         self._update_actions()
+
+    def _recover_orphans(self, recording):
+        """A recording whose recorder died while the window is open is repaired right away."""
+        if getattr(self, "_recovering", False):
+            return
+        orphans = [r for r in recording if not recorder.Session(r).alive()]
+        if not orphans:
+            return
+        self._recovering = True
+        lib = self.library
+
+        def done(actions):
+            self._recovering = False
+            if any(a in ("finalized", "adopted") for _rid, a in actions):
+                self.show_message("Recovered a recording after the recorder stopped unexpectedly.")
+            self._refresh()
+
+        def failed(msg):
+            self._recovering = False
+            self.show_message(f"Recovery problem: {msg}")
+
+        # Give a just-stopped recorder time to finish saving before treating it as dead.
+        QTimer.singleShot(1500, lambda: run_task(recorder.recover_all, lib, on_done=done, on_error=failed))
 
     def _update_empty(self):
         empty = self.model.rowCount() == 0
@@ -552,6 +576,7 @@ class MainWindow(QMainWindow):
         if self.player.rec and self.player.rec.id == rec.id:
             self.player.set_recording(None)
             self.transcript.set_recording(None)
+        transcription.cancel(rec)
         try:
             self.library.delete(rec)
         except OSError as e:
