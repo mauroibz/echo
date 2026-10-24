@@ -6,18 +6,20 @@ import logging
 
 import numpy as np
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QKeyEvent, QMouseEvent, QPainter, QPalette, QPen
+from PySide6.QtGui import QColor, QFont, QKeyEvent, QLinearGradient, QMouseEvent, QPainter, QPen
 from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QLabel, QLineEdit, QSizePolicy, QToolButton, QVBoxLayout,
                                QWidget)
 
 from ..audio import peaks as peaks_mod
 from ..audio.playback import Playback
 from ..library import READY, Recording
+from . import theme
 from .common import fmt_date, fmt_duration, icon, run_task
 
 log = logging.getLogger(__name__)
 
 HANDLE_GRAB_PX = 7
+BAR_STEP = 3  # waveform bar pitch in pixels (2 px bar, 1 px gap)
 NUDGE_FINE = 0.1
 NUDGE_COARSE = 1.0
 
@@ -107,43 +109,44 @@ class WaveformView(QWidget):
     # ---- painting ----
     def paintEvent(self, _):
         p = QPainter(self)
-        pal = self.palette()
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        t = theme.current()
         rect = self.rect()
-        base = pal.color(QPalette.ColorRole.Base)
-        p.fillRect(rect, base)
-        text = pal.color(QPalette.ColorRole.Text)
-        accent = pal.color(QPalette.ColorRole.Highlight)
+        surface, ink, accent = QColor(t.surface), QColor(t.ink), QColor(t.accent)
+        p.fillRect(rect, surface)
         mid = rect.height() / 2
         cols = self._columns_for_width()
         if cols is None:
-            pen = QPen(text)
-            c = QColor(text)
-            c.setAlpha(60)
-            pen.setColor(c)
-            p.setPen(pen)
+            p.setPen(QPen(theme.color("muted", 0.35), 1, Qt.PenStyle.DashLine))
             p.drawLine(0, int(mid), rect.width(), int(mid))
             if self.placeholder:
-                c.setAlpha(150)
-                p.setPen(c)
+                p.setPen(QColor(t.muted))
                 p.drawText(rect, Qt.AlignmentFlag.AlignCenter, self.placeholder)
             p.end()
             return
         played_x = self._x(self.position)
-        amp = (rect.height() / 2 - 3)
-        dim, bright = QColor(text), QColor(accent)
-        dim.setAlpha(120)
+        amp = rect.height() / 2 - 4
         # Normalize to this recording's loud parts, then compress gently so quiet speech stays visible
         # without loud audio turning into a solid block.
         ref = self._reference_level()
         scaled = np.clip(cols / ref, -1.0, 1.0)
         scaled = np.sign(scaled) * np.abs(scaled) ** 0.8
-        for x in range(len(scaled)):
-            lo, hi = scaled[x]
-            p.setPen(bright if x <= played_x else dim)
-            p.drawLine(x, int(mid - hi * amp), x, int(mid - lo * amp) + 1)
+        played = QLinearGradient(0, mid - amp, 0, mid + amp)
+        played.setColorAt(0.0, QColor(t.foam))
+        played.setColorAt(0.5, accent)
+        played.setColorAt(1.0, QColor(t.accent_deep))
+        rest = theme.color("accent", 0.28 if not t.dark else 0.32)
+        p.setPen(Qt.PenStyle.NoPen)
+        step = BAR_STEP
+        for x0 in range(0, len(scaled), step):
+            seg = scaled[x0:x0 + step]
+            lo, hi = float(seg[:, 0].min()), float(seg[:, 1].max())
+            top, bottom = mid - max(hi, 0.02) * amp, mid - min(lo, -0.02) * amp
+            p.setBrush(played if x0 <= played_x else rest)
+            p.drawRoundedRect(QRectF(x0, top, step - 1, bottom - top), 1, 1)
         # Shade outside the crop
-        shade = QColor(base)
-        shade.setAlpha(190)
+        shade = QColor(surface)
+        shade.setAlpha(200)
         if self.crop_start:
             p.fillRect(QRectF(0, 0, self._x(self.crop_start), rect.height()), shade)
         if self.crop_end is not None and self.crop_end < self.duration:
@@ -151,32 +154,32 @@ class WaveformView(QWidget):
             p.fillRect(QRectF(xe, 0, rect.width() - xe, rect.height()), shade)
         # Interruption markers
         p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QColor("#d9822b"))
-        for t in self.markers:
-            x = self._x(t)
+        p.setBrush(QColor(t.amber))
+        for tm in self.markers:
+            x = self._x(tm)
             p.drawPolygon([QPointF(x - 4, 0), QPointF(x + 4, 0), QPointF(x, 6)])
         # Crop handles (always drawn subtly at the edges so they are discoverable)
-        for which, t in (("start", self._start()), ("end", self._end())):
-            x = self._x(t)
+        for which, tm in (("start", self._start()), ("end", self._end())):
+            x = self._x(tm)
             active = (which == "start" and self.crop_start) or (which == "end" and self.crop_end is not None)
-            c = QColor(accent if active else text)
-            c.setAlpha(255 if active else 90)
-            p.setPen(QPen(c, 2))
+            c = QColor(t.accent_deep) if active else theme.color("muted", 0.4)
             x = min(max(x, 1), rect.width() - 1)
-            p.drawLine(QPointF(x, 0), QPointF(x, rect.height()))
+            if active:
+                p.setPen(QPen(c, 2))
+                p.drawLine(QPointF(x, 0), QPointF(x, rect.height()))
             p.setPen(Qt.PenStyle.NoPen)
             p.setBrush(c)
-            tab = QRectF(x - 4 if which == "end" else x, rect.height() - 14, 4, 14)
-            p.drawRect(tab)
-        # Playhead
-        p.setPen(QPen(accent, 1.5))
-        p.drawLine(QPointF(played_x, 0), QPointF(played_x, rect.height()))
+            p.drawRoundedRect(QRectF(x - 6 if which == "end" else x, rect.height() / 2 - 12, 6, 24), 3, 3)
+        # Playhead: a line with a knob
+        p.setPen(QPen(ink, 2))
+        p.drawLine(QPointF(played_x, 4), QPointF(played_x, rect.height()))
+        p.setPen(QPen(surface, 2))
+        p.setBrush(ink)
+        p.drawEllipse(QPointF(played_x, 5), 4.5, 4.5)
         if self.hasFocus():
-            fc = QColor(accent)
-            fc.setAlpha(120)
-            p.setPen(QPen(fc, 1, Qt.PenStyle.DotLine))
+            p.setPen(QPen(theme.color("accent", 0.5), 1, Qt.PenStyle.DotLine))
             p.setBrush(Qt.BrushStyle.NoBrush)
-            p.drawRect(rect.adjusted(0, 0, -1, -1))
+            p.drawRoundedRect(QRectF(rect).adjusted(0.5, 0.5, -0.5, -0.5), 6, 6)
         p.end()
 
     # ---- interaction ----
@@ -275,27 +278,20 @@ class PlayerPanel(QWidget):
 
     def _build(self):
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(12, 10, 12, 8)
+        lay.setContentsMargins(18, 14, 18, 14)
         lay.setSpacing(6)
         self.title = QLineEdit()
         self.title.setFrame(False)
-        f = QFont(self.font())
-        f.setPointSizeF(f.pointSizeF() * 1.35)
-        f.setWeight(QFont.Weight.DemiBold)
-        self.title.setFont(f)
+        self.title.setObjectName("title")
+        self.title.setFont(theme.display_font(1.65, QFont.Weight.ExtraBold))
         self.title.setPlaceholderText("Untitled")
         self.title.setToolTip("Rename (F2)")
         self.title.setAccessibleName("Title")
         self.title.editingFinished.connect(self._commit_title)
-        self.title.setStyleSheet("QLineEdit { background: transparent; } QLineEdit:focus { background: palette(base); }")
         lay.addWidget(self.title)
         self.subtitle = QLabel("")
         self.subtitle.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        pal = self.subtitle.palette()
-        c = pal.color(QPalette.ColorRole.WindowText)
-        c.setAlpha(160)
-        pal.setColor(QPalette.ColorRole.WindowText, c)
-        self.subtitle.setPalette(pal)
+        theme.set_role(self.subtitle, dim=True)
         lay.addWidget(self.subtitle)
         self.wave = WaveformView()
         self.wave.seek_requested.connect(self.seek)
@@ -304,14 +300,18 @@ class PlayerPanel(QWidget):
         row = QHBoxLayout()
         row.setSpacing(6)
         self.play_btn = QToolButton()
-        self.play_btn.setIcon(icon("play"))
-        self.play_btn.setIconSize(QSize(20, 20))
+        self.play_btn.setObjectName("play")
+        self.play_btn.setIcon(icon("play", "on_accent"))
+        self.play_btn.setIconSize(QSize(18, 18))
+        self.play_btn.setFixedSize(42, 42)
+        self.play_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.play_btn.setToolTip("Play / pause (Space)")
         self.play_btn.setAccessibleName("Play")
         self.play_btn.clicked.connect(self.toggle_play)
         row.addWidget(self.play_btn)
         self.time = QLabel("0:00 / 0:00")
-        self.time.setMinimumWidth(110)
+        self.time.setFont(theme.display_font(1.0, QFont.Weight.DemiBold, tabular=True))
+        self.time.setMinimumWidth(120)
         row.addWidget(self.time)
         self.speed = QComboBox()
         for s in self.SPEEDS:
@@ -470,7 +470,7 @@ class PlayerPanel(QWidget):
 
     def _sync_play_icon(self):
         playing = self.player.playing
-        self.play_btn.setIcon(icon("pause" if playing else "play"))
+        self.play_btn.setIcon(icon("pause" if playing else "play", "on_accent"))
         self.play_btn.setAccessibleName("Pause" if playing else "Play")
         if playing:
             self._timer.start()

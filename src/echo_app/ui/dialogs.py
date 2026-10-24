@@ -5,22 +5,20 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from PySide6.QtCore import QProcess, Qt, QTimer, Signal
-from PySide6.QtGui import QFont, QGuiApplication
+from PySide6.QtCore import QProcess, QRectF, Qt, QTimer, Signal
+from PySide6.QtGui import QFont, QGuiApplication, QPainter
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QFrame,
                                QGridLayout, QHBoxLayout, QLabel, QLineEdit, QProgressBar, QPushButton,
                                QSpinBox, QVBoxLayout, QWidget)
 
 from .. import APP_NAME, __version__, doctor, features, models, selfcmd, settings
+from . import theme
 from .common import icon, run_task
 
 
 def _heading(text: str, scale: float = 1.25) -> QLabel:
     lbl = QLabel(text)
-    f = QFont(lbl.font())
-    f.setPointSizeF(f.pointSizeF() * scale)
-    f.setWeight(QFont.Weight.DemiBold)
-    lbl.setFont(f)
+    lbl.setFont(theme.display_font(scale, QFont.Weight.ExtraBold))
     lbl.setWordWrap(True)
     return lbl
 
@@ -30,11 +28,7 @@ def _dim(text: str) -> QLabel:
     lbl.setWordWrap(True)
     lbl.setOpenExternalLinks(True)
     lbl.setTextFormat(Qt.TextFormat.RichText if "<" in text else Qt.TextFormat.PlainText)
-    pal = lbl.palette()
-    c = pal.color(lbl.foregroundRole())
-    c.setAlpha(175)
-    pal.setColor(lbl.foregroundRole(), c)
-    lbl.setPalette(pal)
+    theme.set_role(lbl, dim=True)
     return lbl
 
 
@@ -100,7 +94,8 @@ class ModelDownload(QWidget):
         self.bar.setRange(0, 1000)
         self.bar.setTextVisible(True)
         row.addWidget(self.bar, 1)
-        self.button = QPushButton(icon("download"), "Download (4.3 GB)")
+        self.button = QPushButton(icon("download", "on_accent"), "Download (4.3 GB)")
+        theme.set_role(self.button, primary=True)
         self.button.clicked.connect(self.start)
         row.addWidget(self.button)
         lay.addLayout(row)
@@ -220,16 +215,52 @@ class ModelDialog(FittedDialog):
 
 # ---- welcome ------------------------------------------------------------------------------------
 
+class WaveBanner(QWidget):
+    """The deep gradient with the wordmark, a line of copy and still waves."""
+
+    def __init__(self, text: str, parent=None):
+        super().__init__(parent)
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(24, 22, 24, 58)
+        lay.setSpacing(6)
+        mark = QLabel("echo")
+        mark.setFont(theme.display_font(2.6, QFont.Weight.ExtraBold))
+        lay.addWidget(mark)
+        self.text = QLabel(text)
+        self.text.setWordWrap(True)
+        self.text.setFont(theme.display_font(1.05, QFont.Weight.DemiBold))
+        lay.addWidget(self.text)
+        for lbl in (mark, self.text):
+            lbl.setStyleSheet("background: transparent;")
+        self._style()
+
+    def _style(self):
+        t = theme.current()
+        self.setStyleSheet(f"QLabel {{ color: {t.on_deep}; background: transparent; }}")
+
+    def paintEvent(self, _):
+        p = QPainter(self)
+        r = QRectF(self.rect())
+        p.fillRect(r, theme.deep_gradient(r))
+        theme.paint_waves(p, QRectF(0, r.height() - 64, r.width(), 64), 1.3, 0.35)
+        p.end()
+
+
 class WelcomeDialog(FittedDialog):
     def __init__(self, recorder_panel, parent=None):
         super().__init__(parent)
         self.setWindowTitle(f"Welcome to {APP_NAME}")
-        self.setFixedWidth(580)
-        lay = QVBoxLayout(self)
+        self.setFixedWidth(600)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        outer.addWidget(WaveBanner("Record long talks and voice notes, drop in audio from WhatsApp or anywhere "
+                                   "else, and get Spanish transcripts made on this computer."))
+        body = QWidget()
+        outer.addWidget(body)
+        lay = QVBoxLayout(body)
+        lay.setContentsMargins(24, 18, 24, 18)
         lay.setSpacing(12)
-        lay.addWidget(_heading(f"Welcome to {APP_NAME}", 1.5))
-        lay.addWidget(_dim("Record long talks and voice notes, drop in audio from WhatsApp or anywhere else, and get "
-                           "Spanish transcripts made on this computer."))
         lay.addWidget(_heading("1. Check your microphone", 1.1))
         lay.addWidget(_dim("Pick the input below and speak; the meter should move. You can change it later at the top "
                            "left of the window."))
@@ -242,11 +273,11 @@ class WelcomeDialog(FittedDialog):
         lay.addLayout(mic)
         from .recorder_panel import LevelMeter
 
-        self.meter = LevelMeter()
+        self.meter = LevelMeter(on_deep=False)
         lay.addWidget(self.meter)
         self.hint = QLabel()
         self.hint.setWordWrap(True)
-        self.hint.setStyleSheet("color: #d9822b;")
+        theme.set_role(self.hint, warn=True)
         self.hint.hide()
         lay.addWidget(self.hint)
         self._meter_timer = QTimer(self, interval=60, timeout=self._mirror_meter)
@@ -259,6 +290,7 @@ class WelcomeDialog(FittedDialog):
         bb = QDialogButtonBox()
         start = bb.addButton("Start using Echo", QDialogButtonBox.ButtonRole.AcceptRole)
         start.setDefault(True)
+        theme.set_role(start, primary=True)
         bb.accepted.connect(self.accept)
         lay.addWidget(bb)
 
@@ -315,6 +347,13 @@ class SettingsDialog(QDialog):
         w.setLayout(row)
         row.setContentsMargins(0, 0, 0, 0)
         form.addRow("Recordings folder", w)
+        self.theme = QComboBox()
+        for label, value in (("Light", theme.LIGHT), ("Dark", theme.DARK), ("Match the system", theme.SYSTEM)):
+            self.theme.addItem(label, value)
+        self.theme.setCurrentIndex(max(0, self.theme.findData(self.cfg.theme)))
+        self._mode_on_open = theme.mode()
+        self.theme.currentIndexChanged.connect(lambda _i: theme.apply(self.theme.currentData()))
+        form.addRow("Appearance", self.theme)
         if recording_active:
             self.data_dir.setEnabled(False)
             browse.setEnabled(False)
@@ -354,6 +393,11 @@ class SettingsDialog(QDialog):
         bb.rejected.connect(self.reject)
         lay.addWidget(bb)
 
+    def reject(self):
+        if theme.mode() != self._mode_on_open:
+            theme.apply(self._mode_on_open)  # undo the live preview
+        super().reject()
+
     def _browse(self):
         d = QFileDialog.getExistingDirectory(self, "Recordings folder", self.data_dir.text())
         if d:
@@ -377,6 +421,7 @@ class SettingsDialog(QDialog):
         self.cfg.auto_transcribe = self.auto.isChecked()
         self.cfg.use_adapter = self.adapter.isChecked()
         self.cfg.worker_idle_minutes = self.idle.value()
+        self.cfg.theme = self.theme.currentData()
         settings.save(self.cfg)
         self.data_changed = self.cfg.data_path != self._old_data
         super().accept()

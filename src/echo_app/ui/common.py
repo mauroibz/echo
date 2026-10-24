@@ -10,49 +10,28 @@ from typing import Any, Callable
 
 from PySide6.QtCore import QObject, QRunnable, QThreadPool, Qt, Signal
 from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
-from PySide6.QtWidgets import QApplication, QStyle
 
 from .. import paths
+from . import theme
 from ..fsutil import atomic_write_json
 
 log = logging.getLogger(__name__)
 
-# Theme icon names (freedesktop / Breeze) with a Qt standard-pixmap fallback.
+# Icon names used in the UI, mapped to the bundled Lucide set (see theme.TintedIcon).
 _ICONS = {
-    "record": ("media-record", None),
-    "pause": ("media-playback-pause", QStyle.StandardPixmap.SP_MediaPause),
-    "stop": ("media-playback-stop", QStyle.StandardPixmap.SP_MediaStop),
-    "play": ("media-playback-start", QStyle.StandardPixmap.SP_MediaPlay),
-    "listen": ("audio-headphones", QStyle.StandardPixmap.SP_MediaVolume),
-    "copy": ("edit-copy", None),
-    "export": ("document-save-as", QStyle.StandardPixmap.SP_DialogSaveButton),
-    "import": ("document-open", QStyle.StandardPixmap.SP_DialogOpenButton),
-    "delete": ("edit-delete", QStyle.StandardPixmap.SP_TrashIcon),
-    "rename": ("edit-rename", None),
-    "transcribe": ("view-refresh", QStyle.StandardPixmap.SP_BrowserReload),
-    "revert": ("edit-undo", None),
-    "cancel": ("dialog-cancel", QStyle.StandardPixmap.SP_DialogCancelButton),
-    "folder": ("folder-open", QStyle.StandardPixmap.SP_DirOpenIcon),
-    "find": ("edit-find", None),
-    "settings": ("configure", None),
-    "crop": ("transform-crop", None),
-    "clear": ("edit-clear", None),
-    "help": ("help-about", QStyle.StandardPixmap.SP_MessageBoxQuestion),
-    "warning": ("dialog-warning", QStyle.StandardPixmap.SP_MessageBoxWarning),
-    "error": ("dialog-error", QStyle.StandardPixmap.SP_MessageBoxCritical),
-    "ok": ("dialog-ok-apply", QStyle.StandardPixmap.SP_DialogApplyButton),
-    "download": ("download", QStyle.StandardPixmap.SP_ArrowDown),
+    "pause": "pause", "stop": "square", "play": "play", "listen": "headphones", "copy": "copy",
+    "export": "upload", "import": "download", "delete": "trash-2", "rename": "pencil", "transcribe": "audio-lines",
+    "revert": "undo-2", "cancel": "x", "close": "x", "folder": "folder-open", "find": "search",
+    "settings": "settings", "crop": "crop", "clear": "eraser", "help": "circle-help", "warning": "triangle-alert",
+    "error": "circle-alert", "ok": "circle-check", "download": "download", "more": "ellipsis", "mic": "mic",
 }
 
 
-def icon(name: str) -> QIcon:
-    theme, fallback = _ICONS.get(name, (name, None))
-    ic = QIcon.fromTheme(theme)
-    if ic.isNull() and name == "record":
-        return dot_icon(QColor("#e5484d"))
-    if ic.isNull() and fallback is not None:
-        ic = QApplication.style().standardIcon(fallback)
-    return ic
+def icon(name: str, role: str = "ink") -> QIcon:
+    """A bundled icon tinted with a theme color role; "record" is the coral dot."""
+    if name == "record":
+        return dot_icon(theme.color("coral_deep"))
+    return theme.tinted(_ICONS.get(name, name), role)
 
 
 def dot_icon(color: QColor, size: int = 32, ring: bool = False) -> QIcon:
@@ -75,11 +54,11 @@ def app_icon() -> QIcon:
     ic = QIcon.fromTheme("echo-app")
     if ic.isNull():
         svg = paths.repo_root() / "data" / "echo-app.svg"
-        ic = QIcon(str(svg)) if svg.exists() else dot_icon(QColor("#e5484d"))
+        ic = QIcon(str(svg)) if svg.exists() else dot_icon(RECORD_RED)
     return ic
 
 
-RECORD_RED = QColor("#e5484d")
+RECORD_RED = QColor(theme.LAGOON_LIGHT.coral_deep)
 
 
 # ---- background tasks -------------------------------------------------------------------------

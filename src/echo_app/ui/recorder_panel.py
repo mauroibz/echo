@@ -5,19 +5,21 @@ from __future__ import annotations
 import logging
 import time
 
-from PySide6.QtCore import QRectF, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFontDatabase, QPainter, QPalette
-from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QLabel, QSizePolicy, QToolButton, QVBoxLayout,
-                               QWidget)
+from PySide6.QtCore import QPointF, QRectF, QSize, Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QFont, QLinearGradient, QPainter
+from PySide6.QtWidgets import (QComboBox, QGraphicsDropShadowEffect, QHBoxLayout, QLabel, QSizePolicy, QToolButton,
+                               QVBoxLayout, QWidget)
 
 from .. import recorder, settings
 from ..audio import levels, monitor, pipewire
 from ..library import Library
-from .common import RECORD_RED, dot_icon, fmt_duration, icon, run_task
+from . import theme
+from .common import dot_icon, fmt_duration, icon, run_task
 
 log = logging.getLogger(__name__)
 
 FLOOR_DB = -60.0
+WAVE_HEIGHT = 64
 # Exact digital silence: a connected microphone with its gain up never produces it.
 SILENT_DB = levels.SILENCE_DB + 1
 SILENT_AFTER_S = 4.0
@@ -28,10 +30,11 @@ SILENT_HINT = ("No sound from this input for {s} seconds. Check that the microph
 class LevelMeter(QWidget):
     """Horizontal peak meter with a decaying peak-hold mark and a clip lamp."""
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, on_deep: bool = True):
         super().__init__(parent)
-        self.setMinimumHeight(10)
-        self.setMaximumHeight(12)
+        self.on_deep = on_deep  # drawn on the sidebar's deep gradient, or on a light surface
+        self.setMinimumHeight(14)
+        self.setMaximumHeight(14)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self._level = FLOOR_DB
         self._hold = FLOOR_DB
@@ -51,7 +54,7 @@ class LevelMeter(QWidget):
         self.update()
 
     def sizeHint(self) -> QSize:
-        return QSize(200, 10)
+        return QSize(200, 14)
 
     @staticmethod
     def _frac(db: float) -> float:
@@ -60,27 +63,30 @@ class LevelMeter(QWidget):
     def paintEvent(self, _):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        pal = self.palette()
-        lamp = 10
-        r = QRectF(0, 0, self.width() - lamp - 6, self.height())
-        track = QColor(pal.color(QPalette.ColorRole.Text))
-        track.setAlpha(28)
+        t = theme.current()
+        lamp = 8
+        h = self.height()
+        r = QRectF(0, (h - 6) / 2, self.width() - lamp - 8, 6)
         p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(track)
+        ground = "on_deep" if self.on_deep else "muted"
+        p.setBrush(theme.color(ground, 0.14 if self.on_deep else 0.18))
         p.drawRoundedRect(r, 3, 3)
         w = r.width() * self._frac(self._level)
-        green, amber = QColor("#30a46c"), QColor("#f5a524")
-        p.setBrush(green if self._level < -12 else amber if self._level < -3 else RECORD_RED)
         if w > 0:
-            p.drawRoundedRect(QRectF(r.left(), r.top(), w, r.height()), 3, 3)
-        hx = r.left() + r.width() * self._frac(self._hold)
+            g = QLinearGradient(r.topLeft(), r.topRight())
+            g.setColorAt(0.0, QColor(t.accent))
+            g.setColorAt(0.70, QColor(t.foam))
+            g.setColorAt(0.86, QColor(t.amber))
+            g.setColorAt(1.0, QColor(t.coral_deep))
+            p.setBrush(g)
+            p.drawRoundedRect(QRectF(r.left(), r.top(), max(w, 6), r.height()), 3, 3)
         if self._hold > FLOOR_DB + 1:
-            p.setBrush(pal.color(QPalette.ColorRole.Text))
-            p.drawRect(QRectF(hx - 1, r.top(), 2, r.height()))
+            hx = r.left() + r.width() * self._frac(self._hold)
+            p.setBrush(theme.color("on_deep" if self.on_deep else "ink", 0.9))
+            p.drawRoundedRect(QRectF(hx - 1, r.top() - 2, 2, r.height() + 4), 1, 1)
         clipping = time.monotonic() < self._clip_until
-        lamp_color = RECORD_RED if clipping else track
-        p.setBrush(lamp_color)
-        p.drawEllipse(QRectF(self.width() - lamp, (self.height() - lamp) / 2, lamp, lamp))
+        p.setBrush(QColor(t.coral_deep) if clipping else theme.color(ground, 0.18))
+        p.drawEllipse(QRectF(self.width() - lamp, (h - lamp) / 2, lamp, lamp))
 
 
 class SourceCombo(QComboBox):
@@ -107,6 +113,9 @@ class RecorderPanel(QWidget):
         self._busy = False
         self._window_shown = True
         self._silent_since: float | None = None
+        self._state = ""
+        self._phase, self._swell, self._wave_t = 0.0, 0.0, time.monotonic()
+        self._wave_timer = QTimer(self, interval=33, timeout=self._animate)
         self._build()
         self._timer = QTimer(self, interval=100, timeout=self._tick)
         self._timer.start()
@@ -116,19 +125,35 @@ class RecorderPanel(QWidget):
     # ---- layout ----
     def _build(self):
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(10, 10, 10, 6)
-        lay.setSpacing(8)
+        lay.setContentsMargins(16, 14, 16, WAVE_HEIGHT - 10)
+        lay.setSpacing(10)
+
+        brand = QHBoxLayout()
+        brand.setSpacing(8)
+        self.wordmark = QLabel("echo")
+        self.wordmark.setFont(theme.display_font(2.1, QFont.Weight.ExtraBold))
+        self.wordmark.setAccessibleName("Echo")
+        brand.addWidget(self.wordmark)
+        brand.addStretch(1)
+        self.state_label = QLabel("")
+        self.state_label.setFont(theme.display_font(0.9, QFont.Weight.Bold))
+        brand.addWidget(self.state_label)
+        lay.addLayout(brand)
+
         row = QHBoxLayout()
+        row.setSpacing(8)
         self.source = SourceCombo()
         self.source.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
-        self.source.setMinimumContentsLength(12)
+        self.source.setMinimumContentsLength(10)
         self.source.setToolTip("Input to record from")
         self.source.setAccessibleName("Input source")
         self.source.aboutToShow.connect(self.reload_sources)
         self.source.activated.connect(self._source_chosen)
         row.addWidget(self.source, 1)
         self.listen = QToolButton()
-        self.listen.setIcon(icon("listen"))
+        self.listen.setIcon(icon("listen", "on_deep"))
+        self.listen.setIconSize(QSize(18, 18))
+        self.listen.setFixedSize(38, 34)
         self.listen.setCheckable(True)
         self.listen.setToolTip("Listen to this input through your speakers or headphones")
         self.listen.setAccessibleName("Listen to input")
@@ -140,42 +165,65 @@ class RecorderPanel(QWidget):
         lay.addWidget(self.meter)
 
         ctl = QHBoxLayout()
-        ctl.setSpacing(6)
+        ctl.setSpacing(8)
         self.record_btn = QToolButton()
+        self.record_btn.setObjectName("record")
         self.record_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-        self.record_btn.setIconSize(QSize(22, 22))
-        self.record_btn.setMinimumHeight(36)
+        self.record_btn.setIconSize(QSize(18, 18))
+        self.record_btn.setFixedHeight(46)
         self.record_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.record_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.record_btn.clicked.connect(self.toggle_record)
+        self._glow = QGraphicsDropShadowEffect(self.record_btn, blurRadius=28, offset=QPointF(0, 6))
+        self.record_btn.setGraphicsEffect(self._glow)
         ctl.addWidget(self.record_btn, 1)
         self.pause_btn = QToolButton()
-        self.pause_btn.setIcon(icon("pause"))
-        self.pause_btn.setIconSize(QSize(20, 20))
-        self.pause_btn.setMinimumSize(36, 36)
+        self.pause_btn.setObjectName("pause")
+        self.pause_btn.setIcon(icon("pause", "on_deep"))
+        self.pause_btn.setIconSize(QSize(18, 18))
+        self.pause_btn.setFixedSize(46, 46)
         self.pause_btn.setToolTip("Pause recording (Ctrl+Shift+R)")
         self.pause_btn.setAccessibleName("Pause recording")
         self.pause_btn.clicked.connect(self.toggle_pause)
         ctl.addWidget(self.pause_btn)
         lay.addLayout(ctl)
 
-        info = QHBoxLayout()
         self.elapsed = QLabel("0:00:00")
-        f = QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont)
-        f.setPointSizeF(max(13.0, self.font().pointSizeF() * 1.45))
-        self.elapsed.setFont(f)
+        self.elapsed.setFont(theme.display_font(2.3, QFont.Weight.Light, tabular=True))
         self.elapsed.setAccessibleName("Recorded time")
-        info.addWidget(self.elapsed)
-        info.addStretch(1)
-        self.state_label = QLabel("")
-        info.addWidget(self.state_label)
-        lay.addLayout(info)
+        lay.addWidget(self.elapsed)
 
         self.warning = QLabel("")
         self.warning.setWordWrap(True)
-        self.warning.setStyleSheet("color: #d9822b;")
+        theme.set_role(self.warning, warn=True)
         self.warning.hide()
         lay.addWidget(self.warning)
         self._update_buttons()
+
+    # ---- waves ----
+    def _animate(self):
+        now = time.monotonic()
+        dt, self._wave_t = min(0.1, now - self._wave_t), now
+        live = self.session is not None and self._state != recorder.S_PAUSED
+        target = max(0.0, min(1.0, (self.meter._level - FLOOR_DB) / -FLOOR_DB)) if (live or self._monitor) else 0.0
+        self._swell += (target - self._swell) * min(1.0, dt * 6)
+        self._phase += dt * (0.9 + 2.2 * self._swell)
+        self.update(0, self.height() - WAVE_HEIGHT, self.width(), WAVE_HEIGHT)
+        # Rest when nothing moves: no input, not recording.
+        if not live and self._swell < 0.01 and target == 0.0:
+            self._wave_timer.stop()
+
+    def _wake_waves(self):
+        if not self._wave_timer.isActive() and self._window_shown:
+            self._wave_t = time.monotonic()
+            self._wave_timer.start()
+
+    def paintEvent(self, _):
+        p = QPainter(self)
+        r = QRectF(0, self.height() - WAVE_HEIGHT, self.width(), WAVE_HEIGHT)
+        recording = self.session is not None and self._state != recorder.S_PAUSED
+        theme.paint_waves(p, r, self._phase, self._swell, theme.color("coral") if recording else None)
+        p.end()
 
     # ---- sources ----
     def reload_sources(self):
@@ -201,7 +249,7 @@ class RecorderPanel(QWidget):
             if last_kind is not None and s.kind != last_kind:
                 self.source.insertSeparator(self.source.count())
             last_kind = s.kind
-            self.source.addItem(s.label, s.name)
+            self.source.addItem(s.short_label, s.name)
             tip = s.label + (" (system default input)" if s.is_default and s.kind == pipewire.INPUT else "")
             self.source.setItemData(self.source.count() - 1, tip, Qt.ItemDataRole.ToolTipRole)
         idx = self.source.findData(current) if current else -1
@@ -237,6 +285,8 @@ class RecorderPanel(QWidget):
         if shown == self._window_shown:
             return
         self._window_shown = shown
+        if not shown:
+            self._wave_timer.stop()
         self._restart_monitor()
 
     def _want_monitor(self) -> bool:
@@ -332,20 +382,28 @@ class RecorderPanel(QWidget):
 
     def _update_buttons(self):
         rec = self.session is not None
+        t = theme.current()
         if rec:
-            self.record_btn.setIcon(icon("stop"))
+            self.record_btn.setIcon(icon("stop", "coral_deep"))
             self.record_btn.setText("Stop")
             self.record_btn.setToolTip("Stop and save (Ctrl+R)")
+            glow = theme.color("on_deep", 0.35)
         else:
-            self.record_btn.setIcon(dot_icon(RECORD_RED, 44))
+            self.record_btn.setIcon(dot_icon(QColor("#ffffff"), 44, ring=False))
             self.record_btn.setText("Record")
             self.record_btn.setToolTip("Start recording (Ctrl+R)")
+            glow = QColor(t.coral_deep)
+            glow.setAlphaF(0.55)
+        self._glow.setColor(glow)
+        theme.set_role(self.record_btn, recording=rec)
         self.record_btn.setAccessibleName(self.record_btn.text())
         self.record_btn.setEnabled(not self._busy)
         self.pause_btn.setVisible(rec)
         self.pause_btn.setEnabled(rec and not self._busy)
         if not rec:
             self.elapsed.setText("0:00:00")
+            self.state_label.setText("")
+        self._wake_waves()
 
     # ---- ticking ----
     def _tick(self):
@@ -362,9 +420,12 @@ class RecorderPanel(QWidget):
             st = sess.status()
             self.elapsed.setText(fmt_duration(st.get("elapsed", 0), always_hours=True))
             paused = st.get("state") == recorder.S_PAUSED
-            self.state_label.setText("Paused" if paused else "● Recording")
-            self.state_label.setStyleSheet("" if paused else f"color: {RECORD_RED.name()}; font-weight: 600;")
-            self.pause_btn.setIcon(icon("record" if paused else "pause"))
+            if st.get("state") != self._state:
+                self._state = st.get("state") or ""
+                self.state_label.setText("PAUSED" if paused else "● REC")
+                self.state_label.setStyleSheet("" if paused else f"color: {theme.current().coral};")
+                self.pause_btn.setIcon(icon("record") if paused else icon("pause", "on_deep"))
+                self._wake_waves()
             self.pause_btn.setToolTip("Resume recording (Ctrl+Shift+R)" if paused else "Pause recording (Ctrl+Shift+R)")
             take = sess.current_take()
             db = None
@@ -375,11 +436,13 @@ class RecorderPanel(QWidget):
                 self.meter.set_level(FLOOR_DB)
             self._show_warning(st.get("warning") or self._silence_hint(db))
         else:
-            self.state_label.setText("")
+            self._state = ""
             db = None
             if self._monitor and self._monitor.running():
                 db = self._monitor.level
                 self.meter.set_level(db, self._monitor.take_clip())
+                if db > FLOOR_DB:
+                    self._wake_waves()
             else:
                 self.meter.set_level(FLOOR_DB)
             self._show_warning(self._silence_hint(db))

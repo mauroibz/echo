@@ -32,6 +32,11 @@ def default_data_dir() -> Path:
     return _xdg("XDG_DATA_HOME", ".local/share") / "echo"
 
 
+def cache_dir() -> Path:
+    """Rebuildable files: waveform peaks, theme images."""
+    return _xdg("XDG_CACHE_HOME", ".cache") / "echo"
+
+
 def runtime_dir() -> Path:
     """Sockets and locks. Falls back to the state dir if XDG_RUNTIME_DIR is unset."""
     if v := os.environ.get("ECHO_RUNTIME_DIR"):

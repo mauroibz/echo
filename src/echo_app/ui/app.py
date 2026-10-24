@@ -72,9 +72,13 @@ def run(argv: list[str]) -> int:
     cfg, warning = settings.load()
     if first_run:
         settings.save(cfg)
+    from . import theme
     from .common import UiState, app_icon
     from .main_window import MainWindow
 
+    theme.apply(cfg.theme, app)
+    hints = app.styleHints()
+    hints.colorSchemeChanged.connect(lambda _s: theme.apply(theme.mode(), app) if theme.mode() == theme.SYSTEM else None)
     app.setWindowIcon(app_icon())
     app.setQuitOnLastWindowClosed(False)
     lib = Library(cfg.data_path)

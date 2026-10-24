@@ -6,7 +6,7 @@ import logging
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QItemSelectionModel, QObject, QSize, Qt, QTimer, QUrl
-from PySide6.QtGui import QAction, QCloseEvent, QDesktopServices, QKeySequence, QShortcut
+from PySide6.QtGui import QAction, QCloseEvent, QDesktopServices, QFont, QKeySequence, QShortcut
 from PySide6.QtWidgets import (QAbstractItemView, QApplication, QFileDialog, QFrame, QLabel, QLineEdit, QListView,
                                QMainWindow, QMenu, QMessageBox, QSplitter, QStatusBar, QSystemTrayIcon, QVBoxLayout,
                                QWidget)
@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QFileDialog, QFr
 from .. import APP_NAME, export, features, importer, recorder, transcription
 from ..index import Index
 from ..library import READY, RECORDING, T_QUEUED, T_RUNNING, Library, Recording
+from . import theme
 from .common import RECORD_RED, UiState, app_icon, dot_icon, fmt_duration, icon, run_task
 from .dialogs import AboutDialog, DoctorDialog, ModelDialog, SettingsDialog, ShortcutsDialog, WelcomeDialog
 from .library_view import LibraryModel, RowDelegate
@@ -42,10 +43,19 @@ class DropOverlay(QLabel):
     def __init__(self, parent):
         super().__init__("Drop audio files to import", parent)
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.setStyleSheet("QLabel { background: rgba(40, 120, 220, 40); border: 2px dashed palette(highlight);"
-                           " border-radius: 10px; font-size: 18px; font-weight: 600; }")
+        self.setFont(theme.display_font(1.6, QFont.Weight.ExtraBold))
+        self._restyle()
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         self.hide()
+
+    def _restyle(self):
+        t = theme.current()
+        self.setStyleSheet(f"QLabel {{ background: {theme.rgba('deep_mid', 0.82)}; color: {t.on_deep};"
+                           f" border: 2px dashed {t.foam}; border-radius: 18px; }}")
+
+    def showEvent(self, e):
+        self._restyle()
+        super().showEvent(e)
 
 
 class MainWindow(QMainWindow):
@@ -81,8 +91,13 @@ class MainWindow(QMainWindow):
 
         self.search = QLineEdit()
         self.search.setPlaceholderText("Search titles and transcripts")
-        self.search.setClearButtonEnabled(True)
         self.search.setAccessibleName("Search recordings")
+        self.search.addAction(icon("find", "on_deep_muted"), QLineEdit.ActionPosition.LeadingPosition)
+        self._clear_search = self.search.addAction(icon("close", "on_deep"), QLineEdit.ActionPosition.TrailingPosition)
+        self._clear_search.setToolTip("Clear (Esc)")
+        self._clear_search.triggered.connect(self.search.clear)
+        self._clear_search.setVisible(False)
+        self.search.textChanged.connect(lambda t: self._clear_search.setVisible(bool(t)))
         self.search.textChanged.connect(lambda _t: self._search_timer.start())
 
         self.model = LibraryModel(self.library, self)
@@ -93,6 +108,9 @@ class MainWindow(QMainWindow):
         self.list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.list.setUniformItemSizes(True)
         self.list.setFrameShape(QFrame.Shape.NoFrame)
+        self.list.setMouseTracking(True)
+        self.list.viewport().setAttribute(Qt.WidgetAttribute.WA_Hover)
+        self.list.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
         self.list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.list.customContextMenuRequested.connect(self._context_menu)
         self.list.selectionModel().currentChanged.connect(self._selection_changed)
@@ -101,26 +119,24 @@ class MainWindow(QMainWindow):
         self.empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.empty.setWordWrap(True)
         self.empty.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-        pal = self.empty.palette()
-        c = pal.color(self.empty.foregroundRole())
-        c.setAlpha(150)
-        pal.setColor(self.empty.foregroundRole(), c)
-        self.empty.setPalette(pal)
+        theme.set_role(self.empty, dim=True)
 
-        left = QWidget()
+        left = theme.DeepBackground()
+        left.setObjectName("sidebar")
         ll = QVBoxLayout(left)
         ll.setContentsMargins(0, 0, 0, 0)
         ll.setSpacing(0)
         ll.addWidget(self.recorder_panel)
         sw = QWidget()
         sl = QVBoxLayout(sw)
-        sl.setContentsMargins(10, 4, 10, 6)
+        sl.setContentsMargins(14, 2, 14, 4)
+        sl.setSpacing(12)
         sl.addWidget(self.search)
+        self.list_label = QLabel("RECORDINGS")
+        self.list_label.setFont(theme.display_font(0.78, QFont.Weight.ExtraBold))
+        theme.set_role(self.list_label, eyebrow=True)
+        sl.addWidget(self.list_label)
         ll.addWidget(sw)
-        sep = QFrame()
-        sep.setFrameShape(QFrame.Shape.HLine)
-        sep.setFrameShadow(QFrame.Shadow.Sunken)
-        ll.addWidget(sep)
         ll.addWidget(self.list, 1)
 
         self.player = PlayerPanel()
@@ -135,15 +151,25 @@ class MainWindow(QMainWindow):
         self.transcript.changed.connect(self.model.reload)
         self.player.position_changed.connect(self.transcript.follow)
 
+        for card in (self.player, self.transcript):
+            card.setObjectName("card")
+            card.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.right_split = QSplitter(Qt.Orientation.Vertical)
+        self.right_split.setObjectName("content")
         self.right_split.addWidget(self.player)
         self.right_split.addWidget(self.transcript)
         self.right_split.setStretchFactor(0, 0)
         self.right_split.setStretchFactor(1, 1)
         self.right_split.setChildrenCollapsible(False)
+        right = QWidget()
+        rl = QVBoxLayout(right)
+        rl.setContentsMargins(14, 14, 14, 8)
+        rl.addWidget(self.right_split)
         self.split = QSplitter(Qt.Orientation.Horizontal)
+        self.split.setObjectName("main")
+        self.split.setHandleWidth(1)
         self.split.addWidget(left)
-        self.split.addWidget(self.right_split)
+        self.split.addWidget(right)
         self.split.setStretchFactor(0, 0)
         self.split.setStretchFactor(1, 1)
         self.split.setChildrenCollapsible(False)
@@ -351,6 +377,9 @@ class MainWindow(QMainWindow):
             self.empty.resize(self.list.viewport().size())
             self.empty.move(0, 0)
         self.empty.setVisible(empty)
+        n = self.model.total
+        shown = self.model.rowCount()
+        self.list_label.setText("RECORDINGS" + (f"  ·  {shown} OF {n}" if self.search.text() else f"  ·  {n}" if n else ""))
 
     def _update_title(self):
         sess = self.recorder_panel.session

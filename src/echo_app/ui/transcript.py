@@ -7,7 +7,7 @@ import os
 import unicodedata
 
 from PySide6.QtCore import QSize, Qt, QTimer, Signal
-from PySide6.QtGui import (QAction, QColor, QFont, QKeySequence, QMouseEvent, QPalette, QTextCharFormat, QTextCursor)
+from PySide6.QtGui import QAction, QColor, QFont, QKeySequence, QMouseEvent, QTextCharFormat, QTextCursor
 from PySide6.QtWidgets import (QApplication, QFileDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QMenu, QMessageBox,
                                QPlainTextEdit, QProgressBar, QPushButton, QStackedWidget, QTextEdit, QToolButton,
                                QVBoxLayout, QWidget)
@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (QApplication, QFileDialog, QFrame, QHBoxLayout, Q
 from .. import export, features, models, recorder, transcription
 from ..library import (EDITED, NEEDS_FINALIZE, READY, RECORDING, T_FAILED, T_QUEUED, T_RUNNING,
                        TRANSCRIPT, Library, Recording)
+from . import theme
 from .common import fmt_date, fmt_duration, fmt_eta, icon, run_task
 
 log = logging.getLogger(__name__)
@@ -62,15 +63,16 @@ class StateView(QWidget):
         super().__init__(parent)
         lay = QVBoxLayout(self)
         lay.addStretch(1)
+        self.glyph = QLabel()
+        self.glyph.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lay.addWidget(self.glyph)
         self.headline = QLabel()
-        f = QFont(self.font())
-        f.setPointSizeF(f.pointSizeF() * 1.2)
-        f.setWeight(QFont.Weight.DemiBold)
-        self.headline.setFont(f)
+        self.headline.setFont(theme.display_font(1.35, QFont.Weight.ExtraBold))
         self.headline.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.headline.setWordWrap(True)
         lay.addWidget(self.headline)
         self.detail = QLabel()
+        theme.set_role(self.detail, dim=True)
         self.detail.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.detail.setWordWrap(True)
         self.detail.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
@@ -92,7 +94,8 @@ class StateView(QWidget):
         self._btns: list[QPushButton] = []
 
     def show_state(self, headline: str, detail: str = "", progress: float | None = None,
-                   busy: bool = False, actions=()):
+                   busy: bool = False, actions=(), glyph: str = "transcribe"):
+        self.glyph.setPixmap(icon(glyph, "accent").pixmap(QSize(44, 44), self.devicePixelRatioF()))
         self.headline.setText(headline)
         self.detail.setText(detail)
         self.detail.setVisible(bool(detail))
@@ -118,6 +121,7 @@ class StateView(QWidget):
             b.clicked.connect(fn)
             if default:
                 b.setDefault(True)
+                theme.set_role(b, primary=True)
             self.buttons.addWidget(b)
             self._btns.append(b)
         self.buttons.addStretch(1)
@@ -155,15 +159,13 @@ class TranscriptPanel(QWidget):
 
         page = QWidget()
         pl = QVBoxLayout(page)
-        pl.setContentsMargins(12, 6, 12, 8)
-        pl.setSpacing(6)
+        pl.setContentsMargins(16, 12, 16, 10)
+        pl.setSpacing(8)
         bar = QHBoxLayout()
+        bar.setSpacing(4)
         self.status = QLabel()
-        dimpal = self.status.palette()
-        c = dimpal.color(QPalette.ColorRole.WindowText)
-        c.setAlpha(170)
-        dimpal.setColor(QPalette.ColorRole.WindowText, c)
-        self.status.setPalette(dimpal)
+        self.status.setFont(theme.display_font(0.85, QFont.Weight.Bold))
+        theme.set_role(self.status, dim=True)
         bar.addWidget(self.status, 1)
 
         def tool(text, ic, fn, tip):
@@ -179,8 +181,10 @@ class TranscriptPanel(QWidget):
         self.copy_btn = tool("Copy", "copy", self.copy_all, "Copy the whole transcript (Ctrl+Shift+C)")
         self.export_btn = tool("Export…", "export", self.export_text, "Save as .txt or .md (Ctrl+E)")
         self.more_btn = QToolButton()
-        self.more_btn.setText("More")
-        self.more_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
+        self.more_btn.setIcon(icon("more"))
+        self.more_btn.setToolTip("More actions")
+        self.more_btn.setAccessibleName("More actions")
+        self.more_btn.setStyleSheet("QToolButton::menu-indicator { image: none; width: 0; }")
         self.more_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         menu = QMenu(self.more_btn)
         self.act_find = menu.addAction(icon("find"), "Find…  (Ctrl+F)", self.open_find)
@@ -193,9 +197,9 @@ class TranscriptPanel(QWidget):
         pl.addLayout(bar)
 
         self.notice = QFrame()
-        self.notice.setFrameShape(QFrame.Shape.StyledPanel)
+        self.notice.setObjectName("notice")
         nl = QHBoxLayout(self.notice)
-        nl.setContentsMargins(8, 4, 8, 4)
+        nl.setContentsMargins(12, 6, 8, 6)
         self.notice_text = QLabel()
         self.notice_text.setWordWrap(True)
         nl.addWidget(self.notice_text, 1)
@@ -214,22 +218,17 @@ class TranscriptPanel(QWidget):
         pl.addWidget(self.notice)
 
         self.editor = Editor()
+        self.editor.setObjectName("editor")
         self.editor.setFrameShape(QFrame.Shape.NoFrame)
         self.editor.setLineWrapMode(QPlainTextEdit.LineWrapMode.WidgetWidth)
         self.editor.setTabChangesFocus(True)
         self.editor.setAccessibleName("Transcript")
-        ef = QFont(self.font())
-        ef.setPointSizeF(ef.pointSizeF() * 1.12)
-        self.editor.setFont(ef)
-        self.editor.document().setDocumentMargin(10)
+        self.editor.setFont(theme.reading_font())
+        self.editor.document().setDocumentMargin(14)
         self.editor.textChanged.connect(self._on_text_changed)
         self.editor.ctrl_clicked.connect(self._on_ctrl_click)
         # Centered reading column on wide windows, on a full-width text background.
         column = QWidget()
-        column.setAutoFillBackground(True)
-        cpal = column.palette()
-        cpal.setColor(QPalette.ColorRole.Window, cpal.color(QPalette.ColorRole.Base))
-        column.setPalette(cpal)
         cl = QHBoxLayout(column)
         cl.setContentsMargins(0, 0, 0, 0)
         cl.addStretch(1)
@@ -296,7 +295,7 @@ class TranscriptPanel(QWidget):
         rec = self.rec
         if rec is None:
             self.stack.setCurrentWidget(self.state)
-            self.state.show_state("No recording selected", "Select a recording on the left to see its transcript.")
+            self.state.show_state("No recording selected", "Select a recording on the left to see its transcript.", glyph="audio-lines")
             return
         rec = self.library.get(rec.id) or rec
         self.rec = rec
@@ -307,14 +306,14 @@ class TranscriptPanel(QWidget):
             self.stack.setCurrentWidget(self.state)
             self.state.show_state("Recording in progress",
                                   "The transcript will be created when you stop." if auto
-                                  else "You can transcribe it after you stop.")
+                                  else "You can transcribe it after you stop.", glyph="mic")
             return
         if rec.meta.state == NEEDS_FINALIZE:
             self.stack.setCurrentWidget(self.state)
             self.state.show_state("This recording needs attention",
                                   (rec.meta.error or "Saving did not complete.") +
                                   "\nThe raw audio is safe on disk.",
-                                  actions=[("Try saving again", "ok", self._retry_finalize, True)])
+                                  actions=[("Try saving again", "ok", self._retry_finalize, True)], glyph="warning")
             return
         if rec.meta.state != READY:
             self.stack.setCurrentWidget(self.state)
@@ -344,11 +343,12 @@ class TranscriptPanel(QWidget):
             actions = [("Try again", "transcribe", lambda: self.request(None), True)]
             if "models download" in err or not models.all_cached():
                 actions.insert(0, ("Download model…", "download", self.download_requested.emit, True))
-            self.state.show_state("Transcription failed", err, actions=actions)
+            self.state.show_state("Transcription failed", err, actions=actions, glyph="error")
         else:
             if not features.transcription_installed():
                 self.state.show_state("Transcription is not installed",
-                                      "Install it from the Echo folder with:\n./install.sh --with-transcription")
+                                      "Install it from the Echo folder with:\n./install.sh --with-transcription",
+                                      glyph="download")
             elif not models.all_cached():
                 self.state.show_state("Not transcribed yet",
                                       "The transcription model needs to be downloaded once (about 4.3 GB).",
@@ -653,14 +653,11 @@ class TranscriptPanel(QWidget):
 
     def _apply_selections(self):
         sels = []
-        pal = self.editor.palette()
         if 0 <= self._current_span < len(self._spans):
             a, b, _ = self._spans[self._current_span]
             s = QTextEdit.ExtraSelection()
             fmt = QTextCharFormat()
-            hl = QColor(pal.color(QPalette.ColorRole.Highlight))
-            hl.setAlpha(45)
-            fmt.setBackground(hl)
+            fmt.setBackground(QColor(theme.current().accent_soft))
             s.format = fmt
             cur = QTextCursor(self.editor.document())
             cur.setPosition(a)
@@ -671,9 +668,10 @@ class TranscriptPanel(QWidget):
             for k, (a, b) in enumerate(self._find_matches):
                 s = QTextEdit.ExtraSelection()
                 fmt = QTextCharFormat()
-                fmt.setBackground(QColor("#f5a524") if k == self._find_index else QColor(245, 165, 36, 90))
+                fmt.setBackground(QColor(theme.current().amber) if k == self._find_index
+                                  else theme.color("find", 0.45))
                 if k == self._find_index:
-                    fmt.setForeground(QColor("#000000"))
+                    fmt.setForeground(QColor(theme.LAGOON_LIGHT.ink))
                 s.format = fmt
                 cur = QTextCursor(self.editor.document())
                 cur.setPosition(a)

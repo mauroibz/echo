@@ -5,14 +5,15 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
-from PySide6.QtCore import QAbstractListModel, QModelIndex, QRect, QSize, Qt
-from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPalette
+from PySide6.QtCore import QAbstractListModel, QModelIndex, QRect, QRectF, QSize, Qt
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter
 from PySide6.QtWidgets import QStyle, QStyledItemDelegate, QStyleOptionViewItem
 
 from .. import recorder
 from ..library import (FAILED, NEEDS_FINALIZE, READY, RECORDING, T_DONE, T_FAILED, T_QUEUED, T_RUNNING,
                        Library, Recording)
-from .common import RECORD_RED, fmt_date, fmt_duration, fmt_eta
+from . import theme
+from .common import fmt_date, fmt_duration, fmt_eta
 
 ROLE_REC = Qt.ItemDataRole.UserRole + 1
 ROLE_STATUS = Qt.ItemDataRole.UserRole + 2
@@ -196,75 +197,91 @@ class LibraryModel(QAbstractListModel):
 
 
 class RowDelegate(QStyledItemDelegate):
-    PAD = 8
+    """Rows on the deep sidebar: title, date and length, and a status that only shouts when it matters."""
+
+    PAD = 10
+    MARGIN = 8  # gap between the row card and the list edges
 
     def sizeHint(self, option, index) -> QSize:
         fm = QFontMetrics(option.font)
-        return QSize(200, fm.height() * 2 + self.PAD * 2 + 4)
+        return QSize(200, fm.height() * 2 + self.PAD * 2 + 8)
 
     def paint(self, p: QPainter, option: QStyleOptionViewItem, index: QModelIndex) -> None:
         rec: Recording = index.data(ROLE_REC)
         st: Status | None = index.data(ROLE_STATUS)
         if rec is None:
             return
+        t = theme.current()
         p.save()
-        style = option.widget.style() if option.widget else None
-        opt = QStyleOptionViewItem(option)
-        self.initStyleOption(opt, index)
-        opt.text = ""
-        if style:
-            style.drawControl(QStyle.ControlElement.CE_ItemViewItem, opt, p, option.widget)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
         selected = bool(option.state & QStyle.StateFlag.State_Selected)
-        pal = option.palette
-        fg = pal.color(QPalette.ColorRole.HighlightedText if selected else QPalette.ColorRole.Text)
-        dim = QColor(fg)
-        dim.setAlpha(150)
-        r = option.rect.adjusted(self.PAD + 2, self.PAD, -self.PAD, -self.PAD)
-        fm = QFontMetrics(option.font)
-        bold = QFont(option.font)
-        bold.setWeight(QFont.Weight.DemiBold)
-        bfm = QFontMetrics(bold)
+        hover = bool(option.state & QStyle.StateFlag.State_MouseOver)
+        card = QRectF(option.rect).adjusted(self.MARGIN, 2, -self.MARGIN, -2)
+        if selected or hover:
+            p.setPen(theme.color("on_deep", 0.22) if selected else Qt.PenStyle.NoPen)
+            p.setBrush(theme.color("on_deep", 0.14 if selected else 0.06))
+            p.drawRoundedRect(card, 12, 12)
         live = st is not None and st.kind == K_RECORDING
+        r = card.adjusted(self.PAD + 2, self.PAD - 2, -self.PAD, -self.PAD + 2).toRect()
+        fm = QFontMetrics(option.font)
+        bold = theme.display_font(1.0, QFont.Weight.Bold)
+        bfm = QFontMetrics(bold)
         x = r.left()
         if live:
-            p.setRenderHint(QPainter.RenderHint.Antialiasing)
             p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(RECORD_RED)
+            p.setBrush(QColor(t.coral))
             d = 8
             p.drawEllipse(x, r.top() + (bfm.height() - d) // 2, d, d)
-            x += d + 6
+            x += d + 7
         # Line 1: title
         p.setFont(bold)
-        p.setPen(fg)
+        p.setPen(QColor(t.on_deep))
         title_rect = QRect(x, r.top(), r.right() - x, bfm.height())
         p.drawText(title_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
                    bfm.elidedText(rec.meta.title, Qt.TextElideMode.ElideRight, title_rect.width()))
         # Line 2: date · duration      status
-        y2 = r.top() + bfm.height() + 2
+        y2 = r.top() + bfm.height() + 3
         p.setFont(option.font)
         left = fmt_date(rec.meta.created)
         if rec.meta.duration and not live:
-            left += f" · {fmt_duration(rec.meta.duration)}"
+            left += f"  ·  {fmt_duration(rec.meta.duration)}"
         status_text = st.text if st else ""
         if st and st.recovered and st.kind != K_RECORDING:
             status_text = ("Recovered · " + status_text) if status_text else "Recovered"
-        sw = fm.horizontalAdvance(status_text)
-        avail = r.width() - sw - 12
-        p.setPen(dim)
+        kind = st.kind if st else K_NONE
+        pill = kind in (K_RECORDING, K_BUSY, K_WAIT, K_ERROR)
+        small = QFont(option.font)
+        if pill:
+            small = theme.display_font(0.82, QFont.Weight.Bold)
+        sfm = QFontMetrics(small)
+        sw = sfm.horizontalAdvance(status_text) + (16 if pill else 0)
+        avail = r.width() - sw - 10
+        p.setPen(QColor(t.on_deep_muted))
         p.drawText(QRect(r.left(), y2, max(0, avail), fm.height()), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
                    fm.elidedText(left, Qt.TextElideMode.ElideRight, max(0, avail)))
         if status_text:
-            color = {K_RECORDING: RECORD_RED, K_ERROR: QColor("#d9822b") if not selected else fg,
-                     K_BUSY: pal.color(QPalette.ColorRole.Link) if not selected else fg}.get(st.kind if st else K_NONE, dim)
-            p.setPen(color)
-            status_rect = QRect(r.right() - sw, y2, sw, fm.height())
-            p.drawText(status_rect, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, status_text)
-        # Progress bar along the bottom edge
+            srect = QRectF(r.right() - sw, y2 + (fm.height() - sfm.height() - 4) / 2, sw, sfm.height() + 4)
+            if pill:
+                fill, ink = {K_RECORDING: (QColor(t.coral_deep), QColor("#ffffff")),
+                             K_ERROR: (QColor(t.amber), QColor(t.deep_top)),
+                             K_BUSY: (theme.color("foam", 0.22), QColor(t.foam)),
+                             K_WAIT: (theme.color("on_deep", 0.12), QColor(t.on_deep))}[kind]
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(fill)
+                p.drawRoundedRect(srect, srect.height() / 2, srect.height() / 2)
+                p.setPen(ink)
+            else:
+                p.setPen(QColor(t.foam) if kind == K_EDITED else QColor(t.on_deep_muted))
+            p.setFont(small)
+            p.drawText(srect, Qt.AlignmentFlag.AlignCenter if pill else Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+                       status_text)
+        # Progress along the bottom of the row card
         if st and st.progress is not None and st.kind == K_BUSY:
-            bar = QRect(option.rect.left() + self.PAD, option.rect.bottom() - 3, option.rect.width() - 2 * self.PAD, 2)
-            track = QColor(fg)
-            track.setAlpha(40)
-            p.fillRect(bar, track)
-            bar.setWidth(int(bar.width() * max(0.02, min(1.0, st.progress))))
-            p.fillRect(bar, pal.color(QPalette.ColorRole.Link) if not selected else fg)
+            bar = QRectF(card.left() + 12, card.bottom() - 4, card.width() - 24, 3)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(theme.color("on_deep", 0.12))
+            p.drawRoundedRect(bar, 1.5, 1.5)
+            bar.setWidth(bar.width() * max(0.02, min(1.0, st.progress)))
+            p.setBrush(QColor(t.foam))
+            p.drawRoundedRect(bar, 1.5, 1.5)
         p.restore()

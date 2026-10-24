@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 from dataclasses import dataclass
 
@@ -23,6 +24,13 @@ class Source:
         if self.kind == MONITOR:
             return f"Computer audio: {self.description}"
         return self.description
+
+    @property
+    def short_label(self) -> str:
+        """The label without the channel-layout suffix PipeWire adds ("Analog Stereo" and the like)."""
+        d = re.sub(r"\s+(Analog|Digital|Pro)?\s*(Stereo|Mono|Surround[\s\d.]*)(\s*\(.*?\))?(?=$|\s*\[)", "",
+                   self.description).strip() or self.description
+        return f"Computer audio: {d}" if self.kind == MONITOR else d
 
 
 def _pw_dump() -> list[dict]:

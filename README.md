@@ -2,7 +2,7 @@
 
 Record long-form audio and transcribe Spanish speech locally, on your own GPU.
 
-![Echo with a recording selected: recorder and library on the left, waveform with crop and the transcript on the right](docs/screenshot.png)
+![Echo with a recording selected: the recorder and library on the deep teal sidebar, the waveform and transcript on the right](docs/screenshot.png)
 
 Echo is a desktop app for Linux with PipeWire. It records from any input (or from what the
 computer is playing), imports audio from anywhere including WhatsApp voice notes, and
@@ -84,6 +84,9 @@ code from the model repositories.
 - **Search.** The search box matches titles and transcript text, ignoring accents.
 - **Close the window while recording** and the recording continues; a tray icon shows it and
   can stop it. Opening Echo again shows the recording in progress.
+
+- **Appearance.** Echo is light by default. Settings → Appearance switches to dark or follows the
+  system, and the change applies immediately.
 
 All shortcuts are under Help → Keyboard shortcuts (F1).
 
@@ -175,4 +178,7 @@ two weeks of margin), run `uv lock --upgrade`, review the diff, run the tests.
 ## Credits
 
 Speech recognition by Cohere Transcribe (Apache-2.0) with the Surus Spanish adapter
-(Apache-2.0). Speech detection by Silero VAD (MIT).
+(Apache-2.0). Speech detection by Silero VAD (MIT). Icons from [Lucide](https://lucide.dev) (ISC).
+Interface type set in [Manrope](https://github.com/sharanda/manrope) (SIL Open Font License); the
+static weights in `src/echo_app/ui/assets/fonts/` are instances of the variable font. License
+texts are next to the files.

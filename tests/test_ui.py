@@ -22,7 +22,10 @@ FAKE = Path(__file__).with_name("fake_capture.py")
 
 @pytest.fixture(scope="session")
 def qapp():
+    from echo_app.ui import theme
+
     app = QApplication.instance() or QApplication(["echo-test"])
+    theme.apply(theme.LIGHT, app)
     yield app
 
 
@@ -103,7 +106,7 @@ def test_record_from_window(window, lib):
     assert wait_until(lambda: window.windowTitle().startswith("● Recording"))
     pump(1500)
     window.recorder_panel.toggle_pause()
-    assert wait_until(lambda: window.recorder_panel.state_label.text() == "Paused")
+    assert wait_until(lambda: window.recorder_panel.state_label.text() == "PAUSED")
     window.recorder_panel.toggle_pause()
     pump(500)
     window.recorder_panel.stop()
@@ -291,3 +294,30 @@ def test_meter_runs_under_welcome_and_stops_when_minimized(window, monkeypatch):
     window.showNormal()
     pump(200)
     assert panel._want_monitor()
+
+
+def test_theme_switches_live_and_icons_follow(qapp, window):
+    from echo_app.ui import theme
+    from echo_app.ui.common import icon
+
+    theme.apply(theme.DARK, qapp)
+    try:
+        assert theme.current().dark
+        assert qapp.palette().color(qapp.palette().ColorRole.Window).name() == theme.LAGOON_DARK.canvas
+        img = icon("play", "accent").pixmap(24, 24).toImage()
+        painted = [img.pixelColor(x, y) for x in range(24) for y in range(24) if img.pixelColor(x, y).alpha() > 200]
+        assert painted and painted[0].name() == theme.LAGOON_DARK.accent
+        window.grab()  # every custom painter runs against the dark tokens
+    finally:
+        theme.apply(theme.LIGHT, qapp)
+    assert not theme.current().dark
+
+
+def test_short_source_labels():
+    from echo_app.audio.pipewire import INPUT, MONITOR, Source
+
+    assert Source("a", "PCM2902 Audio Codec Analog Stereo", INPUT).short_label == "PCM2902 Audio Codec"
+    assert Source("b", "GA102 Audio Digital Stereo (HDMI) [LG ULTRAGEAR]", MONITOR).short_label == \
+        "Computer audio: GA102 Audio [LG ULTRAGEAR]"
+    assert Source("c", "Easy Effects Source", INPUT).short_label == "Easy Effects Source"
+    assert Source("d", "Stereo", INPUT).short_label == "Stereo"
