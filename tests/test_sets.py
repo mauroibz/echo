@@ -120,14 +120,16 @@ def test_titles(lib):
     assert s2.title == "Viaje"
 
 
-def test_cleanup_removes_sets_with_no_members(lib, tmp_path):
+def test_cleanup_keeps_sets_whose_members_are_away(lib, tmp_path):
     b, a, c = _three(lib)
     s = sets.link(lib, [a.id, b.id])
-    keep = sets.link(lib, [c.id, _rec(lib, "D", "2026-10-24T10:00:00-03:00").id])
     for r in (a, b):
-        os.rename(r.folder, tmp_path / r.id)
-    assert sets.cleanup(lib) == 1
-    assert sets.get(lib, s.id) is None and sets.get(lib, keep.id) is not None
+        os.rename(r.folder, tmp_path / r.id)  # both in the trash
+    (lib.data_dir / "sets" / "set_empty.json").write_text(json.dumps({"id": "set_empty", "members": []}))
+    assert sets.cleanup(lib) == 1 and sets.get(lib, "set_empty") is None
+    for r in (a, b):
+        os.rename(tmp_path / r.id, r.folder)  # restored: the set is whole again
+    assert [r.id for r in sets.present(lib, sets.get(lib, s.id))] == [a.id, b.id]
 
 
 def test_timeline_uses_cropped_spans(lib):
@@ -360,3 +362,24 @@ def test_android_notes_of_one_day_are_ordered_by_number(tmp_path):
     for r in (a, b, c):
         r.update(created="2026-10-23T00:00:00-03:00")
     assert sets.link(lib_, [c.id, b.id, a.id]).members == [a.id, b.id, c.id]
+
+
+def test_set_playback_passes_over_a_part_without_audio(lib):
+    from echo_app.audio.playback import SetPlayback
+
+    a = _rec(lib, "A", "2026-10-23T14:02:00-03:00", duration=10.0)
+    gone = _rec(lib, "B", "2026-10-23T14:03:00-03:00", duration=5.0)
+    c = _rec(lib, "C", "2026-10-23T14:04:00-03:00", duration=10.0)
+    for r in (a, c):
+        (r.folder / "audio.wav").write_bytes(b"x")
+        r.update(audio="audio.wav")
+    pb = SetPlayback()
+    pb.inner = _FakeInner()
+    pb.load(sets.timeline([lib.get(r.id) for r in (a, gone, c)]))
+    assert pb.duration == 25.0
+    pb.play(0.0)
+    pb.inner.finish()
+    assert pb.poll() is False and pb.inner.calls[-1] == (c.id, 0.0, 10.0) and pb.position() == 15.0
+    pb.seek(12.0)  # inside the silent part: playing starts at the next part with audio
+    pb.play()
+    assert pb.inner.calls[-1] == (c.id, 0.0, 10.0)

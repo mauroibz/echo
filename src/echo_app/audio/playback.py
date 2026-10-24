@@ -177,7 +177,7 @@ class SetPlayback:
 
     def load(self, parts: list) -> None:
         self.stop()
-        self.parts = [p for p in parts if p.rec.audio_path is not None]
+        self.parts = list(parts)  # all of them: the offsets are the waveform's and the text's
         self.k = -1
         self._end = None
         self.error = None
@@ -190,7 +190,7 @@ class SetPlayback:
         k = max(0, min(k, len(self.parts) - 1))
         if k != self.k:
             p = self.parts[k]
-            self.inner.load(p.rec.audio_path, p.rec.meta.duration or 0)
+            self.inner.load(p.rec.audio_path if self._playable(k) else None, p.rec.meta.duration or 0)
             self.inner.seek(p.start)
             self.k = k
 
@@ -206,7 +206,16 @@ class SetPlayback:
         p = self.parts[self.k]
         return p.offset + max(0.0, self.inner.position() - p.start)
 
+    def _playable(self, k: int) -> bool:
+        path = self.parts[k].rec.audio_path
+        return path is not None and path.exists() and self.parts[k].length > 0
+
     def _play_part(self, start: float) -> None:
+        while not self._playable(self.k):  # a part without audio is passed over
+            if self.k + 1 >= len(self.parts):
+                return
+            self._use(self.k + 1)
+            start = self.parts[self.k].offset
         p = self.parts[self.k]
         stop = p.start + p.length
         if self._end is not None:
@@ -236,7 +245,7 @@ class SetPlayback:
         if self.k + 1 < len(self.parts):
             self._use(self.k + 1)
             self._play_part(self.parts[self.k].offset)
-            return False
+            return not self.playing  # nothing left with audio: the end
         return True
 
     def pause(self) -> None:

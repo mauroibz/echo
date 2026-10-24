@@ -192,3 +192,19 @@ WhatsApp exports on the test data and recorded in `sets.py` with the files they 
   exercises Qt's own drop-position logic; a real `QDrag` blocks in the offscreen platform.
 - **Measured hand-over**: three parts of 1.2, 1.0 and 1.2 s (the second cropped) played through
   PipeWire on this machine took 3.75 s for 3.4 s of audio, about 0.15 s per hand-over.
+- **After an independent review of the implementation**:
+  - A part's state line says "Transcribing…" without a percentage. A live percentage rebuilt the
+    set's text every second, and a rebuild put the cursor back by character count, so typing
+    could land in another part. The cursor is now put back by part and place in that part's text.
+  - Text from an input method (accented letters under IBus) passes the same check as keys. The
+    check after a change covers the blank lines and state lines too, and repairs the lines in
+    place after its undo, so unsaved typing in other parts is kept.
+  - Texts are compared with non-breaking spaces as plain spaces, as the editor returns them, so an
+    untouched part (or recording) is never written as edited. This was also true of a single
+    recording before sets.
+  - `rescan` keeps a set whose members are all missing (in the trash, not synced yet): they rejoin
+    it when they come back. It removes only set files that name no recording. (The plan said rescan
+    removes sets with no present members; that contradicted "missing members are skipped".)
+  - Set files are written under a lock in the data folder's `sets/`: the worker retitles a set
+    while the window may be linking, and each reads a file before writing it.
+  - Delete acts on the highlighted rows, not on the current row, which Ctrl+click can unselect.

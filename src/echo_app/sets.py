@@ -16,13 +16,17 @@ ignored until that file is next written, which drops it.
 
 from __future__ import annotations
 
+import logging
 import os
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
 from .fsutil import atomic_write_json, read_json
 from .library import Library, Recording, auto_title, new_id
+
+log = logging.getLogger(__name__)
 
 SETS = "sets"
 PREFIX = "set_"
@@ -95,6 +99,24 @@ def present(library: Library, s: LinkedSet) -> list[Recording]:
     return [r for r in (library.get(m) for m in s.members) if r is not None]
 
 
+@contextmanager
+def _locked(library: Library):
+    """One writer of set files at a time: the window links while the worker retitles a set,
+    and each reads a file before rewriting it."""
+    from . import locks
+
+    folder = _dir(library)
+    folder.mkdir(parents=True, exist_ok=True)
+    lock = locks.acquire(folder / ".lock", wait=5.0)
+    if lock is None:
+        log.warning("set files are locked by another process; writing anyway")
+    try:
+        yield
+    finally:
+        if lock is not None:
+            lock.close()
+
+
 def _save(library: Library, s: LinkedSet) -> None:
     atomic_write_json(_path(library, s.id), {"id": s.id, "title": s.title, "title_auto": s.title_auto,
                                              "members": s.members, "created": s.created}, mkdir=True)
@@ -133,6 +155,11 @@ def _default_title(first: Recording | None, n: int) -> str:
 
 
 def link(library: Library, ids: list[str], title: str | None = None) -> LinkedSet:
+    with _locked(library):
+        return _link(library, ids, title)
+
+
+def _link(library: Library, ids: list[str], title: str | None = None) -> LinkedSet:
     """Link recordings (and sets) into one set and return it.
 
     Without a set among `ids`, a new set holds the recordings in date order. With one set, the
@@ -170,11 +197,16 @@ def link(library: Library, ids: list[str], title: str | None = None) -> LinkedSe
         target.title, target.title_auto = title, False
     _take_out(library, set(target.members), keep=target.id)
     _save(library, target)
-    refresh_title(library, target)
+    _refresh_title(library, target)
     return target
 
 
 def move(library: Library, sid: str, rid: str, index: int) -> LinkedSet:
+    with _locked(library):
+        return _move(library, sid, rid, index)
+
+
+def _move(library: Library, sid: str, rid: str, index: int) -> LinkedSet:
     """Put `rid` at position `index` of the set (reordering, or adding it from elsewhere)."""
     s = get(library, sid)
     if s is None:
@@ -190,15 +222,30 @@ def move(library: Library, sid: str, rid: str, index: int) -> LinkedSet:
 
 
 def unlink(library: Library, rid: str) -> None:
+    with _locked(library):
+        _unlink(library, rid)
+
+
+def _unlink(library: Library, rid: str) -> None:
     """Take one recording out of its set; a set left with one member is dissolved."""
     _take_out(library, {rid})
 
 
 def dissolve(library: Library, sid: str) -> None:
+    with _locked(library):
+        _dissolve(library, sid)
+
+
+def _dissolve(library: Library, sid: str) -> None:
     _delete(library, sid)
 
 
 def rename(library: Library, sid: str, title: str) -> None:
+    with _locked(library):
+        _rename(library, sid, title)
+
+
+def _rename(library: Library, sid: str, title: str) -> None:
     s = get(library, sid)
     if s is not None and title.strip():
         s.title, s.title_auto = title.strip(), False
@@ -206,7 +253,13 @@ def rename(library: Library, sid: str, title: str) -> None:
 
 
 def refresh_title(library: Library, s: LinkedSet | None) -> None:
+    with _locked(library):
+        _refresh_title(library, s)
+
+
+def _refresh_title(library: Library, s: LinkedSet | None) -> None:
     """A set not renamed takes its title from the first part's first sentence once there is text."""
+    s = get(library, s.id) if s is not None else None  # as on disk now, not as read before the lock
     if s is None or not s.title_auto:
         return
     parts = present(library, s)
@@ -220,12 +273,17 @@ def refresh_title(library: Library, s: LinkedSet | None) -> None:
 
 
 def cleanup(library: Library) -> int:
-    """Remove set files with no present members (after `rescan`). Returns how many."""
+    """Remove set files that claim no recording at all. Returns how many.
+
+    A set whose members are all missing is kept: they may be in the trash or not synced yet,
+    and coming back they rejoin it (the index lists no set with fewer than two present).
+    """
     n = 0
-    for s in load_all(library):
-        if not s.claimed or not any(library.get(m) for m in s.claimed):
-            _delete(library, s.id)
-            n += 1
+    with _locked(library):
+        for s in load_all(library):
+            if not s.claimed:
+                _delete(library, s.id)
+                n += 1
     return n
 
 

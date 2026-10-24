@@ -354,3 +354,114 @@ def test_a_watched_folder_note_is_offered_to_its_set(window, lib, tmp_path):
     assert "seems to continue “Lucía”" in window.banner_text.text() and window.banner_link.text() == "Add to set"
     window.banner_link.click()
     assert len(sets.get(lib, st.id).members) == 3
+
+
+# ---- found by review: typing must stay where it is, and only edited parts are written ----
+
+def test_typing_stays_in_its_part_while_another_part_changes(window, lib, tmp_path):
+    parts = _parts(lib, tmp_path)
+    late = importer.import_file(lib, wav(tmp_path / "late.wav", 3, 950)).recording
+    late.update(created="2026-10-23T14:01:00-03:00")  # first in the set, not transcribed yet
+    late.request_transcription()
+    st = sets.link(lib, [late.id, *(r.id for r in parts)])
+    window.model.reload_sets()
+    window._select(st.id)
+    pump(150)
+    tp = window.transcript
+    ed = tp.editor
+    c = ed.textCursor()
+    c.setPosition(tp._bodies()[3][0] + 5)  # inside the last part: "Avisa|me"
+    ed.setTextCursor(c)
+    ed.setFocus()
+    QTest.keyClicks(ed, "A")
+    # The first part starts transcribing (one rebuild); its progress moving rebuilds nothing.
+    late.path("transcribe.progress.json").write_text(json.dumps({"stage": "transcribing", "done": 1, "total": 9}))
+    window._refresh()
+    shown = tp._shown_signature
+    late.path("transcribe.progress.json").write_text(json.dumps({"stage": "transcribing", "done": 5, "total": 9}))
+    window._refresh()
+    assert tp._shown_signature == shown
+    # The first part's transcript arrives (a long line where its state line was): typing continues in place.
+    segs = [{"start": 0.0, "end": 2.0, "text": "Un texto bastante más largo que la línea de estado de antes.",
+             "paragraph": True}]
+    late.path(TRANSCRIPT).write_text(json.dumps({"segments": segs, "text": segs[0]["text"], "language": "es"}))
+    late.path("transcribe.progress.json").unlink()
+    late.path("transcribe.requested").unlink()
+    window._refresh()
+    pump(50)
+    QTest.keyClicks(ed, "B")
+    tp.save()
+    assert parts[2].path(EDITED).read_text() == "AvisaABme cuando sepas."
+    assert not any(r.path(EDITED).exists() for r in (late, parts[0], parts[1]))
+
+
+def test_an_input_method_cannot_cross_a_heading_and_unsaved_typing_survives_the_guard(window, lib, tmp_path):
+    from PySide6.QtGui import QInputMethodEvent
+
+    _st, parts, _other = _linked(window, lib, tmp_path)
+    tp = window.transcript
+    ed = tp.editor
+    c = ed.textCursor()
+    c.setPosition(tp._bodies()[2][1])
+    ed.setTextCursor(c)
+    ed.setFocus()
+    QTest.keyClicks(ed, " abc")  # not saved yet
+    before = ed.toPlainText()
+    c = ed.textCursor()
+    c.setPosition(tp._bodies()[0][0] + 2)
+    c.setPosition(tp._bodies()[1][0] + 2, QTextCursor.MoveMode.KeepAnchor)
+    ed.setTextCursor(c)
+    ev = QInputMethodEvent()
+    ev.setCommitString("é")
+    QApplication.sendEvent(ed, ev)
+    assert ed.toPlainText() == before
+    # Something else gets past the keys anyway: it is undone and the typing is kept.
+    c.removeSelectedText()
+    assert wait_until(lambda: tp._structure_ok() and ed.toPlainText() == before, 2)
+    tp.save()
+    assert parts[2].path(EDITED).read_text() == "Avisame cuando sepas. abc"
+    assert not parts[0].path(EDITED).exists() and not parts[1].path(EDITED).exists()
+    # The fixed blank line between parts is protected the same way.
+    sep = ed.document().findBlock(tp._bodies()[1][0] - 1).previous()
+    c = QTextCursor(sep)
+    c.insertText("x")
+    assert wait_until(lambda: tp._structure_ok() and ed.toPlainText() == before, 2)
+
+
+def test_non_breaking_spaces_do_not_make_a_part_look_edited(window, lib, tmp_path):
+    st, parts, _other = _linked(window, lib, tmp_path)
+    segs = [{"start": 0.0, "end": 2.0, "text": "Son 10 000 cajas.", "paragraph": True}]
+    parts[0].path(TRANSCRIPT).write_text(json.dumps({"segments": segs, "text": segs[0]["text"], "language": "es"}))
+    window._refresh()
+    pump(50)
+    tp = window.transcript
+    c = tp.editor.textCursor()
+    c.setPosition(tp._bodies()[2][1])
+    tp.editor.setTextCursor(c)
+    tp.editor.insertPlainText(" Gracias.")
+    tp.save()
+    assert parts[2].path(EDITED).exists() and not parts[0].path(EDITED).exists()
+    # The same for a recording on its own.
+    window.model.set_expanded(st.id, True)
+    window._select(parts[0].id)
+    pump(100)
+    window.transcript.save()
+    assert not parts[0].path(EDITED).exists()
+
+
+def test_delete_acts_on_the_highlighted_rows(window, lib, tmp_path):
+    from PySide6.QtCore import QItemSelectionModel
+
+    a, b = _parts(lib, tmp_path, 2)
+    window.model.refresh()
+    sm = window.list.selectionModel()
+    window.list.setCurrentIndex(window.model.index(window.model.row_of(a.id)))
+    idx_b = window.model.index(window.model.row_of(b.id))
+    sm.setCurrentIndex(idx_b, QItemSelectionModel.SelectionFlag.Select)
+    sm.setCurrentIndex(idx_b, QItemSelectionModel.SelectionFlag.Deselect)  # Ctrl+click B again
+    assert window.current().id == b.id and window._selected_keys() == [a.id]
+    asked = []
+    QTimer.singleShot(200, lambda: (asked.append(QApplication.activeModalWidget().text()),
+                                    QApplication.activeModalWidget().reject()))
+    window.delete_selected()
+    assert "Nota 1" in asked[0] and lib.get(b.id) is not None

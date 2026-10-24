@@ -23,7 +23,7 @@ def _cmd_rescan(args) -> int:
     n = idx.rebuild()
     print(f"Indexed {n} recording(s) in {cfg.data_path}")
     if gone:
-        print(f"Removed {gone} linked set(s) whose recordings are all gone")
+        print(f"Removed {gone} empty linked set file(s)")
     return 0
 
 

@@ -33,6 +33,12 @@ def _fold(text: str) -> str:
     return "".join((unicodedata.normalize("NFD", c)[0] if c else c).lower() for c in text)
 
 
+def _plain(text: str) -> str:
+    """Text as the editor gives it back: Qt turns non-breaking spaces into spaces, so comparing
+    saved text with what the editor holds must do the same (or an untouched text looks edited)."""
+    return text.replace("\u00a0", " ")
+
+
 def _occurrences(hay: str, needle: str) -> list[tuple[int, int]]:
     out, i = [], hay.find(needle)
     while i >= 0:
@@ -315,6 +321,19 @@ class Editor(QPlainTextEdit):
         elif self.key_hook and e.key() in (Qt.Key.Key_Backspace, Qt.Key.Key_Delete):
             self.key_hook()
         super().keyPressEvent(e)
+
+    def inputMethodEvent(self, e):
+        # Accented letters often arrive this way (IBus), bypassing keyPressEvent.
+        if self.edit_guard is not None and (e.commitString() or e.preeditString() or e.replacementLength()):
+            cur = self.textCursor()
+            lo, hi = cur.selectionStart(), cur.selectionEnd()
+            if e.replacementLength():
+                lo, hi = min(lo, cur.position() + e.replacementStart()), \
+                    max(hi, cur.position() + e.replacementStart() + e.replacementLength())
+            if not self.edit_guard(lo, hi):
+                e.accept()
+                return
+        super().inputMethodEvent(e)
 
     def insertFromMimeData(self, source):
         if self.edit_guard is not None:
@@ -682,7 +701,7 @@ class TranscriptPanel(QWidget):
 
     # ---- a linked set ----
     def _leave_set(self):
-        self.linked, self._parts = None, []
+        self.linked, self._parts, self._loaded_ids, self._fixed = None, [], [], []
         self.editor.edit_guard = self.editor.heading_at = None
         self.editor.setAcceptDrops(True)
         self._shown_signature = None
@@ -724,9 +743,9 @@ class TranscriptPanel(QWidget):
             return None
         st = rec.transcript_status()
         if st == T_RUNNING:
-            p = rec.progress() or {}
-            frac = (p.get("done", 0) / p["total"]) if p.get("total") else 0
-            return f"Transcribing… {frac:.0%}"
+            # No percentage here: a changing line would rebuild the set's text every second (the
+            # list shows the progress).
+            return "Transcribing…"
         if st == T_QUEUED:
             return "Waiting to transcribe"
         if st == T_FAILED:
@@ -755,18 +774,30 @@ class TranscriptPanel(QWidget):
             sig = (self.linked.id, self._set_signature(parts))
         for r in parts:
             self._apply_dictionary(r)
+        where = self._cursor_in_part()  # measured on the text as it is, before the parts change
         tl = sets.timeline(parts)
         self._parts = []
         for k, (r, part) in enumerate(zip(parts, tl)):
             length = f"  ·  {fmt_duration(part.length)}" if r.meta.duration else ""
             heading = f"{k + 1}  ·  {r.meta.title}  ·  {fmt_date(r.meta.created)}{length}"
             self._parts.append(SetPart(r, part, heading, self._part_state(r)))
-        self._load_set_text()
+        self._load_set_text(where)
         self._shown_signature = sig
         self._update_set_status()
 
-    def _load_set_text(self):
-        cur_pos = self.editor.textCursor().position()
+    def _cursor_in_part(self) -> tuple[int, int] | None:
+        """(part, offset in its text) of the cursor, to put it back after the text is rebuilt."""
+        if not self._parts or self.editor.document().isEmpty():
+            return None
+        pos = self.editor.textCursor().position()
+        for k, b in enumerate(self._bodies()):
+            if b is not None and b[0] <= pos <= b[1]:
+                return k, pos - b[0]
+        return None
+
+    def _load_set_text(self, where: tuple[int, int] | None = None):
+        old_ids = getattr(self, "_loaded_ids", [])
+        where_id = old_ids[where[0]] if where and where[0] < len(old_ids) else None
         scroll = self.editor.verticalScrollBar().value()
         lines: list[tuple[str, int]] = []  # (text, block state); body text may hold several lines
         for k, part in enumerate(self._parts):
@@ -776,8 +807,10 @@ class TranscriptPanel(QWidget):
             if part.state is not None:
                 lines.append((part.state, LOCK + k))
             else:
-                part.loaded = part.rec.text().rstrip("\n")
+                part.loaded = _plain(part.rec.text().rstrip("\n"))
                 lines.append((part.loaded, -1))
+        self._fixed = [(st, t) for t, st in lines if st >= HEAD]
+        self._loaded_ids = [p.rec.id for p in self._parts]
         self._loading = True
         doc = self.editor.document()
         doc.setUndoRedoEnabled(False)
@@ -805,8 +838,15 @@ class TranscriptPanel(QWidget):
             block = block.next()
         doc.setUndoRedoEnabled(True)
         self._loading = False
+        # The cursor goes back into the same part at the same place in its text, whatever changed
+        # above it (a part transcribed, retitled, reordered).
+        pos = 0
+        if where_id in self._loaded_ids:
+            b = self._bodies()[self._loaded_ids.index(where_id)]
+            if b is not None:
+                pos = min(b[0] + where[1], b[1])
         c = self.editor.textCursor()
-        c.setPosition(min(cur_pos, doc.characterCount() - 1))
+        c.setPosition(min(pos, doc.characterCount() - 1))
         self.editor.setTextCursor(c)
         self.editor.verticalScrollBar().setValue(scroll)
         self._corrections = []
@@ -848,13 +888,39 @@ class TranscriptPanel(QWidget):
         return st - HEAD if HEAD <= st < LOCK else None
 
     def _structure_ok(self) -> bool:
-        heads = []
+        """Every fixed line (heading, state line, blank line between parts) is there, unchanged."""
+        fixed = []
         block = self.editor.document().begin()
         while block.isValid():
-            if HEAD <= block.userState() < LOCK:
-                heads.append(block.text())
+            if block.userState() >= HEAD:
+                fixed.append((block.userState(), block.text()))
             block = block.next()
-        return heads == [p.heading for p in self._parts]
+        return fixed == getattr(self, "_fixed", [])
+
+    def _reassign_states(self):
+        """After an undo, Qt recreates removed lines without their state: find them again. A
+        heading is found by its text; its state line follows it, the blank line precedes it."""
+        doc = self.editor.document()
+        blocks = []
+        block = doc.begin()
+        while block.isValid():
+            blocks.append(block)
+            block = block.next()
+        marked = {}
+        i = 0
+        for k, part in enumerate(self._parts):
+            while i < len(blocks) and blocks[i].text() != part.heading:
+                i += 1
+            if i == len(blocks):
+                return
+            marked[i] = HEAD + k
+            if k and i > 0 and blocks[i - 1].text() == "":
+                marked[i - 1] = SEP
+            if part.state is not None and i + 1 < len(blocks) and blocks[i + 1].text() == part.state:
+                marked[i + 1] = LOCK + k
+            i += 1
+        for n, b in enumerate(blocks):
+            b.setUserState(marked.get(n, -1))
 
     def _check_structure(self, _pos, _removed, _added):
         """The last guard: an edit that reached a heading anyway (an input method, a drop) is undone."""
@@ -865,10 +931,15 @@ class TranscriptPanel(QWidget):
     def _restore_structure(self):
         if self.linked is None or self._structure_ok():
             return
+        self._loading = True
         self.editor.undo()
+        self._reassign_states()
+        self._loading = False
         if not self._structure_ok():
+            # Not repairable in place: keep what can be kept before showing the files again.
             self._shown_signature = None
             self._refresh_set()
+        self._align_now()
         self.message.emit("Each part's heading stays as it is; edit the text under it.")
 
     def _part_text(self, k: int, bodies=None) -> str | None:
@@ -894,7 +965,7 @@ class TranscriptPanel(QWidget):
                 continue
             rec = part.rec
             try:
-                if text == rec.base_text().rstrip("\n"):
+                if text == _plain(rec.base_text().rstrip("\n")):
                     if rec.is_edited():
                         rec.revert_edits()
                 else:
@@ -1058,7 +1129,7 @@ class TranscriptPanel(QWidget):
     def _load_text(self, rec: Recording):
         self._loading = True
         text = rec.text()
-        if self.editor.toPlainText() != text:
+        if self.editor.toPlainText() != _plain(text):
             self.editor.setPlainText(text)
         self._loading = False
         self._load_spans(rec)
@@ -1374,10 +1445,10 @@ class TranscriptPanel(QWidget):
             return
         text = self.editor.toPlainText()
         try:
-            if text == rec.base_text():
+            if text == _plain(rec.base_text()):
                 if rec.is_edited():
                     rec.revert_edits()
-            elif text != rec.text() or not rec.is_edited():
+            elif text != _plain(rec.text()) or not rec.is_edited():
                 rec.save_edited(text)
             else:
                 return

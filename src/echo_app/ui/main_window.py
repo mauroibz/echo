@@ -968,15 +968,19 @@ class MainWindow(QMainWindow):
         self._select(select)
 
     def delete_selected(self):
+        # What is highlighted, not the current row: Ctrl+click can unselect the current row.
         keys = self._selected_keys()
         if len(keys) > 1:
             self._delete_many(keys)
             return
-        linked = self.current_set()
+        if not keys:
+            return
+        row = self.model.row_of(keys[0])
+        linked = self.model.linked_set(row)
         if linked is not None:
             self._delete_set(*linked)
             return
-        rec = self.current()
+        rec = self.model.recording(row)
         if rec is None or rec.meta.state == RECORDING:
             return
         r = QMessageBox.question(self, "Delete recording",
@@ -984,22 +988,7 @@ class MainWindow(QMainWindow):
                                  "You can restore it from the trash.")
         if r != QMessageBox.StandardButton.Yes:
             return
-        row = self.list.currentIndex().row()
-        if self.player.rec and self.player.rec.id == rec.id:
-            self.player.set_recording(None)
-            self.transcript.set_recording(None)
-        transcription.cancel(rec)
-        try:
-            self.library.delete(rec)
-        except OSError as e:
-            self.show_message(f"Could not delete: {e}")
-            return
-        self.model.refresh()
-        nearest = self.model.nearest_row(min(row, self.model.rowCount() - 1))
-        if nearest >= 0:
-            self.list.setCurrentIndex(self.model.index(nearest))
-        self._last_selected = None
-        self.show_message(f"Moved “{rec.meta.title}” to the trash.")
+        self._trash([rec])
 
     def _delete_set(self, st, parts):
         box = QMessageBox(QMessageBox.Icon.Question, "Delete linked set",
@@ -1041,6 +1030,7 @@ class MainWindow(QMainWindow):
         shown = {self.player.rec.id} if self.player.rec else set()
         shown |= {p.rec.id for p in self.player.parts}
         if shown & {r.id for r in recs}:
+            self.transcript.save()  # edits in other parts of a shown set are kept
             self.player.set_recording(None)
             self.transcript.set_recording(None)
         done = 0
@@ -1056,8 +1046,10 @@ class MainWindow(QMainWindow):
         if nearest >= 0:
             self.list.setCurrentIndex(self.model.index(nearest))
         self._last_selected = None
-        if done:
-            self.show_message(f"Moved {done} recording{'s' if done != 1 else ''} to the trash.")
+        if done == 1 and len(recs) == 1:
+            self.show_message(f"Moved “{recs[0].meta.title}” to the trash.")
+        elif done:
+            self.show_message(f"Moved {done} recordings to the trash.")
 
     def show_in_folder(self):
         rec = self.current()
