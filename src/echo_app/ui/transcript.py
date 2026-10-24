@@ -22,6 +22,7 @@ from .common import fmt_date, fmt_duration, fmt_eta, icon, run_task
 log = logging.getLogger(__name__)
 
 AUTOSAVE_MS = 1000
+REPLAY_AFTER_MS = 1000  # after this long without typing, the passage being corrected plays again
 
 
 def _fold(text: str) -> str:
@@ -185,6 +186,7 @@ class Editor(QPlainTextEdit):
         super().__init__(parent)
         self.menu_hook = None  # callable(menu, position) adding actions for the clicked spot
         self.tooltip_hook = None  # callable(position) -> tooltip text for that spot, or None
+        self.key_hook = None  # called on every typing key, before the edit
         self.margin = TimestampMargin(self)
         self.margin.hide()
         self.updateRequest.connect(lambda _r, _dy: self.margin.update())
@@ -209,6 +211,14 @@ class Editor(QPlainTextEdit):
     def resizeEvent(self, e):
         super().resizeEvent(e)
         self._place_margin()
+
+    def keyPressEvent(self, e):
+        if self.key_hook and e.text() and not (e.modifiers() & (Qt.KeyboardModifier.ControlModifier
+                                                                | Qt.KeyboardModifier.AltModifier)):
+            self.key_hook()
+        elif self.key_hook and e.key() in (Qt.Key.Key_Backspace, Qt.Key.Key_Delete):
+            self.key_hook()
+        super().keyPressEvent(e)
 
     def mousePressEvent(self, e: QMouseEvent):
         if e.modifiers() & Qt.KeyboardModifier.ControlModifier and e.button() == Qt.MouseButton.LeftButton:
@@ -334,6 +344,11 @@ class TranscriptPanel(QWidget):
         self._realign = QTimer(self, singleShot=True, interval=400, timeout=self._align_now)
         self._segments: list[dict] = []
         self._flagged: list[tuple[int, int, dict]] = []
+        self._passages: list[tuple[int, int, int]] = []  # (start, end, segment index) in the shown text
+        self.player = None  # the PlayerPanel, for editing with the audio
+        self._audio_k: int | None = None  # the passage playing (or paused by typing) for editing
+        self._typing_paused = False
+        self._replay = QTimer(self, singleShot=True, interval=REPLAY_AFTER_MS, timeout=self._replay_passage)
         self.show_timestamps = settings.load()[0].show_timestamps
         self._build()
         self.set_recording(None)
@@ -437,6 +452,7 @@ class TranscriptPanel(QWidget):
         cl.addStretch(1)
         pl.addWidget(column, 1)
         self.editor.menu_hook = self._menu_hook
+        self.editor.key_hook = self._typing
         self.editor.tooltip_hook = self._tooltip
 
         # One dictionary suggestion at a time, offered after the save that produced it.
@@ -502,6 +518,8 @@ class TranscriptPanel(QWidget):
         if switching:
             self._shown_signature = None
             self.close_find()
+            self._replay.stop()
+            self._audio_k, self._typing_paused = None, False
             self._offer([])
         self.refresh()
 
@@ -709,6 +727,7 @@ class TranscriptPanel(QWidget):
         segs = self._segments
         text = self.editor.toPlainText()
         passages = [(a, b, k) for a, b, k in align.align(segs, text) if b > a] if segs else []
+        self._passages = passages
         self._spans = [(a, b, float(segs[k].get("start", 0.0))) for a, b, k in passages]
         self._flagged = [(a, b, segs[k]) for a, b, k in passages
                          if segs[k].get("flags") and text[a:b].strip() == (segs[k].get("text") or "").strip()]
@@ -832,6 +851,87 @@ class TranscriptPanel(QWidget):
         self._update_status(rec)
         self._update_notice(rec, rec.transcript_status())
         self.changed.emit(rec.id)
+
+    # ---- editing with the audio ----
+    def attach_player(self, player):
+        self.player = player
+        player.span_finished.connect(self._span_done)
+
+    def _passage_at(self, pos: int) -> int | None:
+        """Index into _passages of the passage at a text position (or the one before it)."""
+        idx = None
+        for n, (a, _b, _k) in enumerate(self._passages):
+            if a <= pos:
+                idx = n
+            else:
+                break
+        return idx if idx is not None else (0 if self._passages else None)
+
+    def _play_passage_n(self, n: int):
+        a, _b, k = self._passages[n]
+        seg = self._segments[k]
+        c = self.editor.textCursor()
+        if not (a <= c.position() <= self._passages[n][1]):
+            c.setPosition(a)
+            self.editor.setTextCursor(c)
+            self.editor.ensureCursorVisible()
+        self._audio_k = n
+        self._typing_paused = False
+        self.player.play_span(float(seg.get("start", 0.0)), float(seg.get("end", 0.0)))
+
+    def play_passage(self):
+        """Ctrl+.: play the passage under the cursor; again while it plays stops it."""
+        if self.player is None or not self._passages:
+            return
+        n = self._passage_at(self.editor.textCursor().position())
+        if self._audio_k == n and (self.player.is_playing() or self._typing_paused):
+            self.stop_passage()
+            return
+        self._play_passage_n(n)
+
+    def step_passage(self, direction: int):
+        """Move to the next (1) or previous (-1) passage and play it."""
+        if self.player is None or not self._passages:
+            return
+        n = self._passage_at(self.editor.textCursor().position())
+        n = max(0, min(len(self._passages) - 1, n + direction))
+        c = self.editor.textCursor()
+        c.setPosition(self._passages[n][0])
+        self.editor.setTextCursor(c)
+        self._play_passage_n(n)
+
+    def play_next_flagged(self):
+        if self.player is None:
+            return
+        if self.next_flagged() is None:
+            self.message.emit("No passages to check in this transcript.")
+            return
+        self._play_passage_n(self._passage_at(self.editor.textCursor().position()))
+
+    def stop_passage(self):
+        self._replay.stop()
+        self._audio_k = None
+        self._typing_paused = False
+        if self.player is not None:
+            self.player.stop_span()
+
+    def _typing(self):
+        """A key in the editor while a passage plays: pause, and replay it once typing stops."""
+        if self._audio_k is None or self.player is None or not settings.load()[0].edit_autopause:
+            return
+        if self.player.is_playing():
+            self.player.stop_span()
+            self._typing_paused = True
+        if self._typing_paused:
+            self._replay.start()
+
+    def _replay_passage(self):
+        if self._typing_paused and self._audio_k is not None and self._audio_k < len(self._passages):
+            self._play_passage_n(self._audio_k)
+
+    def _span_done(self):
+        if not self._typing_paused:
+            self._audio_k = None
 
     # ---- dictionary ----
     def _apply_dictionary(self, rec: Recording):

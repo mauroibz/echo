@@ -20,3 +20,16 @@
   from the span start. Setting `edit_autopause: bool = True`, shown in Settings as "Pause
   playback while typing, replay the passage after".
 - **Highlight.** The passage being played uses the existing follow-along selection.
+
+## Decisions made while implementing
+
+- **Passage under the cursor** comes from the alignment of the shown text (add-timestamps-export),
+  so it works on edited text too; a cursor before the first passage plays the first one.
+- **Typing keys** are the editor's printable keys, Backspace and Delete without Ctrl or Alt;
+  shortcuts and navigation keys do not pause. The pause and the one-second replay timer apply
+  only while a passage started with these shortcuts is playing or paused by typing; a passage
+  that played to its end stays finished.
+- **Moving to another recording** forgets the passage being corrected.
+- **Ctrl+Shift+.** says "No passages to check in this transcript." when there are none.
+- **Verified** in offscreen UI tests with playback replaced by a stand-in that records which span
+  was asked for; span playback itself is the existing ffmpeg-to-output path with an end time.

@@ -151,6 +151,7 @@ class MainWindow(QMainWindow):
         self.transcript.download_requested.connect(self.show_model_dialog)
         self.transcript.changed.connect(self.model.reload)
         self.player.position_changed.connect(self.transcript.follow)
+        self.transcript.attach_player(self.player)
         self.player.markers_changed.connect(lambda _rid: self.transcript.reload_markers())
         self.transcript.marker_clicked.connect(self._seek_and_play)
 
@@ -216,6 +217,12 @@ class MainWindow(QMainWindow):
         self.a_copy_times = self._act(e, "Copy with &timestamps", self.transcript.copy_with_timestamps, "Ctrl+Alt+C",
                                       "copy")
         self._act(e, "&Find in transcript…", self.transcript.open_find, "Ctrl+F", "find")
+        e.addSeparator()
+        self._act(e, "Play the passage at the cursor", self.transcript.play_passage, "Ctrl+.", "play")
+        self._act(e, "Next passage", lambda: self.transcript.step_passage(1), "Ctrl+Alt+.", "skip-forward")
+        self._act(e, "Previous passage", lambda: self.transcript.step_passage(-1), "Ctrl+Alt+,", "skip-back")
+        self._act(e, "Next passage to check", self.transcript.play_next_flagged, "Ctrl+Shift+.", "warning")
+        e.addSeparator()
         self._act(e, "&Search recordings", self._focus_search, "Ctrl+K", "find")
         e.addSeparator()
         self.a_rename = self._act(e, "&Rename", self.player.focus_title, "F2", "rename")

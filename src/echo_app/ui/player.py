@@ -342,6 +342,7 @@ class WaveformView(QWidget):
 class PlayerPanel(QWidget):
     renamed = Signal(str, str)  # recording id, new title
     markers_changed = Signal(str)  # recording id
+    span_finished = Signal()  # a passage started with play_span reached its end
     crop_saved = Signal(str)
     export_requested = Signal()
     position_changed = Signal(float)
@@ -353,6 +354,7 @@ class PlayerPanel(QWidget):
         super().__init__(parent)
         self.rec: Recording | None = None
         self._loaded_sha = None
+        self._span: tuple[float, float] | None = None
         self.player = Playback()
         self._build()
         self._timer = QTimer(self, interval=40, timeout=self._tick)
@@ -579,9 +581,24 @@ class PlayerPanel(QWidget):
             self.crop_label.setText("")
 
     # ---- playback ----
+    def play_span(self, start: float, end: float) -> None:
+        """Play one passage and stop at its end (editing with the audio)."""
+        if self.rec is None or not self.play_btn.isEnabled():
+            return
+        self._span = (start, end)
+        self.player.play(start, end)
+        self._sync_play_icon()
+
+    def stop_span(self) -> None:
+        self._span = None
+        if self.player.playing:
+            self.player.pause()
+        self._sync_play_icon()
+
     def toggle_play(self):
         if self.rec is None or not self.play_btn.isEnabled():
             return
+        self._span = None
         if self.player.playing:
             self.player.pause()
         else:
@@ -618,6 +635,9 @@ class PlayerPanel(QWidget):
             self._sync_play_icon()
             if self.player.error:
                 self.message.emit(f"Playback failed: {self.player.error}")
+            elif self._span is not None:
+                self._span = None
+                self.span_finished.emit()
         pos = self.player.position()
         self.wave.set_position(pos)
         self._update_time()

@@ -129,6 +129,10 @@ Model versions are pinned, and only weights and configuration are downloaded, ne
   times), find with Ctrl+F, export with Ctrl+E. View → Passage times (Ctrl+T) shows when each
   passage starts. While playing, the current passage is highlighted, in edited text too.
   Subtitles and timed exports use your edited text, placed on the passages it came from.
+- **Correct with the audio.** Ctrl+. plays the passage under the cursor (again to stop);
+  Ctrl+Alt+. and Ctrl+Alt+, move to the next or previous passage and play it; Ctrl+Shift+. goes
+  to the next passage to check. While a passage plays, typing pauses it, and a second after you
+  stop it plays again from its start (Settings → Editing turns this off).
 - **Check what matters.** Passages Echo is unsure of are shaded, with the reason on hover
   ("very few words for 12 s of speech", "the model was unsure of it"); the status line and the
   list count them. Editing a passage clears its mark.

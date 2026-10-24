@@ -494,6 +494,11 @@ class SettingsDialog(QDialog):
         self.adapter.setToolTip("Improves accuracy on noisy or phone-quality audio such as voice notes; "
                                 "about the same on clean audio.")
         form.addRow("", self.adapter)
+        self.autopause = QCheckBox("Pause playback while typing, replay the passage after")
+        self.autopause.setChecked(self.cfg.edit_autopause)
+        self.autopause.setToolTip("When a passage plays with Ctrl+. and you start typing, it pauses, and plays "
+                                  "again from its start a second after you stop.")
+        form.addRow("Editing", self.autopause)
         self.idle = QSpinBox()
         self.idle.setRange(1, 240)
         self.idle.setSuffix(" min")
@@ -540,6 +545,7 @@ class SettingsDialog(QDialog):
         self.cfg.channels = self.channels.currentData()
         self.cfg.auto_transcribe = self.auto.isChecked()
         self.cfg.use_adapter = self.adapter.isChecked()
+        self.cfg.edit_autopause = self.autopause.isChecked()
         self.cfg.language = self.language.currentData() or "es"
         self.cfg.worker_idle_minutes = self.idle.value()
         self.cfg.theme = self.theme.currentData()
@@ -614,6 +620,9 @@ SHORTCUTS = [
     ("Set crop start / end at playhead", "[ and ] (waveform focused)"),
     ("Nudge crop edge", "Ctrl+← → (0.1 s), Ctrl+Shift+← → (1 s)"),
     ("Jump to passage", "Ctrl+click in the transcript (edited text too)"),
+    ("Play the passage at the cursor (again: stop)", "Ctrl+."),
+    ("Next / previous passage, and play it", "Ctrl+Alt+. / Ctrl+Alt+,"),
+    ("Next passage to check, and play it", "Ctrl+Shift+."),
     ("Find in transcript", "Ctrl+F"),
     ("Copy transcript", "Ctrl+Shift+C"),
     ("Copy with passage times", "Ctrl+Alt+C"),

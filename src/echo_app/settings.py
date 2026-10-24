@@ -25,6 +25,7 @@ class Settings:
     theme: str = "light"  # light, dark or system
     show_timestamps: bool = False  # passage start times in the transcript margin
     language: str = "es"  # default transcription language
+    edit_autopause: bool = True  # typing pauses a playing passage, which plays again a second later
 
     @property
     def data_path(self) -> Path:
@@ -42,6 +43,7 @@ _COMMENTS = {
     "theme": "Appearance: light, dark or system",
     "show_timestamps": "Show passage start times next to the transcript",
     "language": "Default transcription language (es, en, pt, fr, it, de, ...)",
+    "edit_autopause": "While a passage plays for editing, typing pauses it and it plays again after",
 }
 
 

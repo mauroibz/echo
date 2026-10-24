@@ -32,6 +32,9 @@ tag.
   model was unsure of, says why on hover and counts them. Passages the model was very unsure of
   are now retried, which recovers sentences a context sentence occasionally turned into a
   fragment.
+- Correcting with the audio: Ctrl+. plays the passage at the cursor, Ctrl+Alt+. and Ctrl+Alt+,
+  step through passages, Ctrl+Shift+. jumps to the next passage to check, and typing pauses
+  the passage and replays it when you stop.
 
 ### Fixed
 
