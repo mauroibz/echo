@@ -22,7 +22,7 @@ for arg in "$@"; do
 done
 [ -n "$profile" ] || profile=base
 
-say() { printf '\033[1m%s\033[0m\n' "$*"; }
+say() { if [ -t 1 ]; then printf '\033[1m%s\033[0m\n' "$*"; else printf '%s\n' "$*"; fi; }
 
 if ! command -v uv >/dev/null 2>&1; then
     echo "Echo needs uv to install its own Python and dependencies." >&2

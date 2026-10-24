@@ -27,12 +27,20 @@ for motivation and PLAN.md sections 2 and 9 for the agreed layout and packaging 
   desktop file in `~/.local/share/applications`. Updating is `git pull && ./install.sh`.
 - **Settings as TOML** read with stdlib `tomllib` and written by a tiny serializer (flat
   keys, scalar values only). Alternative: JSON. TOML is easier to hand-edit with comments.
-- **Index is SQLite in WAL mode** with `recordings` and `jobs` tables. The index stores only
-  derived data; `rescan` reconstructs it from `meta.json` files. Schema version in
-  `PRAGMA user_version`; on mismatch the index is dropped and rebuilt, which is safe because
-  it holds nothing original. Job rows are the one exception: they are re-derived from
-  "audio present, transcript absent" plus a marker file `transcribe.requested` in the
-  recording folder, so a rebuilt index re-queues pending work.
+- **Index is SQLite in WAL mode** with a `recordings` table and an FTS5 `search` table over
+  titles and transcript text (diacritics-insensitive, prefix matching). It stores only derived
+  data; `rescan` reconstructs it from `meta.json` files. Schema version lives in
+  `PRAGMA user_version`; on mismatch the index is dropped and rebuilt. Change detection uses
+  the recording folder's mtime, which every atomic rename inside the folder bumps.
+- **Transcription jobs are marker files, not index rows.** `transcribe.requested` (JSON
+  options) in a recording folder means "wanted"; the worker writes
+  `transcribe.progress.json` while running and removes both when done, or writes
+  `transcribe.error`. The queue therefore survives index loss, restarts, and moving the data
+  folder between machines. Alternative considered: a `jobs` table. Rejected because it would
+  make the index hold original state.
+- **No build backend.** `package = false` in uv; `bin/echo-app` runs the source tree with the
+  venv's interpreter (`python -P -m echo_app`, so the working directory is never on
+  `sys.path`). This keeps `no-build = true` absolute: not even our own package is built.
 - **Atomic writes** everywhere via write-to-temp, fsync, rename, fsync directory.
 - **Trash** implements the freedesktop.org trash spec directly (move into
   `~/.local/share/Trash/files` plus a `.trashinfo` file) when the data directory is on the
