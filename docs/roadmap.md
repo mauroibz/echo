@@ -310,6 +310,8 @@ local summaries have no folder yet; they wait for the dictionary to be in daily 
 | 3 | `add-windows-loopback` | adoption | blocked: needs a Windows tester |
 | 3 | `add-macos-support` | adoption | blocked: needs a Mac tester |
 | 4 | `add-linked-recordings` | product | archived |
+| 5 | `add-video-import` | product | planned |
+| 5 | `add-agent-cli` | product | planned |
 
 The open items are listed under "Blocked" in each change's `tasks.md`, with what a person has
 to run and look for.
@@ -319,3 +321,5 @@ Dependencies: `refactor-recorder-portability` before `add-windows-support` and `
 `add-low-confidence-marking` (both use its alignment of edited text to passages);
 `add-low-confidence-marking` before the review navigation in `add-edit-with-audio`; `add-dictionary` before `add-speaker-labels` (named people);
 `add-markers` before the headings in `add-markdown-vault-export`.
+`add-video-import` before `add-agent-cli` (meeting videos as inputs). Both serve the main use
+case: long meetings recorded as screen recordings, transcribed from the window or by an agent.
