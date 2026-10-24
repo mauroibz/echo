@@ -111,6 +111,7 @@ class Meta:
     quick_note: bool = False  # copy the transcript to the clipboard when it is ready (once)
     speakers: dict[str, str] = field(default_factory=dict)  # speaker number -> the name the user gave
     speakers_off: bool = False  # no speaker labels for this recording (a monologue)
+    extracted_from: dict[str, Any] | None = None  # source video: name, sha256, size, track, method
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "Meta":

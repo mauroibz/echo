@@ -259,16 +259,17 @@ def cmd_import(args) -> int:
         print("Give files or folders to import (or --watch).", file=sys.stderr)
         return 2
 
-    def progress(i, n, path):
+    def progress(i, n, path, frac=None):
         if path.name and sys.stdout.isatty():
-            print(f"\r  [{i + 1}/{n}] {path.name[:60]:<60}", end="", flush=True)
+            pct = f" {frac:4.0%}" if frac is not None else "     "
+            print(f"\r  [{i + 1}/{n}] {path.name[:55]:<55}{pct}", end="", flush=True)
 
     results = importer.import_paths(lib, [Path(p) for p in args.paths], progress=progress,
                                     auto_transcribe=None if not args.no_transcribe else False)
     if sys.stdout.isatty():
         print("\r" + " " * 72 + "\r", end="")
     if not results:
-        print("No audio files found.", file=sys.stderr)
+        print("No audio or video files found.", file=sys.stderr)
         return 1
     marks = {importer.IMPORTED: "+", importer.DUPLICATE: "=", importer.REJECTED: "!"}
     for r in results:
@@ -313,7 +314,7 @@ def register(sub) -> None:
     s = sub.add_parser("finalize", help="retry saving a recording whose raw audio was kept")
     s.add_argument("id")
     s.set_defaults(func=cmd_finalize)
-    s = sub.add_parser("import", help="import audio files or folders")
+    s = sub.add_parser("import", help="import audio or video files, or folders (a video gives its sound)")
     s.add_argument("paths", nargs="*")
     s.add_argument("--no-transcribe", action="store_true", help="do not queue transcription")
     s.add_argument("--watch", action="store_true",

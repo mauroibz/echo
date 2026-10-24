@@ -48,7 +48,7 @@ class _SpaceFilter(QObject):
 
 class DropOverlay(QLabel):
     def __init__(self, parent):
-        super().__init__("Drop audio files to import", parent)
+        super().__init__("Drop audio or video to import", parent)
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setFont(theme.display_font(1.6, QFont.Weight.ExtraBold))
         self._restyle()
@@ -749,8 +749,8 @@ class MainWindow(QMainWindow):
     # ---- import ----
     def import_dialog(self):
         paths, _ = QFileDialog.getOpenFileNames(
-            self, "Import audio", str(Path.home()),
-            "Audio (" + " ".join(f"*{e}" for e in sorted(importer.AUDIO_EXTENSIONS)) + ");;All files (*)")
+            self, "Import audio or video", str(Path.home()),
+            "Audio and video (" + " ".join(f"*{e}" for e in sorted(importer.EXTENSIONS)) + ");;All files (*)")
         if paths:
             self.import_paths([Path(p) for p in paths])
 
@@ -764,12 +764,15 @@ class MainWindow(QMainWindow):
             pass
 
         def work(progress):
-            return importer.import_paths(lib, paths, progress=lambda i, n, p: progress((i, n, p.name)))
+            return importer.import_paths(
+                lib, paths, progress=lambda i, n, p, frac=None: progress((i, n, p.name, frac)))
 
         def on_progress(v):
-            i, n, name = v
+            i, n, name, frac = v
             if name:
-                self.statusBar().showMessage(f"Importing {i + 1} of {n}: {name}")
+                # A long video whose sound is converted rather than copied takes a while: show how far.
+                pct = f" ({frac:.0%})" if frac is not None else ""
+                self.statusBar().showMessage(f"Importing {i + 1} of {n}: {name}{pct}")
 
         def done(results):
             imported = [r for r in results if r.status == importer.IMPORTED]
@@ -786,7 +789,7 @@ class MainWindow(QMainWindow):
                 parts.append(f"{len(dups)} already in the library")
             if bad:
                 parts.append(f"{len(bad)} not imported")
-            self.show_message(", ".join(parts) + "." if parts else "No audio files found.")
+            self.show_message(", ".join(parts) + "." if parts else "No audio or video files found.")
             if bad or (dups and not imported):
                 lines = [f"• {r.source.name}: {r.message}" for r in bad + dups]
                 box = QMessageBox(QMessageBox.Icon.Information if not bad else QMessageBox.Icon.Warning,

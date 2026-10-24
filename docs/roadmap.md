@@ -310,7 +310,7 @@ local summaries have no folder yet; they wait for the dictionary to be in daily 
 | 3 | `add-windows-loopback` | adoption | blocked: needs a Windows tester |
 | 3 | `add-macos-support` | adoption | blocked: needs a Mac tester |
 | 4 | `add-linked-recordings` | product | archived |
-| 5 | `add-video-import` | product | planned |
+| 5 | `add-video-import` | product | archived |
 | 5 | `add-agent-cli` | product | planned |
 
 The open items are listed under "Blocked" in each change's `tasks.md`, with what a person has

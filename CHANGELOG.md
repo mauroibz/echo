@@ -3,6 +3,15 @@
 Notable changes to Echo. Versions are git tags (`vX.Y.Z`); `main` may be ahead of the latest
 tag.
 
+## Unreleased
+
+### Added
+
+- Video files import as their sound. A screen recording or video call (`.mp4`, `.mkv`, `.mov`
+  and more) becomes an audio recording with one track, copied without re-encoding when its
+  format allows and verified; the video is left untouched and never copied. OBS file names give
+  the title and date, and watched folders pick up videos too.
+
 ## 1.0.1 - 2026-10-24
 
 ### Changed

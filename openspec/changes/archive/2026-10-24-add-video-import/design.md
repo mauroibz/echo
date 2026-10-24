@@ -120,4 +120,21 @@ is their union and is what folder searches, `watch.py` and the file dialog use.
 
 ## Decisions made while implementing
 
-(to be filled in by the implementing session)
+- **Copies fall back to comparing decoded samples.** The packet hash cannot match when the
+  container reframes the packets: AAC in MPEG-TS carries ADTS headers that `.m4a` drops, so the
+  packet hashes of a correct copy differ. When they differ, the decoded samples of the source
+  track and of the result are hashed (`-f hash`) and must match; only if both differ is the file
+  rejected. Measured: 1.2 s per side for the 40-minute meeting, versus 0.35 s for packets.
+- **More than two channels are mixed down to stereo when encoding to Opus.** libopus refuses
+  some surround layouts (5.1(side) from AC-3), and speech gains nothing from them. Copies keep
+  their channels.
+- **Muxers are named explicitly** (`ipod` for `.m4a`, `opus`, `mp3`, `ogg`, `flac`) and the
+  source's metadata is dropped (`-map_metadata -1`), so the extracted file does not carry the
+  video's encoder tags or chapter list.
+- **`.webm` with Vorbis** was replaced by `.mkv` in the tests: WebM only takes VP8/VP9/AV1
+  video, which the test card cannot use with the encoders every ffmpeg build has.
+- **OBS names only for video extensions.** A `.flac` named like an OBS recording keeps the plain
+  rule, since only a video can be a screen recording.
+- **`import_paths` progress** keeps its `(i, n, path)` call before each file and adds a fourth
+  argument, the fraction, while a video's sound is extracted. Both callers (the window and
+  `echo-app import`) accept it; the watcher calls `import_file` without progress.

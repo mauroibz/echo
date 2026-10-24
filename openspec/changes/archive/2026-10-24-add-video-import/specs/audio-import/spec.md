@@ -19,7 +19,8 @@ with a message saying it has no sound.
 
 ### Requirement: Extracted audio is verified
 A copied track SHALL be verified by comparing the packet hash of the source track with that of
-the extracted file; an encoded track SHALL be decoded in full and its length SHALL be within
+the extracted file or, when the container changes the packets' framing, the hash of the decoded
+samples; an encoded track SHALL be decoded in full and its length SHALL be within
 0.5 s of the source track's. Extraction SHALL happen in the staging folder so that an
 interrupted or failed extraction leaves no recording.
 

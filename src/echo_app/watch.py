@@ -76,7 +76,7 @@ class Scanner:
             return []
         return sorted(Path(e.path) for e in entries
                       if e.is_file() and not e.name.startswith(".")
-                      and Path(e.name).suffix.lower() in importer.AUDIO_EXTENSIONS)
+                      and Path(e.name).suffix.lower() in importer.EXTENSIONS)
 
     def scan(self, folders, auto_transcribe: bool | None = None) -> ScanResult:
         """Import every new, settled audio file in `folders` (not their subfolders)."""

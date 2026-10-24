@@ -45,6 +45,18 @@ def test_new_files_are_imported_once_settled(setup, tmp_path):
     assert str(folder / "PTT-20261023-WA0001.opus") in ledger[str(folder)]["handled"]
 
 
+def test_a_screen_recording_in_a_watched_folder(setup):
+    from test_video_import import make_video
+
+    lib, folder, scanner = setup
+    make_video(folder / "2026-09-23 15-02-29.mkv", ["-c:a", "flac"])
+    res = _scan_until_quiet(scanner, [folder], auto_transcribe=False)
+    assert len(res.imported) == 1
+    rec = lib.all()[0]
+    assert rec.meta.title == "Screen recording 2026-09-23 15:02" and rec.audio_path.suffix == ".flac"
+    assert (folder / "2026-09-23 15-02-29.mkv").exists()
+
+
 def test_a_growing_file_waits(setup):
     lib, folder, scanner = setup
     f = folder / "nota.wav"

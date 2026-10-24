@@ -48,7 +48,8 @@ POSIX, `msvcrt.locking` on Windows. Every action in the window is also a CLI com
                                   tags, notes, language, context line
     takes/take-NNN.raw            raw PCM, only while recording or awaiting finalize
     session.json, status.json     supervisor state and heartbeat, only while recording
-    audio.<ext>                   recorded FLAC, or the imported file byte for byte
+    audio.<ext>                   recorded FLAC, the imported file byte for byte, or the sound
+                                  of an imported video (meta.json's extracted_from names it)
     transcript.json               model output with passage times (replaced per run)
     transcript.corrected.json     the model output with dictionary corrections, each logged
     transcript.edited.txt         the user's text; the transcriber never writes it
@@ -112,6 +113,33 @@ speakers'. Up to 150%, PipeWire's software boost; past it there is mostly noise 
 Files are probed with ffprobe, copied to a staging file, verified by hash and renamed into a new
 recording folder unchanged. Duplicates are found by hash. WhatsApp names (`PTT-…`, `AUD-…`,
 "WhatsApp Audio/Ptt … at/a las …", 12-hour and Spanish variants) give the recording its date.
+
+A file with a real video stream (cover art, an attached picture, does not count) is imported as
+its sound; the extension only decides which files a folder search considers. The track is the
+one marked default, else the first: OBS's track 1 is the mix of every source and the others are
+optional stems, so taking more would repeat voices. The format is decided, never asked:
+
+| Track | Stored as | How |
+|---|---|---|
+| AAC, Opus, MP3, Vorbis, FLAC | `.m4a`, `.opus`, `.mp3`, `.ogg`, `.flac` | copied, no re-encoding |
+| PCM | `.flac` | encoded, lossless |
+| anything else (AC-3, E-AC-3, ALAC, WMA, …) | `.opus` | encoded at 128 kb/s, at most stereo |
+
+Re-encoding a lossy track could only lose quality, so it is copied whenever an audio container
+takes it; PCM stays lossless; for the rest Opus at 128 kb/s is transparent for speech. ffmpeg
+writes to the staging folder, and a copy is verified by the packet hash of the source track
+against the result (`-f streamhash`) or, when the container reframes the packets (ADTS AAC from
+MPEG-TS into `.m4a`), by the hash of the decoded samples (`-f hash`); an encode must decode to
+the source's length within 0.5 s. The video's own sha256, name, size, track number and method
+go into `meta.json` as `extracted_from`, and duplicates are found by either hash, so a video
+dropped twice is recognized before ffmpeg runs. The video is only read.
+
+Measured on a 40-minute OBS meeting (H.264 with AAC 48 kHz stereo at 192 kb/s, 1.0 GB, file in
+the page cache): `echo-app import` took 1.7 s from start to recording, of which hashing the video
+0.7 s, copying the track 0.3 s and verifying 0.7 s; the result is a 57 MB `.m4a` with the same
+2374.72 s. Hashing the decoded samples of that track takes 1.2 s. Transcribing it on the development GPU
+took 57.6 s (model load included) and gave 124 passages, about 6,500 words and four speaker
+clusters of 58, 48, 17 and 1 passages.
 
 Watched folders (`watch_dirs` in settings) are scanned by `watch.py`, from the window (a
 `QFileSystemWatcher` per folder with a 2-second debounce, plus a full look at start and every

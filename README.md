@@ -31,6 +31,8 @@ voice notes.
   audio in about a minute; a recent desktop processor in five to ten.
 - **Imports anything.** Drag files or folders onto the window. WhatsApp voice notes (`.opus`,
   `.m4a`, `.amr`) are recognized and dated from their names, and duplicates are skipped.
+  Screen recordings and other videos (`.mp4`, `.mkv`, `.mov`, …) bring only their sound: a
+  40-minute OBS meeting becomes a 57 MB recording in a few seconds, at full quality.
 - **Lets you work with the text.** Click a recording to read its transcript, edit it (edits
   save automatically and are never overwritten), search every transcript at once, show when
   each passage starts, copy it with or without times, export it as text, Markdown, subtitles
@@ -134,10 +136,15 @@ Model versions are pinned, and only weights and configuration are downloaded, ne
   marker; type a short note if you like, without stopping. Markers show on the waveform and
   beside the transcript; Alt+→ and Alt+← jump between them, Ctrl+M adds one at the playhead,
   and you can drag, edit or remove them on the waveform.
-- **Import.** Drop audio files or folders on the window, use File → Import (Ctrl+O), or open a
-  file with Echo from your file manager.
-- **Watch a folder.** Settings → Import → Add folder: new audio files that land there (a phone
-  sync folder, WhatsApp exports) are imported while Echo runs, once they finish copying. The
+- **Import.** Drop audio or video files, or folders, on the window, use File → Import (Ctrl+O),
+  or open a file with Echo from your file manager. From a video Echo keeps one audio track (the
+  default one; in OBS, the mix of all sources) and leaves the video where it is. The sound is
+  copied as is when its format allows, which is the case for OBS and most screen recorders, and
+  converted otherwise; there is nothing to choose. OBS's file names (`2026-09-23 15-02-29.mp4`)
+  give the title "Screen recording" and the date.
+- **Watch a folder.** Settings → Import → Add folder: new audio and video files that land there
+  (a phone sync folder, WhatsApp exports, OBS's recordings folder) are imported while Echo runs,
+  once they finish copying. The
   files stay in place and duplicates are skipped. Without the window, `echo-app import --watch`
   does the same.
 - **Transcribe.** New recordings and imports are transcribed automatically; progress and time
@@ -275,7 +282,8 @@ git fetch --tags && git checkout "$(git describe --tags --abbrev=0 origin/main)"
 | Waveform cache | `~/.cache/echo/` |
 | Models | `~/.cache/huggingface/hub/` |
 
-A recording folder holds `audio.flac` (or the imported file, unchanged), `meta.json`,
+A recording folder holds `audio.flac` (or the imported file, unchanged, or the sound of an
+imported video), `meta.json`,
 `transcript.json` (model output with passage times), `transcript.corrected.json` when the
 dictionary fixed something in it, and `transcript.edited.txt` once you edit.
 Deleted recordings go to the desktop trash. Backing up or syncing the data folder, and using it

@@ -107,6 +107,22 @@ def test_empty_state_then_drop_import(window, lib, tmp_path):
     assert "nota" in titles and any(t.startswith("WhatsApp voice note") for t in titles)
 
 
+def test_drop_a_screen_recording(window, lib, tmp_path):
+    from test_video_import import make_video
+
+    assert window.overlay.text() == "Drop audio or video to import"
+    video = make_video(tmp_path / "2026-09-23 15-02-29.mp4", ["-c:a", "aac"])
+    mime = QMimeData()
+    mime.setUrls([QUrl.fromLocalFile(str(video))])
+    window.dropEvent(QDropEvent(QPointF(100, 100), Qt.DropAction.CopyAction, mime, Qt.MouseButton.NoButton,
+                                Qt.KeyboardModifier.NoModifier))
+    assert wait_until(lambda: window.model.rowCount() == 1)
+    rec = window.current()
+    assert rec.meta.title == "Screen recording 2026-09-23 15:02"
+    assert rec.audio_path.suffix == ".m4a" and rec.meta.extracted_from["method"] == "copy"
+    assert video.exists()
+
+
 def test_record_from_window(window, lib):
     window.recorder_panel.start()
     assert wait_until(lambda: window.recorder_panel.session is not None)
