@@ -54,7 +54,7 @@ def _cmd_doctor(args) -> int:
 def _cmd_gui(args) -> int:
     from .ui.app import run
 
-    return run(sys.argv[:1])
+    return run(sys.argv[:1] + list(getattr(args, "files", []) or []))
 
 
 COMMANDS: dict[str, tuple[str, object]] = {}
@@ -66,7 +66,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("-v", "--verbose", action="store_true", help="log to stderr")
     sub = p.add_subparsers(dest="command", metavar="COMMAND")
 
-    s = sub.add_parser("gui", help="open the window (default)")
+    s = sub.add_parser("gui", help="open the window (default); files given are imported")
+    s.add_argument("files", nargs="*")
     s.set_defaults(func=_cmd_gui)
 
     s = sub.add_parser("list", help="list recordings")
@@ -96,12 +97,23 @@ def main(argv: list[str] | None = None) -> int:
     from . import logs
 
     parser = build_parser()
+    argv = sys.argv[1:] if argv is None else argv
+    # "echo-app file.opus" (desktop "Open with") means: open the window and import the file.
+    if argv and not argv[0].startswith("-") and argv[0] not in _command_names(parser):
+        argv = ["gui", *argv]
     args = parser.parse_args(argv)
     name = getattr(args, "command", None) or "gui"
     logs.setup({"_recorder": "recorder", "_worker": "worker"}.get(name, name), verbose=args.verbose)
     if not args.command:
         return _cmd_gui(args)
     return args.func(args) or 0
+
+
+def _command_names(parser) -> set[str]:
+    for action in parser._actions:
+        if isinstance(action, argparse._SubParsersAction):
+            return set(action.choices)
+    return set()
 
 
 def gui_main() -> int:
