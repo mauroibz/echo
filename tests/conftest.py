@@ -11,6 +11,5 @@ def isolated_home(tmp_path, monkeypatch):
         monkeypatch.delenv(var, raising=False)
     for var in ("ECHO_DATA_DIR", "ECHO_CONFIG_DIR", "ECHO_STATE_DIR"):
         monkeypatch.delenv(var, raising=False)
-    monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path / "run"))
-    (tmp_path / "run").mkdir()
+    # XDG_RUNTIME_DIR stays real: PipeWire's socket lives there.
     return home

@@ -9,6 +9,12 @@ from pathlib import Path
 from typing import Any
 
 
+def _umask() -> int:
+    mask = os.umask(0)
+    os.umask(mask)
+    return mask
+
+
 def fsync_dir(path: Path) -> None:
     fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
     try:
@@ -22,6 +28,7 @@ def atomic_write_bytes(path: Path, data: bytes) -> None:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    os.fchmod(fd, 0o666 & ~_umask())
     try:
         with os.fdopen(fd, "wb") as f:
             f.write(data)

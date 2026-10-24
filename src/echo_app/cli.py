@@ -87,7 +87,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def _extensions():
     """Subcommands contributed by other modules (recorder, import, worker)."""
-    from . import cli_ext
+    from . import cli_ext, cli_rec  # noqa: F401 - registers subcommands
 
     return cli_ext.REGISTRARS
 
@@ -97,7 +97,8 @@ def main(argv: list[str] | None = None) -> int:
 
     parser = build_parser()
     args = parser.parse_args(argv)
-    logs.setup(getattr(args, "command", None) or "gui", verbose=args.verbose)
+    name = getattr(args, "command", None) or "gui"
+    logs.setup({"_recorder": "recorder", "_worker": "worker"}.get(name, name), verbose=args.verbose)
     if not args.command:
         return _cmd_gui(args)
     return args.func(args) or 0
