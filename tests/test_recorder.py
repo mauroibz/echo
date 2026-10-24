@@ -199,3 +199,20 @@ def test_failing_capture_backs_off_and_warns(lib, monkeypatch):
     assert len(info["takes"]) <= 1  # empty failed takes are dropped, not accumulated
     assert len(list(s.rec.takes_dir.glob("take-*.raw"))) <= 1
     assert s.stop(wait=20) == "empty"
+
+
+def test_disk_running_out_stops_cleanly(lib, monkeypatch):
+    rec = _make_takes(lib, [b"\x00\x01" * 48000])  # 6 s at 16 kHz in the takes
+    sup = recorder.Supervisor(lib, rec)
+    sup.session = recorder.load_session(rec)
+    # Plenty of space: keep going, no warning.
+    monkeypatch.setattr(recorder, "free_bytes", lambda p: 50_000_000_000)
+    assert sup._check_disk() and sup.warning is None
+    # Under ten minutes left: warn but continue.
+    monkeypatch.setattr(recorder, "free_bytes", lambda p: recorder.DISK_MARGIN + 5 * 60 * RATE * 2)
+    assert sup._check_disk() and "minutes of recording left" in sup.warning
+    # Not enough left to finalize safely: stop, and say why in the recording's notes.
+    monkeypatch.setattr(recorder, "free_bytes", lambda p: 1000)
+    assert sup._check_disk() is False
+    assert any("Disk almost full" in e["cause"] for e in recorder.load_session(rec)["events"])
+    assert recorder.finalize(rec) == "ready"
