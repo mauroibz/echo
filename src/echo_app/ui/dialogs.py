@@ -593,6 +593,15 @@ class SettingsDialog(QDialog):
         self.adapter.setToolTip("Improves accuracy on noisy or phone-quality audio such as voice notes; "
                                 "about the same on clean audio.")
         form.addRow("", self.adapter)
+        self.shortcuts = QCheckBox("Ctrl+Alt+R records and Ctrl+Alt+N takes a quick note, from any application")
+        self.shortcuts.setChecked(self.cfg.global_shortcuts)
+        self.shortcuts.setToolTip("Through your desktop's shortcuts portal, which asks once to confirm the keys. "
+                                  "A quick note records until you press the keys again, then its text is copied "
+                                  "to the clipboard when it is transcribed.")
+        form.addRow("Shortcuts", self.shortcuts)
+        self.shortcuts_note = _dim("")
+        form.addRow("", self.shortcuts_note)
+        self._explain_shortcuts()
         self.autopause = QCheckBox("Pause playback while typing, replay the passage after")
         self.autopause.setChecked(self.cfg.edit_autopause)
         self.autopause.setToolTip("When a passage plays with Ctrl+. and you start typing, it pauses, and plays "
@@ -616,6 +625,21 @@ class SettingsDialog(QDialog):
         bb.accepted.connect(self.accept)
         bb.rejected.connect(self.reject)
         outer.addWidget(bb)
+
+    def _explain_shortcuts(self):
+        import os
+
+        from .shortcuts import available
+
+        if os.environ.get("ECHO_NO_PORTAL") or not available():
+            self.shortcuts.setEnabled(False)
+            self.shortcuts_note.setText(
+                "Your desktop has no global shortcuts portal. Bind keys to <code>echo-app record --toggle</code> "
+                "and <code>echo-app record --quick-note</code> in its keyboard settings instead.")
+            self.shortcuts_note.setTextFormat(Qt.TextFormat.RichText)
+            self.shortcuts_note.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        else:
+            self.shortcuts_note.hide()
 
     def reject(self):
         if theme.mode() != self._mode_on_open:
@@ -646,6 +670,7 @@ class SettingsDialog(QDialog):
         self.cfg.use_adapter = self.adapter.isChecked()
         self.cfg.watch_dirs = self.watched.folders()
         self.cfg.edit_autopause = self.autopause.isChecked()
+        self.cfg.global_shortcuts = self.shortcuts.isChecked()
         self.cfg.language = self.language.currentData() or "es"
         self.cfg.worker_idle_minutes = self.idle.value()
         self.cfg.theme = self.theme.currentData()

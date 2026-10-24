@@ -546,7 +546,7 @@ class PlayerPanel(QWidget):
             self.title.setText(self.rec.meta.title)
             return
         if new != self.rec.meta.title:
-            self.rec.update(title=new)
+            self.rec.update(title=new, title_auto=False)  # the user's title is never replaced
             self.renamed.emit(self.rec.id, new)
 
     def _commit_tags(self, tags: list):

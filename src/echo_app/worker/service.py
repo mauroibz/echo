@@ -286,6 +286,13 @@ class Worker:
         if context:
             transcript["context"] = context
         atomic_write_json(rec.path(TRANSCRIPT), transcript)
+        if rec.meta.title_auto:
+            from ..library import auto_title
+
+            rec.reload()
+            title = auto_title(rec.text())
+            if title and rec.meta.title_auto:
+                rec.update(title=title)
         try:
             from .. import dictionary
 

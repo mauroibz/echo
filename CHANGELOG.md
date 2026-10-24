@@ -46,6 +46,9 @@ tag.
 - Markdown notes for a vault: File → Export library to folder… and `echo-app export --all`, with
   markers as headings and an option to keep the folder up to date; `docs/sync.md` on backing up
   and syncing the data folder.
+- Record from anywhere: Ctrl+Alt+R and Ctrl+Alt+N (quick note, copied to the clipboard when
+  transcribed) through the desktop's shortcuts portal, `echo-app record --toggle` and
+  `--quick-note`; recordings not renamed take their title from their first sentence.
 
 ### Fixed
 

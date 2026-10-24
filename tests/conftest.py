@@ -19,6 +19,7 @@ def isolated_home(tmp_path, monkeypatch):
     # XDG_RUNTIME_DIR stays real (PipeWire's socket lives there); Echo's own locks do not.
     monkeypatch.setenv("ECHO_RUNTIME_DIR", str(tmp_path / "run"))
     monkeypatch.setenv("ECHO_NO_WORKER", "1")
+    monkeypatch.setenv("ECHO_NO_PORTAL", "1")  # never ask the real desktop for shortcuts
     return home
 
 

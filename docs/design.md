@@ -251,6 +251,15 @@ read the current tokens when they paint, so switching appearance is live. Icons 
 interface typeface (Manrope) are bundled so Echo looks the same on any desktop; transcripts use
 the desktop's own text face.
 
+### System-wide shortcuts
+
+Ctrl+Alt+R and Ctrl+Alt+N are bound through the XDG desktop portal's GlobalShortcuts interface
+(KDE Plasma 6, GNOME 46+), which shows its own confirmation dialog once. A portal session lives as
+long as the D-Bus connection that created it, so a thread in the window keeps one connection open
+and turns the portal's Activated signals into Qt signals. QtDBus aborts inside libdbus when asked
+to build the portal's `a(sa{sv})` argument, so this uses `jeepney`, a small pure-Python D-Bus
+library. Without a portal, the same actions are CLI commands to bind in the desktop's settings.
+
 ## Packaging and dependency risk
 
 | Thing | Where |
@@ -258,6 +267,7 @@ the desktop's own text face.
 | CPython 3.14 | downloaded by uv (`python-preference = "only-managed"`); the system Python is never used |
 | Packages | `<clone>/.venv`, from `uv.lock` with sha256 hashes, wheels only (`no-build = true`) |
 | `sounddevice` (base) | PortAudio audio where PipeWire does not run the sound: Windows, macOS, PulseAudio-only Linux. Its Windows and macOS wheels carry PortAudio; on Linux it uses the system's `libportaudio` and is only loaded when needed. Brings `cffi`. |
+| `jeepney` (base, Linux) | D-Bus for the global-shortcuts portal; QtDBus cannot marshal its argument types. Pure Python, no dependencies. |
 | `send2trash` (base) | The desktop trash on Windows and macOS; Linux keeps Echo's own freedesktop code. Pure Python. |
 | Echo itself | not built or installed as a package (`package = false`); `bin/echo-app` runs the source tree |
 | Launcher, menu entry, icon | `~/.local/bin`, `~/.local/share/applications`, `~/.local/share/icons` |

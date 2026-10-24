@@ -117,6 +117,12 @@ Model versions are pinned, and only weights and configuration are downloaded, ne
 - **Record.** Pick the input at the top left and speak; the meter and the waves should move.
   Press Record (Ctrl+R), pause with Ctrl+Shift+R, press Stop to save. "Computer audio: …"
   records what the computer plays, for example a call.
+- **Record from anywhere.** With Echo running (also in the tray), Ctrl+Alt+R starts or stops a
+  recording from any application, and Ctrl+Alt+N records a quick note: press it again to stop,
+  and when the text is ready it is on your clipboard. The first time, your desktop asks you to
+  confirm the keys. Where the desktop has no shortcuts portal, bind keys to
+  `echo-app record --toggle` and `echo-app record --quick-note` in its keyboard settings.
+  Recordings you have not renamed take their title from their first sentence.
 - **Mark the moments that matter.** While recording, press M (or use the tray menu) to drop a
   marker; type a short note if you like, without stopping. Markers show on the waveform and
   beside the transcript; Alt+→ and Alt+← jump between them, Ctrl+M adds one at the playhead,
@@ -177,6 +183,8 @@ Every core action also works from a terminal:
 ```text
 echo-app                          open the window (files given are imported)
 echo-app record [--wait] [--source NODE] [--title T]
+echo-app record --toggle          start a recording, or stop the active one
+echo-app record --quick-note [--wait]   the same for a quick note; --wait prints its text
 echo-app pause | resume | stop | status
 echo-app mark [--note TEXT]       add a marker to the active recording
 echo-app markers ID               list a recording's markers

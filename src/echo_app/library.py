@@ -66,6 +66,19 @@ def fold_tag(tag: str) -> str:
     return "".join(c for c in unicodedata.normalize("NFD", tag) if not unicodedata.combining(c)).casefold()
 
 
+def auto_title(text: str, limit: int = 60) -> str:
+    """The first sentence of a transcript as a title: cut at the sentence end or at a word
+    boundary within `limit` characters, without trailing punctuation; "" if there is no text."""
+    import re
+
+    text = " ".join(text.split())
+    m = re.search(r"[.!?…](\s|$)", text)
+    first = text[:m.start()] if m else text
+    if len(first) > limit:
+        first = first[:limit].rsplit(" ", 1)[0] if " " in first[:limit] else first[:limit]
+    return first.strip(" ,;:-—¡¿!?.…\"'«»").strip()
+
+
 def new_id(now: datetime | None = None) -> str:
     now = now or datetime.now()
     return f"{now:%Y-%m-%dT%H-%M-%S}_{secrets.token_hex(2)}"
@@ -94,6 +107,8 @@ class Meta:
     language: str | None = None  # transcription language code; None = the default in settings
     tags: list[str] = field(default_factory=list)  # as typed; compared folded (case and accents)
     notes: str = ""
+    title_auto: bool = False  # a generated title, replaced by the transcript's first sentence
+    quick_note: bool = False  # copy the transcript to the clipboard when it is ready (once)
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "Meta":

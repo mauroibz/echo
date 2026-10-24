@@ -361,7 +361,7 @@ class RecorderPanel(QWidget):
         else:
             self.start()
 
-    def start(self):
+    def start(self, quick_note: bool = False):
         cfg, _ = settings.load()
         s = self.current_source()
         source = "" if s is None or (s.is_default and s.kind == INPUT) else s.name
@@ -372,7 +372,8 @@ class RecorderPanel(QWidget):
         self._update_buttons()
 
         def go():
-            return recorder.start(self.library, source=source, rate=cfg.sample_rate, channels=cfg.channels)
+            return recorder.start(self.library, source=source, rate=cfg.sample_rate, channels=cfg.channels,
+                                  quick_note=quick_note)
 
         def ok(sess):
             self._busy = False

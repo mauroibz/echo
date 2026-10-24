@@ -55,17 +55,26 @@ def cmd_record(args) -> int:
 
     cfg, lib = _lib()
     recorder.recover_all(lib)
+    if args.toggle or args.quick_note:
+        active = recorder.active(lib)
+        if active is not None:  # the same key stops what it started
+            print(f"Stopping \"{active.rec.meta.title}\"")
+            code = _finish(active)
+            if code == 0 and args.wait and active.rec.meta.quick_note:
+                return _print_quick_note(lib, active.rec.id)
+            return code
     try:
         sess = recorder.start(lib, source=args.source if args.source is not None else cfg.source,
-                              rate=cfg.sample_rate, channels=cfg.channels, title=args.title)
+                              rate=cfg.sample_rate, channels=cfg.channels, title=args.title,
+                              quick_note=args.quick_note)
     except recorder.RecorderError as e:
         print(e, file=sys.stderr)
         return 1
     st = sess.status()
     print(f"Recording \"{sess.rec.meta.title}\" from {sess.rec.meta.source or 'default input'}")
     print(f"  id: {sess.rec.id}")
-    if not args.wait:
-        print("Stop with: echo-app stop")
+    if not args.wait or args.toggle or args.quick_note:
+        print("Stop with: echo-app stop" + (" (or the same command again)" if args.toggle or args.quick_note else ""))
         return 0
     stopping = False
 
@@ -99,6 +108,30 @@ def _finish(sess) -> int:
         return 0
     print(f"Saving failed: {sess.rec.reload().meta.error}. Raw audio is kept; retry with: "
           f"echo-app finalize {sess.rec.id}", file=sys.stderr)
+    return 1
+
+
+def _print_quick_note(lib, rid: str, timeout: float = 600) -> int:
+    """Wait for a quick note's transcript and print it (pipe it to wl-copy or xclip)."""
+    from .library import T_DONE, T_FAILED, T_NONE
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        rec = lib.get(rid)
+        if rec is None:
+            print("The note had no audio.", file=sys.stderr)
+            return 1
+        st = rec.transcript_status()
+        if st == T_DONE:
+            print(rec.text().strip())
+            rec.update(quick_note=False)
+            return 0
+        if st in (T_FAILED, T_NONE):
+            print("The note was not transcribed" + (f": {rec.error_text()}" if st == T_FAILED else
+                                                    " (transcription is off or not installed)."), file=sys.stderr)
+            return 1
+        time.sleep(0.5)
+    print("Timed out waiting for the transcript.", file=sys.stderr)
     return 1
 
 
@@ -257,7 +290,11 @@ def register(sub) -> None:
     s = sub.add_parser("record", help="start recording in the background")
     s.add_argument("--source", help="PipeWire node name (see: echo-app sources)")
     s.add_argument("--title", help="title for the recording")
-    s.add_argument("--wait", action="store_true", help="stay in the foreground; Ctrl+C stops")
+    s.add_argument("--wait", action="store_true",
+                   help="stay in the foreground, Ctrl+C stops; with --quick-note, wait for the text and print it")
+    s.add_argument("--toggle", action="store_true", help="start a recording, or stop the active one")
+    s.add_argument("--quick-note", action="store_true",
+                   help="like --toggle, for a short note tagged 'nota' whose text is copied when ready")
     s.set_defaults(func=cmd_record)
     for name, fn, hlp in (("pause", cmd_pause, "pause the active recording"),
                           ("resume", cmd_resume, "resume the paused recording"),

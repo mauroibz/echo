@@ -799,7 +799,7 @@ def active(lib: Library) -> Session | None:
 
 
 def start(lib: Library, source: str = "", rate: int = 48000, channels: int = 1,
-          title: str | None = None, timeout: float = 5.0) -> Session:
+          title: str | None = None, timeout: float = 5.0, quick_note: bool = False) -> Session:
     """Start a detached supervisor for a new recording and wait until it is capturing."""
     if (s := active(lib)) is not None:
         raise RecorderError(f"Already recording \"{s.rec.meta.title}\". Stop it first.")
@@ -816,7 +816,8 @@ def start(lib: Library, source: str = "", rate: int = 48000, channels: int = 1,
         label = src.label if src else "System default input"
     now = datetime.now()
     rec = lib.create(title or f"Recording {now:%Y-%m-%d %H:%M}", "recorded", state=RECORDING,
-                     source=label, sample_rate=rate, channels=channels)
+                     source=label, sample_rate=rate, channels=channels, title_auto=not title,
+                     quick_note=quick_note, tags=["nota"] if quick_note else [])
     rec.takes_dir.mkdir()
     atomic_write_json(session_path(rec), {"version": 1, "rate": rate, "channels": channels,
                                           "source": source or None, "state": S_STARTING,

@@ -31,6 +31,7 @@ class Settings:
     export_sync: bool = False  # rewrite a recording's note there whenever it changes
     export_timestamps: bool = False  # paragraph times in exported notes
     export_audio: str = "link"  # link, copy or none
+    global_shortcuts: bool = True  # Ctrl+Alt+R and Ctrl+Alt+N from any application (desktop portal)
 
     @property
     def data_path(self) -> Path:
@@ -54,6 +55,7 @@ _COMMENTS = {
     "export_sync": "Keep the exported notes up to date as recordings change (writes outside Echo's folder)",
     "export_timestamps": "Start exported paragraphs with their time",
     "export_audio": "Audio in exported notes: link (to Echo's file), copy, or none",
+    "global_shortcuts": "Record and take quick notes with keys that work in any application",
 }
 
 

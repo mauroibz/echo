@@ -85,6 +85,8 @@ class MainWindow(QMainWindow):
         self._sync_ids: set[str] = set()
         self._sync_timer = QTimer(self, singleShot=True, interval=2000, timeout=self._sync_notes)
         self.model.recordings_changed.connect(self._notes_changed)
+        self.model.recordings_changed.connect(self._deliver_quick_notes)
+        self.shortcuts = None
         self.watcher = FolderWatcher(self.library, self)
         self.watcher.imported.connect(self._watched_import)
         QTimer.singleShot(0, self._startup_tasks)
@@ -352,6 +354,7 @@ class MainWindow(QMainWindow):
 
         run_task(sync_index)
         self.watcher.configure()
+        self._start_global_shortcuts()
 
     def _attach_active(self):
         if self.recorder_panel.session is None:
@@ -702,6 +705,53 @@ class MainWindow(QMainWindow):
         run_task(export.export_audio, rec, Path(path), on_done=done,
                  on_error=lambda m: self.show_message(f"Export failed: {m}"))
 
+    # ---- system-wide shortcuts and quick notes ----
+    def _start_global_shortcuts(self):
+        import os
+
+        if os.environ.get("ECHO_NO_PORTAL") or QApplication.platformName() == "offscreen":
+            return
+        if not settings.load()[0].global_shortcuts or self.shortcuts is not None:
+            return
+        from .shortcuts import GlobalShortcuts
+
+        self.shortcuts = GlobalShortcuts(self)
+        self.shortcuts.activated.connect(self._global_shortcut)
+        self.shortcuts.start()
+
+    def _global_shortcut(self, sid: str):
+        panel = self.recorder_panel
+        if sid == "record-toggle":
+            panel.toggle_record()
+        elif sid == "quick-note":
+            if panel.session is not None:
+                panel.stop()
+            else:
+                panel.start(quick_note=True)
+                self.tray.show()
+                self.tray.showMessage(APP_NAME, "Recording a quick note. Press the same keys to stop.",
+                                      QSystemTrayIcon.MessageIcon.Information, 3000)
+
+    def _deliver_quick_notes(self, ids: list):
+        """A quick note's text goes to the clipboard once, as soon as it is transcribed."""
+        from ..library import T_DONE
+
+        for rid in ids:
+            rec = self.library.get(rid)
+            if rec is None or not rec.meta.quick_note or rec.transcript_status() != T_DONE:
+                continue
+            text = rec.text().strip()
+            rec.update(quick_note=False)
+            if not text:
+                continue
+            QApplication.clipboard().setText(text + "\n")
+            self.tray.show()
+            self.tray.showMessage(APP_NAME, f"Note ready and copied to the clipboard: {text[:80]}",
+                                  QSystemTrayIcon.MessageIcon.Information, 5000)
+            self.show_message("Quick note copied to the clipboard.")
+            QTimer.singleShot(5500, lambda: self.tray.setVisible(self.recorder_panel.session is not None
+                                                                 or not self.isVisible()))
+
     def export_library(self):
         rec = self.current()
         dlg = ExportLibraryDialog(rec is not None, self)
@@ -848,6 +898,8 @@ class MainWindow(QMainWindow):
     def shutdown(self):
         self._refresh_timer.stop()
         self.watcher.stop()
+        if self.shortcuts is not None:
+            self.shortcuts.stop()
         self.recorder_panel.shutdown()
         self.player.player.stop()
         self.player._timer.stop()
