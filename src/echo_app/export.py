@@ -75,7 +75,18 @@ def _clock(sec: float, sep: str) -> str:
     return f"{h:02d}:{m:02d}:{s:02d}{sep}{ms:03d}"
 
 
-def cues(rec: Recording) -> list[tuple[float, float, str, bool]]:
+def speaker_name(rec: Recording, number: int | None) -> str | None:
+    """The name for a speaker number: the user's, else "Speaker N"; None when speakers are off."""
+    if number is None or rec.meta.speakers_off or not (rec.transcript() or {}).get("speakers"):
+        return None
+    return rec.meta.speakers.get(str(number)) or f"Speaker {number}"
+
+
+def has_speakers(rec: Recording) -> bool:
+    return not rec.meta.speakers_off and bool((rec.transcript() or {}).get("speakers"))
+
+
+def cues(rec: Recording) -> list[tuple[float, float, str, bool, int | None]]:
     """The text the user sees, cut into timed passages (edited text is aligned to the model's)."""
     t = rec.transcript() or {}
     segs = t.get("segments", [])
@@ -88,39 +99,74 @@ def cues(rec: Recording) -> list[tuple[float, float, str, bool]]:
 def with_timestamps(rec: Recording) -> str:
     """One line per passage, "[m:ss] text", with a blank line where a paragraph starts."""
     lines = []
-    for start, _end, text, paragraph in cues(rec):
-        if paragraph and lines:
+    last = None
+    for start, _end, text, paragraph, who in cues(rec):
+        name = speaker_name(rec, who)
+        if (paragraph or name != last) and lines:
             lines.append("")
-        lines.append(f"[{stamp(start)}] {text}")
+        prefix = f"{name}: " if name and name != last else ""
+        lines.append(f"[{stamp(start)}] {prefix}{text}")
+        last = name
     return "\n".join(lines) + "\n"
 
 
-def to_srt(items) -> str:
-    out = []
-    for n, (start, end, text, _p) in enumerate(items, 1):
-        out.append(f"{n}\n{_clock(start, ',')} --> {_clock(end, ',')}\n{text}\n")
+def with_speakers(rec: Recording) -> str:
+    """The text with "Name:" where the speaker changes, a new paragraph at each change."""
+    paragraphs: list[str] = []
+    last = None
+    for _s, _e, text, paragraph, who in cues(rec):
+        name = speaker_name(rec, who)
+        if not paragraphs or paragraph or name != last:
+            paragraphs.append(f"{name}: {text}" if name and name != last else text)
+        else:
+            paragraphs[-1] += " " + text
+        last = name
+    return "\n\n".join(paragraphs)
+
+
+def to_srt(items, names=None) -> str:
+    """SubRip; with `names` (speaker number -> name), a cue starts with "Name: " when the speaker changes."""
+    out, last = [], None
+    for n, (start, end, text, _p, who) in enumerate(items, 1):
+        name = names.get(who) if names else None
+        prefix = f"{name}: " if name and name != last else ""
+        last = name
+        out.append(f"{n}\n{_clock(start, ',')} --> {_clock(end, ',')}\n{prefix}{text}\n")
     return "\n".join(out)
 
 
-def to_vtt(items) -> str:
+def to_vtt(items, names=None) -> str:
+    """WebVTT; with `names`, each cue carries its speaker as a voice tag (<v Name>)."""
     out = ["WEBVTT\n"]
-    for start, end, text, _p in items:
-        out.append(f"{_clock(start, '.')} --> {_clock(end, '.')}\n{text}\n")
+    for start, end, text, _p, who in items:
+        name = names.get(who) if names else None
+        out.append(f"{_clock(start, '.')} --> {_clock(end, '.')}\n{f'<v {name}>' if name else ''}{text}\n")
     return "\n".join(out)
 
 
 def to_json(rec: Recording, items) -> str:
     t = rec.transcript() or {}
+    segs = []
+    for a, b, text, p, who in items:
+        seg = {"start": round(a, 2), "end": round(b, 2), "text": text, "paragraph": p}
+        name = speaker_name(rec, who)
+        if name:
+            seg["speaker"] = name
+        segs.append(seg)
     data = {"id": rec.id, "title": rec.meta.title, "created": rec.meta.created, "duration": rec.meta.duration,
-            "language": t.get("language", "es"), "edited": rec.is_edited(),
-            "segments": [{"start": round(a, 2), "end": round(b, 2), "text": text, "paragraph": p}
-                         for a, b, text, p in items]}
+            "language": t.get("language", "es"), "edited": rec.is_edited(), "segments": segs}
     return json.dumps(data, ensure_ascii=False, indent=2) + "\n"
+
+
+def _names(rec: Recording) -> dict | None:
+    if not has_speakers(rec):
+        return None
+    return {n: speaker_name(rec, n) for n in range(1, int(rec.transcript()["speakers"].get("count", 0)) + 1)}
 
 
 def render_transcript(rec: Recording, fmt: str) -> str:
     """The transcript in one of TEXT_FORMATS (".txt", ".md", ".srt", ".vtt", ".json")."""
-    text = rec.text().strip()
+    text = (with_speakers(rec) if has_speakers(rec) else rec.text()).strip()
     if fmt == ".md":
         try:
             when = datetime.fromisoformat(rec.meta.created).strftime("%Y-%m-%d %H:%M")
@@ -128,9 +174,9 @@ def render_transcript(rec: Recording, fmt: str) -> str:
             when = rec.meta.created
         return f"# {rec.meta.title}\n\n_{when}_\n\n{text}\n"
     if fmt == ".srt":
-        return to_srt(cues(rec))
+        return to_srt(cues(rec), _names(rec))
     if fmt == ".vtt":
-        return to_vtt(cues(rec))
+        return to_vtt(cues(rec), _names(rec))
     if fmt == ".json":
         return to_json(rec, cues(rec))
     return text + "\n"
@@ -197,11 +243,14 @@ def _markdown_body(rec: Recording, text: str, timestamps: bool) -> str:
     if not items:
         return text
     paragraphs: list[tuple[float, list[str]]] = []
-    for start, _end, piece, para in items:
-        if para or not paragraphs:
-            paragraphs.append((start, [piece]))
+    last = None
+    for start, _end, piece, para, who in items:
+        name = speaker_name(rec, who)
+        if para or not paragraphs or name != last:
+            paragraphs.append((start, [f"**{name}:** {piece}" if name and name != last else piece]))
         else:
             paragraphs[-1][1].append(piece)
+        last = name
     # Each marker heads the paragraph it falls in; text before the first marker gets "Inicio".
     headings: dict[int, list[str]] = {}
     for m in sorted(rec.meta.markers, key=lambda m: m["at"]):

@@ -49,6 +49,8 @@ tag.
 - Record from anywhere: Ctrl+Alt+R and Ctrl+Alt+N (quick note, copied to the clipboard when
   transcribed) through the desktop's shortcuts portal, `echo-app record --toggle` and
   `--quick-note`; recordings not renamed take their title from their first sentence.
+- Speakers: interviews and meetings are split by speaker, with names you give remembered and
+  suggested in later recordings, and carried into exports (needs a 27 MB model download).
 
 ### Fixed
 

@@ -102,17 +102,25 @@ class TimestampMargin(QWidget):
     """The editor's left margin: passage start times, and a dot where a marker falls."""
 
     DOT = 14  # width of the marker column
+    LABEL_MAX = 120  # widest speaker name before it is elided
 
     def __init__(self, editor: "Editor"):
         super().__init__(editor)
         self.editor = editor
         self.stamps: list[tuple[int, float]] = []  # character position, seconds
         self.marks: list[tuple[int, dict]] = []  # character position of the passage, marker
+        self.labels: list[tuple[int, str, str, int]] = []  # position, speaker name, color role, number
         self.setFont(theme.display_font(0.82, QFont.Weight.DemiBold, tabular=True))
         self.setMouseTracking(True)
 
+    def _label_width(self) -> int:
+        if not self.labels:
+            return 0
+        fm = self.fontMetrics()
+        return min(self.LABEL_MAX, max(fm.horizontalAdvance(t) for _p, t, _c, _n in self.labels)) + 12
+
     def width_needed(self) -> int:
-        w = self.DOT if self.marks else 0
+        w = (self.DOT if self.marks else 0) + self._label_width()
         if self.stamps:
             longest = max((export.stamp(t) for _p, t in self.stamps), key=len, default="0:00")
             w += self.fontMetrics().horizontalAdvance(longest) + 14
@@ -140,7 +148,19 @@ class TimestampMargin(QWidget):
         p.setPen(QColor(t.muted))
         line = self.editor.fontMetrics().height()
         last_y = None
-        left = self.DOT if self.marks else 0
+        dot = self.DOT if self.marks else 0
+        label_w = self._label_width()
+        left = dot + label_w
+        fm = self.fontMetrics()
+        for pos, text, role, _n in self.labels:
+            r = self._rect_of(pos)
+            if r.bottom() < 0 or r.top() > self.height():
+                continue
+            p.setPen(theme.color(role))
+            p.drawText(QRect(dot, r.top(), label_w - 8, r.height()),
+                       Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+                       fm.elidedText(text, Qt.TextElideMode.ElideRight, label_w - 8))
+        p.setPen(QColor(t.muted))
         for pos, sec in self.stamps:
             r = self._rect_of(pos)
             if r.bottom() < 0:
@@ -161,9 +181,24 @@ class TimestampMargin(QWidget):
     def _dot_at(self, pt):
         return next((m for rect, m in self._dots() if rect.adjusted(-3, -3, 3, 3).contains(pt)), None)
 
+    def _label_at(self, pt):
+        dot = self.DOT if self.marks else 0
+        if not self.labels or not dot <= pt.x() < dot + self._label_width():
+            return None
+        for pos, _text, _role, n in self.labels:
+            r = self._rect_of(pos)
+            if r.top() <= pt.y() <= r.bottom():
+                return n
+        return None
+
     def mouseMoveEvent(self, e):
         m = self._dot_at(e.position().toPoint())
-        self.setCursor(Qt.CursorShape.PointingHandCursor if m else Qt.CursorShape.ArrowCursor)
+        speaker = self._label_at(e.position().toPoint())
+        self.setCursor(Qt.CursorShape.PointingHandCursor if m or speaker else Qt.CursorShape.ArrowCursor)
+        if speaker is not None:
+            from PySide6.QtWidgets import QToolTip
+
+            QToolTip.showText(e.globalPosition().toPoint(), "Click to name this speaker", self)
         if m:
             from PySide6.QtWidgets import QToolTip
 
@@ -175,11 +210,16 @@ class TimestampMargin(QWidget):
         m = self._dot_at(e.position().toPoint())
         if m:
             self.editor.marker_clicked.emit(float(m["at"]))
+            return
+        n = self._label_at(e.position().toPoint())
+        if n is not None:
+            self.editor.speaker_clicked.emit(n, e.globalPosition().toPoint())
 
 
 class Editor(QPlainTextEdit):
     ctrl_clicked = Signal(int)  # character position
     marker_clicked = Signal(float)  # seconds
+    speaker_clicked = Signal(int, object)  # speaker number, global position
     MAX_TEXT_WIDTH_CHARS = 90
 
     def __init__(self, parent=None):
@@ -191,11 +231,14 @@ class Editor(QPlainTextEdit):
         self.margin.hide()
         self.updateRequest.connect(lambda _r, _dy: self.margin.update())
 
-    def set_stamps(self, stamps: list[tuple[int, float]] | None, marks: list[tuple[int, dict]] = ()):
-        """Show passage times (character position, seconds) and marker dots; nothing hides the margin."""
+    def set_stamps(self, stamps: list[tuple[int, float]] | None, marks: list[tuple[int, dict]] = (),
+                   labels=()):
+        """Show passage times (character position, seconds), marker dots and speaker names;
+        nothing hides the margin."""
         self.margin.stamps = stamps or []
         self.margin.marks = list(marks)
-        if not self.margin.stamps and not self.margin.marks:
+        self.margin.labels = list(labels)
+        if not self.margin.stamps and not self.margin.marks and not self.margin.labels:
             self.margin.hide()
             self.setViewportMargins(0, 0, 0, 0)
             return
@@ -404,6 +447,10 @@ class TranscriptPanel(QWidget):
         self.act_retx = menu.addAction(icon("transcribe"), "Transcribe again", lambda: self.request(None))
         self.act_retx_base = menu.addAction("Transcribe again without the Spanish adapter", lambda: self.request(False))
         self.lang_menu = menu.addMenu(icon("languages"), "Language")
+        self.act_speakers = menu.addAction(icon("users"), "Label speakers")
+        self.act_speakers.setCheckable(True)
+        self.act_speakers.setToolTip("Show who speaks when (off for monologues)")
+        self.act_speakers.toggled.connect(lambda on: self.set_speakers_off(not on))
         self.lang_menu.aboutToShow.connect(self._fill_languages)
         self.act_revert = menu.addAction(icon("revert"), "Revert to model output…", self.revert)
         self.more_btn.setMenu(menu)
@@ -442,6 +489,7 @@ class TranscriptPanel(QWidget):
         self.editor.textChanged.connect(self._on_text_changed)
         self.editor.ctrl_clicked.connect(self._on_ctrl_click)
         self.editor.marker_clicked.connect(self.marker_clicked.emit)
+        self.editor.speaker_clicked.connect(self._speaker_menu)
         # Centered reading column on wide windows, on a full-width text background.
         column = QWidget()
         cl = QHBoxLayout(column)
@@ -567,8 +615,9 @@ class TranscriptPanel(QWidget):
         if st == T_RUNNING:
             p = rec.progress() or {}
             stage = p.get("stage")
-            if stage in ("loading", "detecting"):
-                head = "Loading the model…" if stage == "loading" else "Finding speech…"
+            if stage in ("loading", "detecting", "speakers"):
+                head = {"loading": "Loading the model…", "detecting": "Finding speech…",
+                        "speakers": "Telling the speakers apart…"}[stage]
                 self.state.show_state(head, rec.meta.title, busy=True,
                                       actions=[("Cancel", "cancel", self.cancel, False)])
             else:
@@ -657,6 +706,14 @@ class TranscriptPanel(QWidget):
         installed = features.transcription_installed()
         self.act_retx.setEnabled(installed)
         self.act_retx_base.setEnabled(installed and transcription.language_of(rec) == "es")
+        labeled = bool(t.get("speakers"))
+        self.act_speakers.blockSignals(True)
+        self.act_speakers.setChecked(not rec.meta.speakers_off)
+        self.act_speakers.blockSignals(False)
+        self.act_speakers.setEnabled(labeled or rec.meta.speakers_off)
+        if labeled and not rec.meta.speakers_off and not rec.is_edited():
+            n = int(t["speakers"].get("count", 0))
+            self.status.setText(self.status.text() + f" · {n} speakers")
         self._update_flag_count()
 
     def _update_notice(self, rec: Recording, st: str):
@@ -764,7 +821,88 @@ class TranscriptPanel(QWidget):
 
     def _update_margin(self):
         stamps = [(a, t) for a, _b, t in self._spans] if self.show_timestamps else None
-        self.editor.set_stamps(stamps, self._marker_anchors())
+        self.editor.set_stamps(stamps, self._marker_anchors(), self._speaker_labels())
+
+    SPEAKER_COLORS = ("accent_deep", "coral_deep", "amber", "accent", "muted")
+
+    def _speaker_labels(self) -> list[tuple[int, str, str, int]]:
+        """A name where the speaker changes: the user's, a suggestion with "?", or "Speaker N"."""
+        rec = self.rec
+        if rec is None or rec.meta.speakers_off:
+            return []
+        info = (rec.transcript() or {}).get("speakers") or {}
+        if not info:
+            return []
+        suggested = info.get("suggested") or {}
+        out, last = [], None
+        for a, _b, k in self._passages:
+            n = self._segments[k].get("speaker")
+            if n is None or n == last:
+                continue
+            last = n
+            name = rec.meta.speakers.get(str(n)) or (f"{suggested[str(n)]}?" if str(n) in suggested else f"Speaker {n}")
+            out.append((a, name, self.SPEAKER_COLORS[(n - 1) % len(self.SPEAKER_COLORS)], n))
+        return out
+
+    def _speaker_menu(self, n: int, pos):
+        rec = self.rec
+        if rec is None:
+            return
+        info = (rec.transcript() or {}).get("speakers") or {}
+        suggested = (info.get("suggested") or {}).get(str(n))
+        current = rec.meta.speakers.get(str(n))
+        m = QMenu(self)
+        if suggested and not current:
+            m.addAction(icon("ok"), f"Yes, this is {suggested}", lambda: self.name_speaker(n, suggested))
+        m.addAction(icon("rename"), f"Name speaker {n}…" if not current else f"Rename {current}…",
+                    lambda: self._ask_speaker_name(n))
+        if current:
+            m.addAction(icon("clear"), "Forget this name", lambda: self.name_speaker(n, ""))
+        m.addSeparator()
+        m.addAction(icon("users"), "No speaker labels for this recording", lambda: self.set_speakers_off(True))
+        m.exec(pos)
+
+    def _ask_speaker_name(self, n: int):
+        from PySide6.QtWidgets import QInputDialog
+
+        people = [e.name for e in dictionary.current().entries if e.kind == dictionary.PEOPLE]
+        current = self.rec.meta.speakers.get(str(n), "") if self.rec else ""
+        name, ok = QInputDialog.getItem(self, "Name the speaker", f"Who is speaker {n}?",
+                                        ([current] if current else []) + [p for p in people if p != current],
+                                        0, True)
+        if ok:
+            self.name_speaker(n, name.strip())
+
+    def name_speaker(self, n: int, name: str):
+        """Name a speaker for the whole recording. A name also becomes a person in the dictionary,
+        whose voice is remembered so later recordings suggest it."""
+        rec = self.rec
+        if rec is None:
+            return
+        names = dict(rec.meta.speakers)
+        if name:
+            names[str(n)] = name
+            if dictionary.current().find(name) is None:
+                dictionary.update(lambda d: d.add(dictionary.PEOPLE, name))
+            centroid = (((rec.transcript() or {}).get("speakers") or {}).get("centroids") or {}).get(str(n))
+            if centroid:
+                dictionary.remember_voice(dictionary.current().find(name).name, centroid)
+        else:
+            names.pop(str(n), None)
+        rec.update(speakers=names)
+        self._update_margin()
+        self.changed.emit(rec.id)
+
+    def set_speakers_off(self, off: bool):
+        rec = self.rec
+        if rec is None or rec.meta.speakers_off == off:
+            return
+        rec.update(speakers_off=off)
+        self.act_speakers.setChecked(not off)
+        self._update_margin()
+        self.changed.emit(rec.id)
+        if not off and not (rec.transcript() or {}).get("speakers"):
+            self.message.emit("Transcribe again to label the speakers of this recording.")
 
     def _marker_anchors(self) -> list[tuple[int, dict]]:
         """Each marker at the start of the passage it falls in (or the next one)."""

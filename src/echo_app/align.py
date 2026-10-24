@@ -108,10 +108,9 @@ def align(segments: list[dict], text: str) -> list[tuple[int, int, int]]:
     return result
 
 
-def cues(segments: list[dict], text: str) -> list[tuple[float, float, str, bool]]:
-    """(start s, end s, text, starts a paragraph) per passage of `text`, for subtitles and exports.
-
-    Passages whose text the user deleted are left out.
+def cues(segments: list[dict], text: str) -> list[tuple[float, float, str, bool, int | None]]:
+    """(start s, end s, text, starts a paragraph, speaker number) per passage of `text`, for
+    subtitles and exports. Passages whose text the user deleted are left out.
     """
     out = []
     for s, e, k in align(segments, text):
@@ -119,5 +118,6 @@ def cues(segments: list[dict], text: str) -> list[tuple[float, float, str, bool]
         if not piece:
             continue
         seg = segments[k]
-        out.append((float(seg.get("start", 0.0)), float(seg.get("end", 0.0)), piece, bool(seg.get("paragraph"))))
+        out.append((float(seg.get("start", 0.0)), float(seg.get("end", 0.0)), piece, bool(seg.get("paragraph")),
+                    seg.get("speaker")))
     return out

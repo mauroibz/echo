@@ -13,6 +13,8 @@ class ModelRef:
     revision: str
     required: tuple[str, ...]  # files that must be present in the snapshot
     approx_bytes: int
+    # Only data files: never the repos' Python code, assets or demos.
+    allow: tuple[str, ...] = ("*.json", "*.safetensors", "tokenizer.model")
 
 
 BASE = ModelRef(
@@ -29,7 +31,17 @@ ADAPTER = ModelRef(
     required=("adapter_config.json", "adapter_model.safetensors"),
     approx_bytes=56_000_000,
 )
-ALL = (BASE, ADAPTER)
+# Speaker embeddings for labeling who speaks (WeSpeaker ResNet34 trained on VoxCeleb, Apache-2.0),
+# run on the processor with onnxruntime. Optional: transcription works without it.
+SPEAKER = ModelRef(
+    repo="Wespeaker/wespeaker-voxceleb-resnet34",
+    revision="ff1ac5bca8ef11e90662b879aa923979e0bd277b",
+    required=("voxceleb_resnet34.onnx",),
+    approx_bytes=26_534_127,
+    allow=("voxceleb_resnet34.onnx", "config.yaml"),
+)
+ALL = (BASE, ADAPTER)  # needed to transcribe
+OPTIONAL = (SPEAKER,)
 
 # Languages the pinned processor accepts (transformers' cohere_asr LANGUAGES). The tokenizer has
 # language tokens for many more, but the processor refuses them; tests/test_languages.py checks
@@ -41,8 +53,6 @@ LANGUAGE_NAMES = {"es": "Spanish", "en": "English", "pt": "Portuguese", "fr": "F
                   "ko": "Korean", "zh": "Chinese", "vi": "Vietnamese"}
 DEFAULT_LANGUAGE = "es"
 
-# Only data files: never download the repos' Python code, assets or demos.
-ALLOW_PATTERNS = ["*.json", "*.safetensors", "tokenizer.model"]
 
 
 def hf_home() -> Path:
@@ -67,15 +77,23 @@ def all_cached() -> bool:
     return all(is_cached(r) for r in ALL)
 
 
-def download(progress=None) -> None:
-    """Download the pinned snapshots. Requires the worker profile (huggingface_hub)."""
+def speaker_cached() -> bool:
+    return is_cached(SPEAKER)
+
+
+def missing() -> list[ModelRef]:
+    return [r for r in (*ALL, *OPTIONAL) if not is_cached(r)]
+
+
+def download(progress=None, refs=None) -> None:
+    """Download the pinned snapshots that are missing. Requires a transcription profile."""
     os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
     from huggingface_hub import snapshot_download
 
-    for ref in ALL:
+    for ref in refs if refs is not None else missing():
         if progress:
             progress(f"Downloading {ref.repo}")
-        snapshot_download(ref.repo, revision=ref.revision, allow_patterns=ALLOW_PATTERNS)
+        snapshot_download(ref.repo, revision=ref.revision, allow_patterns=list(ref.allow))
 
 
 def supported_languages() -> list[str]:

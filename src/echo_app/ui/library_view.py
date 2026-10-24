@@ -62,6 +62,9 @@ def status_of(rec: Recording) -> Status:
             return Status("Starting transcription…", K_BUSY, 0.0, m.recovered)
         if stage == "detecting":
             return Status("Finding speech…", K_BUSY, 0.0, m.recovered)
+        if stage == "speakers":
+            frac = (p.get("done", 0) / p["total"]) if p.get("total") else 0.0
+            return Status("Telling speakers apart…", K_BUSY, frac, m.recovered)
         frac = (p.get("done", 0) / p["total"]) if p.get("total") else 0.0
         eta = fmt_eta(p.get("eta_s"))
         return Status(f"Transcribing {frac:.0%}" + (f" · {eta}" if eta else ""), K_BUSY, frac, m.recovered)

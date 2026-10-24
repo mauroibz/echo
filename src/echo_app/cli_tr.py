@@ -94,14 +94,19 @@ def cmd_models(args) -> int:
     from . import features, models
 
     if args.action == "status":
-        for ref in models.ALL:
+        for ref in (*models.ALL, *models.OPTIONAL):
             state = "downloaded" if models.is_cached(ref) else "missing"
-            print(f"{ref.repo}@{ref.revision[:10]}  {state}")
+            note = "  (optional: who speaks)" if ref in models.OPTIONAL else ""
+            print(f"{ref.repo}@{ref.revision[:10]}  {state}{note}")
         return 0 if models.all_cached() else 1
     if not features.transcription_installed():
         print("Transcription is not installed. Run: ./install.sh --with-transcription", file=sys.stderr)
         return 1
-    if not models.hf_token_present():
+    gated_missing = not models.all_cached()
+    if not models.missing():
+        print("Models ready.")
+        return 0
+    if gated_missing and not models.hf_token_present():
         print("The models are gated on Hugging Face. Accept the terms on both model pages:\n"
               f"  https://huggingface.co/{models.BASE.repo}\n  https://huggingface.co/{models.ADAPTER.repo}\n"
               "then log in with: hf auth login", file=sys.stderr)

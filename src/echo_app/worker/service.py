@@ -15,6 +15,7 @@ from typing import Any, Protocol
 
 import numpy as np
 
+from .. import models
 from ..audio import ffmpeg
 from .. import locks
 from ..fsutil import atomic_write_json, read_json
@@ -274,6 +275,7 @@ class Worker:
                 seg["logprob"] = r["logprob"]
             segments.append(seg)
         mark_low(segments)
+        who = self._speakers(rec, requested_at, passages, audio, segments, started)
         transcript = {
             "version": 2, "language": language,
             "created": datetime.now().astimezone().isoformat(timespec="seconds"),
@@ -285,6 +287,8 @@ class Worker:
         }
         if context:
             transcript["context"] = context
+        if who:
+            transcript["speakers"] = who
         atomic_write_json(rec.path(TRANSCRIPT), transcript)
         if rec.meta.title_auto:
             from ..library import auto_title
@@ -310,6 +314,52 @@ class Worker:
             transcription.record_speed(transcription.speed_key(info.get("device", "cpu")), total_s,
                                        time.time() - started)
         log.info("%s: transcribed %.0f s of audio in %.0f s", rec.id, total_s, time.time() - started)
+
+    def _speakers(self, rec: Recording, requested_at, passages, audio, segments, started) -> dict | None:
+        """Label passages by speaker (a separate stage after recognition, on the processor).
+
+        Sets `speaker` on each segment and returns the transcript's `speakers` record: the count,
+        each speaker's voice centroid (for naming and for recognizing them later) and names
+        suggested from voices the user named before. Skipped without the speaker model, for
+        recordings marked as monologues, and for engines that do not provide it (tests).
+        """
+        if rec.meta.speakers_off or not getattr(self.engine, "labels_speakers", True):
+            return None
+        from . import speakers
+
+        if not speakers.Embedder.available():
+            log.info("%s: no speaker model; passages are not labeled by speaker", rec.id)
+            return None
+        emb = getattr(self, "_embedder", None) or speakers.Embedder()
+        self._embedder = emb
+        embs = {}
+        last = 0.0
+        for i, p in enumerate(passages):
+            if p.duration >= speakers.MIN_SECONDS and segments[i].get("text"):
+                embs[i] = emb.embed(audio[int(p.start * SAMPLE_RATE):int(p.end * SAMPLE_RATE)])
+            if time.monotonic() - last > 1.0:
+                last = time.monotonic()
+                self._check(rec, requested_at)
+                self._progress(rec, "speakers", i, len(passages), None, started)
+        labels, centroids = speakers.label([(p.start, p.end) for p in passages], embs)
+        if not centroids:
+            return None
+        prev = None
+        for seg, who in zip(segments, labels):
+            seg["speaker"] = who
+            if seg.get("text"):
+                if prev is not None and who != prev:
+                    seg["paragraph"] = True  # a new speaker starts a new paragraph
+                prev = who
+        from .. import dictionary
+
+        suggestions = {}
+        for n, c in centroids.items():
+            best = dictionary.recognize(c, speakers.similarity, speakers.RECOGNIZE)
+            if best:
+                suggestions[str(n)] = best
+        return {"count": len(centroids), "centroids": {str(k): v for k, v in centroids.items()},
+                "suggested": suggestions, "model": f"{models.SPEAKER.repo}@{models.SPEAKER.revision}"}
 
     @staticmethod
     def _load_partial(rec: Recording, key: dict) -> dict:

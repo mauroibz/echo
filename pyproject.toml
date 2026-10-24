@@ -21,10 +21,11 @@ dependencies = [
 [project.optional-dependencies]
 # Local transcription, one extra per compute profile; they differ only in where torch comes
 # from. cuda: NVIDIA GPUs, torch from PyPI with bundled CUDA libraries (~3.5 GB). cpu: any
-# processor, torch's CPU-only wheels (~200 MB). rocm: AMD GPUs on Linux.
-cuda = ["torch>=2.10", "transformers>=5.12", "peft>=0.19", "silero-vad>=6.2"]
-cpu = ["torch>=2.10", "transformers>=5.12", "peft>=0.19", "silero-vad>=6.2"]
-rocm = ["torch>=2.10", "transformers>=5.12", "peft>=0.19", "silero-vad>=6.2",
+# processor, torch's CPU-only wheels (~200 MB). rocm: AMD GPUs on Linux. onnxruntime runs the
+# small speaker-embedding model on the processor in every profile.
+cuda = ["torch>=2.10", "transformers>=5.12", "peft>=0.19", "silero-vad>=6.2", "onnxruntime>=1.20"]
+cpu = ["torch>=2.10", "transformers>=5.12", "peft>=0.19", "silero-vad>=6.2", "onnxruntime>=1.20"]
+rocm = ["torch>=2.10", "transformers>=5.12", "peft>=0.19", "silero-vad>=6.2", "onnxruntime>=1.20",
         "triton-rocm; sys_platform == 'linux'"]
 
 [dependency-groups]

@@ -225,6 +225,28 @@ Tags are stored as typed in `meta.json` and compared folded (case and accents ig
 the search. The index (schema 2) has a `tags` table and puts the notes in the full-text body;
 a schema change drops and rebuilds the index, so older installs pick both up on first start.
 
+### Speakers
+
+After recognition the worker labels passages by speaker, on the processor: a voice embedding per
+passage of 1.5 s or more (WeSpeaker's ResNet34 trained on VoxCeleb, Apache-2.0, a pinned 27 MB
+ONNX file run with onnxruntime), Kaldi filterbank features computed in numpy (they match
+torchaudio's `kaldi.fbank` to 1e-3), and agglomerative clustering on the cosine distance between
+cluster centroids, stopping at 0.4. Shorter passages take the previous speaker; a "speaker" with
+under 8 s of speech joins the nearest one; a recording with one speaker gets no labels. Each
+speaker change starts a paragraph. The transcript keeps each speaker's centroid, and naming a
+speaker stores it as that person's voice (`voices.json` next to the dictionary), so a later
+recording suggests the name when a centroid is at least 0.85 similar.
+
+Measured on conversations built from nine LibriVox readers (two to four speakers, 10 minutes
+each), also passed through one shared phone-band, 12 kb/s Opus and noise channel: every
+threshold from 0.30 to 0.55 found every speaker count and assigned all speech correctly; with
+the shared channel, errors began at 0.60. Single-speaker recordings, the user's own desk
+microphone among them, stayed one speaker even at 0.15. Chapters read by the same reader
+measured 0.956 or more between centroids, different readers 0.72 at most. Embedding runs at
+about 120× real time on a 6-core CPU. Labels are per passage, so a passage that straddles a turn
+(the planner joins speech across pauses under 2 s) gets one speaker: in a two-reader test with
+quick turns that was 27 s of 165 s.
+
 ### Audio backends
 
 All device access goes through `audio/backend.py`. PipeWire (its command-line tools) is used
@@ -267,6 +289,7 @@ library. Without a portal, the same actions are CLI commands to bind in the desk
 | CPython 3.14 | downloaded by uv (`python-preference = "only-managed"`); the system Python is never used |
 | Packages | `<clone>/.venv`, from `uv.lock` with sha256 hashes, wheels only (`no-build = true`) |
 | `sounddevice` (base) | PortAudio audio where PipeWire does not run the sound: Windows, macOS, PulseAudio-only Linux. Its Windows and macOS wheels carry PortAudio; on Linux it uses the system's `libportaudio` and is only loaded when needed. Brings `cffi`. |
+| `onnxruntime` (transcription profiles) | Runs the 27 MB speaker-embedding model on the processor in every profile; torch could not load the ONNX export without a converter. Brings `flatbuffers` and `protobuf`. |
 | `jeepney` (base, Linux) | D-Bus for the global-shortcuts portal; QtDBus cannot marshal its argument types. Pure Python, no dependencies. |
 | `send2trash` (base) | The desktop trash on Windows and macOS; Linux keeps Echo's own freedesktop code. Pure Python. |
 | Echo itself | not built or installed as a package (`package = false`); `bin/echo-app` runs the source tree |
@@ -305,6 +328,5 @@ packages (Fedora's torch is CPU-only).
 - **A personal adapter.** A LoRA trained on the user's own corrected transcripts (the model
   and edited texts Echo keeps side by side), for systematic errors prompting cannot fix. Not
   before the dictionary has been in daily use. See `docs/roadmap.md`.
-- **Speaker recognition.** The model does not do it. Speaker embeddings per speech segment,
-  clustered and labeled, would fit on the existing segment boundaries; known speakers could live
-  in the same glossary.
+- **Speaker turns inside a passage.** Splitting passages where the voice changes, before
+  recognition, would label quick exchanges exactly.

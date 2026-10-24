@@ -130,6 +130,7 @@ class Dictionary:
         if e is None:
             return False
         self.entries.remove(e)
+        _rename_voice(e.name, None)
         return True
 
     def merge(self, source: str, target: str) -> Entry:
@@ -142,6 +143,7 @@ class Dictionary:
                 dst.aliases.append(s)
         dst.used = max(dst.used, src.used)
         self.entries.remove(src)
+        _rename_voice(src.name, dst.name)
         return dst
 
     def mute(self, word: str) -> None:
@@ -234,6 +236,56 @@ def update(change) -> Dictionary:
     change(d)
     d.save()
     return current()
+
+
+# ---- voices ----------------------------------------------------------------------------------
+# A person named as a speaker keeps a voice signature (the average of their speaker centroids),
+# so later recordings can suggest them. Kept next to the dictionary rather than in it: 256
+# numbers per person would bury the names in a file meant for reading.
+
+def voices_path() -> Path:
+    return paths.config_dir() / "voices.json"
+
+
+def voices() -> dict[str, dict]:
+    try:
+        data = read_json(voices_path())
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def remember_voice(name: str, centroid: list[float]) -> None:
+    """Fold a speaker's centroid into the person's voice (a running mean over recordings)."""
+    data = voices()
+    old = data.get(name)
+    if old and len(old.get("voice", [])) == len(centroid):
+        n = int(old.get("recordings", 1))
+        voice = [(a * n + b) / (n + 1) for a, b in zip(old["voice"], centroid)]
+        data[name] = {"voice": [round(x, 5) for x in voice], "recordings": n + 1}
+    else:
+        data[name] = {"voice": [round(float(x), 5) for x in centroid], "recordings": 1}
+    atomic_write_json(voices_path(), data, mkdir=True)
+
+
+def recognize(centroid, similarity, threshold: float) -> str | None:
+    """The person whose voice is closest to `centroid`, if at least `threshold` similar."""
+    best, score = None, threshold
+    for name, v in voices().items():
+        if len(v.get("voice", [])) == len(centroid):
+            s = similarity(centroid, v["voice"])
+            if s >= score:
+                best, score = name, s
+    return best
+
+
+def _rename_voice(old: str, new: str | None) -> None:
+    data = voices()
+    if old in data:
+        v = data.pop(old)
+        if new and new not in data:
+            data[new] = v
+        atomic_write_json(voices_path(), data, mkdir=True)
 
 
 # ---- the context sentence --------------------------------------------------------------------

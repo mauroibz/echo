@@ -57,9 +57,9 @@ class FittedDialog(QDialog):
 
 # ---- model download -----------------------------------------------------------------------------
 
-def _downloaded_bytes() -> int:
+def _downloaded_bytes(refs) -> int:
     total = 0
-    for ref in models.ALL:
+    for ref in refs:
         d = models.snapshot_dir(ref).parent.parent / "blobs"
         if d.is_dir():
             for f in d.iterdir():
@@ -103,21 +103,26 @@ class ModelDownload(QWidget):
         self.status = _dim("")
         lay.addWidget(self.status)
         self.proc: QProcess | None = None
-        self._base = 0
+        self._refs: list = []
         self._timer = QTimer(self, interval=500, timeout=self._poll)
         self.update_state()
 
     def update_state(self):
         installed = features.transcription_installed()
         cached = models.all_cached()
+        speaker_only = cached and not models.speaker_cached()  # one small, ungated download left
         has_token = models.hf_token_present()
         self.token_row.setVisible(installed and not cached and not has_token)
-        self.bar.setVisible(installed and not cached)
-        self.button.setVisible(installed and not cached)
-        self.button.setEnabled(has_token and self.proc is None)
+        self.bar.setVisible(installed and (not cached or speaker_only))
+        self.button.setVisible(installed and (not cached or speaker_only))
+        self.button.setEnabled((has_token or speaker_only) and self.proc is None)
+        self.button.setText("Download (27 MB)" if speaker_only else "Download (4.3 GB)")
         if not installed:
             self.info.setText("Transcription is not installed on this computer. To add it, run in the Echo folder:\n"
                               "./install.sh --with-transcription")
+        elif speaker_only:
+            self.info.setText("The transcription model is ready. One more small download (27 MB) lets Echo tell "
+                              "speakers apart in interviews and meetings.")
         elif cached:
             speed = transcription.speed_text()
             self.info.setText("The transcription model is downloaded and ready." + (f" {speed}" if speed else ""))
@@ -152,7 +157,7 @@ class ModelDownload(QWidget):
     def start(self):
         if self.proc is not None:
             return
-        self._base = _downloaded_bytes()
+        self._refs = models.missing()
         self.proc = QProcess(self)
         cmd = selfcmd.command("models", "download")
         env = selfcmd.env()
@@ -171,8 +176,8 @@ class ModelDownload(QWidget):
         self._timer.start()
 
     def _poll(self):
-        total = sum(r.approx_bytes for r in models.ALL)
-        got = _downloaded_bytes()
+        total = sum(r.approx_bytes for r in self._refs)
+        got = _downloaded_bytes(self._refs)
         frac = min(0.99, got / total) if total else 0
         self.bar.setValue(int(frac * 1000))
         self.bar.setFormat(f"{got / 1e9:.1f} of {total / 1e9:.1f} GB")
@@ -188,7 +193,6 @@ class ModelDownload(QWidget):
         else:
             last = out.splitlines()[-3:] if out else ["Unknown error"]
             self.status.setText("Download failed: " + " ".join(last))
-        self.button.setText("Download (4.3 GB)")
         self.update_state()
         self.finished.emit(ok)
 

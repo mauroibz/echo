@@ -109,6 +109,8 @@ class Meta:
     notes: str = ""
     title_auto: bool = False  # a generated title, replaced by the transcript's first sentence
     quick_note: bool = False  # copy the transcript to the clipboard when it is ready (once)
+    speakers: dict[str, str] = field(default_factory=dict)  # speaker number -> the name the user gave
+    speakers_off: bool = False  # no speaker labels for this recording (a monologue)
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "Meta":
