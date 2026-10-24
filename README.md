@@ -116,7 +116,10 @@ Model versions are pinned, and only weights and configuration are downloaded, ne
 
 - **Record.** Pick the input at the top left and speak; the meter and the waves should move.
   Press Record (Ctrl+R), pause with Ctrl+Shift+R, press Stop to save. "Computer audio: …"
-  records what the computer plays, for example a call.
+  records what the computer plays, for example a call. The slider under the meter is the
+  input's gain, also while recording: keep the loudest parts out of the red (double-click for
+  100%). It is the same setting as the desktop's sound settings, so it stays with the
+  microphone; with PortAudio (no PipeWire) it is hidden and those settings set it.
 - **Record from anywhere.** With Echo running (also in the tray), Ctrl+Alt+R starts or stops a
   recording from any application, and Ctrl+Alt+N records a quick note: press it again to stop,
   and when the text is ready it is on your clipboard. The first time, your desktop asks you to
@@ -268,8 +271,8 @@ command for your distribution that fixes whatever fails (including Ubuntu 22.04,
 PulseAudio still owns audio, and X11 sessions missing `libxcb-cursor0`).
 
 - **The meter does not move.** Pick another input. If Echo says no sound is arriving, check the
-  cable, the mute switch and the input gain, in the system sound settings or on your audio
-  interface.
+  cable, the mute switch and the input gain (the slider under the meter, or a knob on your
+  audio interface).
 - **Old voice notes (`.amr`) do not import.** Fedora's `ffmpeg-free` lacks the AMR decoder;
   install `ffmpeg` from RPM Fusion. Doctor lists the missing decoders.
 - **"Not enough GPU memory".** The model needs about 5 GB free. Close other programs using the

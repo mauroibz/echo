@@ -67,6 +67,9 @@ class Backend(Protocol):
     def meter(self, source: Source | None, rate: int) -> Stream: ...
     def output(self, rate: int, channels: int, stdin) -> Output: ...
     def listen(self, source: Source | None) -> Output | None: ...
+    # The input's gain (1.0 = unchanged), or None where it cannot be set from here.
+    def gain(self, source: Source | None) -> float | None: ...
+    def set_gain(self, source: Source | None, value: float) -> bool: ...
 
 
 # ---- processes ----------------------------------------------------------------------------------
@@ -174,6 +177,30 @@ class PipeWireBackend:
         return subprocess.Popen(pipewire.loopback_cmd(source), stdin=subprocess.DEVNULL,
                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
+    def __init__(self):
+        self._ids: dict[str, int] = {}
+
+    def _node(self, source, fresh: bool = False) -> int | None:
+        if source is None or source.kind != INPUT or not shutil.which("wpctl"):
+            return None  # a monitor's "gain" would be the speakers' volume
+        if fresh or source.name not in self._ids:
+            node = pipewire.node_id(source.name)
+            if node is None:
+                return None
+            self._ids[source.name] = node
+        return self._ids[source.name]
+
+    def gain(self, source) -> float | None:
+        node = self._node(source, fresh=True)
+        return pipewire.get_volume(node) if node is not None else None
+
+    def set_gain(self, source, value) -> bool:
+        node = self._node(source)
+        if node is not None and pipewire.set_volume(node, value):
+            return True
+        node = self._node(source, fresh=True)  # the device may have come back with a new id
+        return node is not None and pipewire.set_volume(node, value)
+
 
 class CommandBackend(PipeWireBackend):
     """PipeWire with the capture command replaced (ECHO_CAPTURE_CMD, used by the tests).
@@ -184,7 +211,17 @@ class CommandBackend(PipeWireBackend):
     name = "command"
 
     def __init__(self, template: str):
+        super().__init__()
         self.template = template
+
+    _gain = 1.0  # per class: get() makes a new CommandBackend each time
+
+    def gain(self, source):
+        return CommandBackend._gain
+
+    def set_gain(self, source, value):
+        CommandBackend._gain = max(0.0, min(pipewire.GAIN_MAX, value))
+        return True
 
     def list_sources(self):
         return [Source("fake", "Test source", INPUT, 1, True)]

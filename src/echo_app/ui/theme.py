@@ -415,6 +415,11 @@ QWidget#sidebar QToolButton#record[recording="true"] {{ background: {t.on_deep};
 QWidget#sidebar QToolButton#record[recording="true"]:hover {{ background: #ffffff; }}
 QWidget#sidebar QToolButton#record:disabled {{ background: {glass}; color: {t.on_deep_muted}; }}
 QWidget#sidebar QToolButton#pause {{ border-radius: 23px; }}
+QWidget#sidebar QSlider::groove:horizontal {{ height: 4px; border-radius: 2px; background: {glass_line}; }}
+QWidget#sidebar QSlider::sub-page:horizontal {{ height: 4px; border-radius: 2px; background: {t.foam}; }}
+QWidget#sidebar QSlider::handle:horizontal {{ width: 14px; height: 14px; margin: -5px 0; border-radius: 7px;
+    background: {t.on_deep}; border: 2px solid {t.foam}; }}
+QWidget#sidebar QSlider::handle:horizontal:hover {{ background: #ffffff; }}
 """
 
 

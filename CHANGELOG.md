@@ -51,6 +51,7 @@ tag.
   `--quick-note`; recordings not renamed take their title from their first sentence.
 - Speakers: interviews and meetings are split by speaker, with names you give remembered and
   suggested in later recordings, and carried into exports (needs a 27 MB model download).
+- An input gain slider under the level meter, usable while recording (PipeWire).
 
 ### Fixed
 

@@ -41,6 +41,17 @@ current output device, and listening SHALL be off by default.
 - **WHEN** the selected input sends only digital silence for four seconds
 - **THEN** a hint under the meter says no sound is arriving and what to check
 
+### Requirement: Input gain
+Where the audio backend can set it (PipeWire), a slider under the meter SHALL set the selected
+input's gain from 0 to 150%, before and during recording, as the input device's own volume so
+that the meter and the recording both follow it. It SHALL show the current value, reflect a
+change made in the desktop's settings when the window is shown again, and be hidden for
+"Computer audio" sources and where the backend cannot set it.
+
+#### Scenario: Turning the gain down while recording
+- **WHEN** the user drags the gain slider from 100% to 70% during a recording
+- **THEN** the input's volume becomes 70% and the meter shows the lower level, without interrupting the recording
+
 ### Requirement: Recording lifecycle
 The user SHALL be able to start, pause, resume and stop a recording. Elapsed recorded time
 SHALL exclude paused time. Only one recording SHALL be active at a time.

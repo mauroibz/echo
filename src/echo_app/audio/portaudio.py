@@ -276,3 +276,9 @@ class PortAudioBackend:
 
     def listen(self, source):
         return None
+
+    def gain(self, source):
+        return None  # PortAudio has no device volume; the system's sound settings set it
+
+    def set_gain(self, source, value):
+        return False

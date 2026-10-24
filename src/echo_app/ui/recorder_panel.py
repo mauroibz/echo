@@ -5,10 +5,10 @@ from __future__ import annotations
 import logging
 import time
 
-from PySide6.QtCore import QPointF, QRectF, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QPointF, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QKeySequence, QLinearGradient, QPainter, QShortcut
 from PySide6.QtWidgets import (QComboBox, QGraphicsDropShadowEffect, QHBoxLayout, QLabel, QLineEdit, QSizePolicy,
-                               QStyledItemDelegate, QToolButton, QVBoxLayout, QWidget)
+                               QSlider, QStyledItemDelegate, QToolButton, QVBoxLayout, QWidget)
 
 from .. import recorder, settings
 from ..audio import backend, levels, monitor
@@ -25,6 +25,7 @@ WAVE_HEIGHT = 64
 SILENT_DB = levels.SILENCE_DB + 1
 SILENT_AFTER_S = 4.0
 NOTE_IDLE_MS = 10_000  # the marker note field closes after this long without typing
+GAIN_MAX_PCT = 150  # pipewire.GAIN_MAX
 SILENT_HINT = ("No sound from this input for {s} seconds. Check that the microphone is connected, "
                "not muted and its gain is up, or pick another input.")
 
@@ -176,6 +177,34 @@ class RecorderPanel(QWidget):
         self.meter = LevelMeter()
         lay.addWidget(self.meter)
 
+        # The input's gain: the device's own volume, so it works while recording and the meter
+        # above shows the effect at once. Hidden where the backend cannot set it.
+        self.gain_row = QWidget()
+        gl = QHBoxLayout(self.gain_row)
+        gl.setContentsMargins(0, 0, 0, 0)
+        gl.setSpacing(8)
+        mic = QLabel()
+        mic.setPixmap(icon("mic", "on_deep_muted").pixmap(16, 16))
+        gl.addWidget(mic)
+        self.gain = QSlider(Qt.Orientation.Horizontal)
+        self.gain.setRange(0, GAIN_MAX_PCT)
+        self.gain.setSingleStep(1)
+        self.gain.setPageStep(10)
+        self.gain.setToolTip("Input gain: the microphone's volume in the system, the same setting as the "
+                             "desktop's sound settings. Above 100% boosts it in software. Double-click for 100%.")
+        self.gain.setAccessibleName("Input gain")
+        self.gain.valueChanged.connect(self._gain_moved)
+        self.gain.installEventFilter(self)
+        gl.addWidget(self.gain, 1)
+        self.gain_label = QLabel("100%")
+        self.gain_label.setFont(theme.display_font(0.85, QFont.Weight.Bold, tabular=True))
+        self.gain_label.setMinimumWidth(self.gain_label.fontMetrics().horizontalAdvance("150%") + 2)
+        self.gain_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        gl.addWidget(self.gain_label)
+        self.gain_row.hide()
+        lay.addWidget(self.gain_row)
+        self._gain_timer = QTimer(self, singleShot=True, interval=60, timeout=self._apply_gain)
+
         ctl = QHBoxLayout()
         ctl.setSpacing(8)
         self.record_btn = QToolButton()
@@ -292,6 +321,7 @@ class RecorderPanel(QWidget):
         self.source.blockSignals(False)
         self._sources_loaded = True
         self._restart_monitor()
+        self._load_gain()
 
     def current_source_name(self) -> str:
         return self.source.currentData() or ""
@@ -306,8 +336,51 @@ class RecorderPanel(QWidget):
         cfg.source = "" if (s is None or (s.is_default and s.kind == INPUT)) else s.name
         settings.save(cfg)
         self._restart_monitor()
+        self._load_gain()
         if self.listen.isChecked():
             self._listener.start(self.current_source())
+
+    # ---- gain ----
+    def _load_gain(self):
+        src = self.current_source()
+
+        def load():
+            try:
+                return src, backend.get().gain(src)
+            except backend.BackendMissing:
+                return src, None
+
+        run_task(load, on_done=self._show_gain)
+
+    def _show_gain(self, result):
+        src, value = result
+        if src is not self.current_source() or self._gain_timer.isActive():
+            return  # the source changed meanwhile, or the user is moving the slider
+        self.gain_row.setVisible(value is not None)
+        if value is not None:
+            self.gain.blockSignals(True)
+            self.gain.setValue(round(value * 100))
+            self.gain.blockSignals(False)
+            self.gain_label.setText(f"{self.gain.value()}%")
+
+    def _gain_moved(self, pct: int):
+        self.gain_label.setText(f"{pct}%")
+        self._gain_timer.start()
+
+    def _apply_gain(self):
+        try:
+            ok = backend.get().set_gain(self.current_source(), self.gain.value() / 100)
+        except backend.BackendMissing:
+            ok = False
+        if not ok:
+            self.message.emit("Could not change the input gain.")
+            self._load_gain()
+
+    def eventFilter(self, obj, event):
+        if obj is self.gain and event.type() == QEvent.Type.MouseButtonDblClick:
+            self.gain.setValue(100)
+            return True
+        return super().eventFilter(obj, event)
 
     # ---- monitoring ----
     def set_window_shown(self, shown: bool):
@@ -317,6 +390,8 @@ class RecorderPanel(QWidget):
         self._window_shown = shown
         if not shown:
             self._wave_timer.stop()
+        else:
+            self._load_gain()  # it may have been changed in the desktop's settings meanwhile
         self._restart_monitor()
 
     def _want_monitor(self) -> bool:

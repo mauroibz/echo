@@ -101,6 +101,48 @@ def resolve(preferred: str, sources: list[Source] | None = None) -> tuple[Source
     return default_source(sources), None
 
 
+# ---- input gain -------------------------------------------------------------------------------
+# The gain is the source's own volume in PipeWire (what the desktop's sound settings call the input
+# level), set with WirePlumber's wpctl. It is applied before any application reads the input, so
+# the meter shows its effect at once, and it stays with the device for every program.
+# wpctl takes node ids only; ids change when a device comes back, names do not.
+GAIN_MAX = 1.5  # above 1.0 is PipeWire's software boost; past this it mostly adds noise and clipping
+
+
+def node_id(name: str) -> int | None:
+    try:
+        dump = _pw_dump()
+    except (OSError, subprocess.SubprocessError, json.JSONDecodeError):
+        return None
+    for o in dump:
+        if o.get("type") == "PipeWire:Interface:Node" and ((o.get("info") or {}).get("props") or {}).get("node.name") == name:
+            return o.get("id")
+    return None
+
+
+def parse_volume(out: str) -> float | None:
+    """'Volume: 0.85' or 'Volume: 0.85 [MUTED]' (wpctl get-volume) -> 0.85."""
+    m = re.match(r"\s*Volume:\s*([\d.]+)", out)
+    return float(m.group(1)) if m else None
+
+
+def get_volume(node: int) -> float | None:
+    try:
+        out = subprocess.run(["wpctl", "get-volume", str(node)], capture_output=True, text=True, timeout=3).stdout
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return parse_volume(out)
+
+
+def set_volume(node: int, value: float) -> bool:
+    value = max(0.0, min(GAIN_MAX, value))
+    try:
+        return subprocess.run(["wpctl", "set-volume", str(node), f"{value:.2f}"], capture_output=True,
+                              timeout=3).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
 def _target_args(source: Source | None) -> list[str]:
     return ["--target", source.name] if source is not None else []
 

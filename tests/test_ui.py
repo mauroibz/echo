@@ -11,6 +11,7 @@ import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QEventLoop, QMimeData, QPointF, Qt, QTimer, QUrl  # noqa: E402
+from PySide6.QtTest import QTest  # noqa: E402
 from PySide6.QtGui import QDropEvent  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
@@ -321,3 +322,17 @@ def test_short_source_labels():
         "Computer audio: GA102 Audio [LG ULTRAGEAR]"
     assert Source("c", "Easy Effects Source", INPUT).short_label == "Easy Effects Source"
     assert Source("d", "Stereo", INPUT).short_label == "Stereo"
+
+
+def test_input_gain_slider(window):
+    from echo_app.audio import backend, pipewire
+
+    assert pipewire.parse_volume("Volume: 0.85 [MUTED]\n") == 0.85 and pipewire.parse_volume("") is None
+    panel = window.recorder_panel
+    assert wait_until(lambda: panel.gain_row.isVisible())
+    assert panel.gain.value() == 100 and panel.gain_label.text() == "100%"
+    panel.gain.setValue(72)
+    assert panel.gain_label.text() == "72%"
+    assert wait_until(lambda: backend.get().gain(None) == 0.72, 2)
+    QTest.mouseDClick(panel.gain, Qt.MouseButton.LeftButton)
+    assert wait_until(lambda: backend.get().gain(None) == 1.0, 2) and panel.gain.value() == 100

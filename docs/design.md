@@ -91,6 +91,14 @@ Before recording, a low-rate `pw-record` stream drives the level meter while the
 shown. After four seconds of exact digital silence Echo says so, because a connected
 microphone with its gain up never produces it.
 
+The gain slider sets the source node's own volume through `wpctl` (WirePlumber, installed with
+PipeWire), the value the desktop's sound settings show. Echo does not scale samples itself:
+PipeWire applies the volume before any reader, so the recording, the meter and other programs
+all get the same input, and nothing about the recorder or its crash guarantees changes. `wpctl`
+takes node ids, which change when a device returns, so the id is looked up by node name and
+looked up again if setting fails. Monitors ("Computer audio") get no slider: their volume is the
+speakers'. Up to 150%, PipeWire's software boost; past it there is mostly noise and clipping.
+
 ## Import
 
 Files are probed with ffprobe, copied to a staging file, verified by hash and renamed into a new
