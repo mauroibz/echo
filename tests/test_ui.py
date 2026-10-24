@@ -74,7 +74,13 @@ def window(qapp, lib, monkeypatch):
     w._quitting = True
     w.shutdown()
     w.close()
+    # Destroyed, not only closed: each window holds a file watcher (an inotify instance), and a
+    # whole run of windows left alive used up the desktop's limit of 128.
+    w.deleteLater()
     pump(50)
+    from PySide6.QtCore import QCoreApplication, QEvent
+
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
 
 
 def wav(path, seconds=1.0, freq=440):
