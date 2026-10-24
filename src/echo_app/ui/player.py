@@ -24,6 +24,23 @@ NUDGE_FINE = 0.1
 NUDGE_COARSE = 1.0
 
 
+def statistics(rec: Recording) -> str:
+    """"1,234 words · 142 words a minute · 18% silence" from the transcript, or ""."""
+    t = rec.transcript()
+    if not t or not t.get("segments"):
+        return ""
+    words = len(rec.text().split())
+    speech = sum(max(0.0, float(s.get("end", 0)) - float(s.get("start", 0))) for s in t["segments"] if s.get("text"))
+    start, end = rec.effective_span()
+    span = (end if end is not None else (rec.meta.duration or 0)) - start
+    parts = [f"{words:,} words"]
+    if speech > 0:
+        parts.append(f"{round(words / speech * 60)} words a minute")
+    if span > 0 and speech <= span:
+        parts.append(f"{round(100 * (1 - speech / span))}% silence")
+    return "  ·  ".join(parts)
+
+
 class WaveformView(QWidget):
     seek_requested = Signal(float)
     crop_changed = Signal(object, object)  # start, end (None = unset)
@@ -342,6 +359,7 @@ class WaveformView(QWidget):
 class PlayerPanel(QWidget):
     renamed = Signal(str, str)  # recording id, new title
     markers_changed = Signal(str)  # recording id
+    meta_changed = Signal(str)  # recording id whose tags or notes changed
     span_finished = Signal()  # a passage started with play_span reached its end
     crop_saved = Signal(str)
     export_requested = Signal()
@@ -386,6 +404,14 @@ class PlayerPanel(QWidget):
         self.context.setAccessibleName("Who is speaking, what about")
         self.context.editingFinished.connect(self._commit_context)
         lay.addWidget(self.context)
+        from .tags import NotesEdit, TagEditor
+
+        self.tags = TagEditor()
+        self.tags.changed.connect(self._commit_tags)
+        lay.addWidget(self.tags)
+        self.notes = NotesEdit()
+        self.notes.edited.connect(self._commit_notes)
+        lay.addWidget(self.notes)
         self.wave = WaveformView()
         self.wave.seek_requested.connect(self.seek)
         self.wave.crop_changed.connect(self._crop_changed)
@@ -439,13 +465,16 @@ class PlayerPanel(QWidget):
         for w in (self.play_btn, self.speed, self.export_btn, self.wave):
             w.setEnabled(playable)
         self.title.setEnabled(rec is not None)
-        self.context.setEnabled(rec is not None)
+        for w in (self.context, self.tags, self.notes):
+            w.setEnabled(rec is not None)
         if rec is None:
             self.player.load(None, 0)
             self._sync_play_icon()
             self._loaded_sha = None
             self.title.setText("")
             self.context.setText("")
+            self.tags.set_tags([])
+            self.notes.set_text("")
             self.subtitle.setText("")
             self.wave.placeholder = ""
             self.wave.set_recording(0, None, None)
@@ -457,6 +486,8 @@ class PlayerPanel(QWidget):
             self.title.setText(rec.meta.title)
         if not self.context.hasFocus():
             self.context.setText(rec.meta.context_line)
+        self.tags.set_tags(rec.meta.tags)
+        self.notes.set_text(rec.meta.notes)
         bits = [fmt_date(rec.meta.created)]
         if rec.meta.duration:
             bits.append(fmt_duration(rec.meta.duration))
@@ -467,7 +498,8 @@ class PlayerPanel(QWidget):
         interruptions = [g for g in rec.meta.gaps if g.get("kind") == "interruption"]
         if interruptions:
             bits.append(f"{len(interruptions)} capture interruption{'s' if len(interruptions) > 1 else ''}")
-        self.subtitle.setText("  ·  ".join(bits))
+        stats = statistics(rec)
+        self.subtitle.setText("  ·  ".join(bits) + (f"\n{stats}" if stats else ""))
         if same and self._loaded_sha == rec.meta.sha256 and playable:
             self.wave.crop_start, self.wave.crop_end = rec.meta.crop_start, rec.meta.crop_end
             if self.wave._drag != "marker":
@@ -516,6 +548,16 @@ class PlayerPanel(QWidget):
         if new != self.rec.meta.title:
             self.rec.update(title=new)
             self.renamed.emit(self.rec.id, new)
+
+    def _commit_tags(self, tags: list):
+        if self.rec is not None:
+            self.tags.set_tags(self.rec.set_tags(tags))
+            self.meta_changed.emit(self.rec.id)
+
+    def _commit_notes(self, text: str):
+        if self.rec is not None and text != self.rec.meta.notes:
+            self.rec.update(notes=text)
+            self.meta_changed.emit(self.rec.id)
 
     def _commit_context(self):
         if self.rec is None:

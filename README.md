@@ -150,7 +150,12 @@ Model versions are pinned, and only weights and configuration are downloaded, ne
   everything for removing or merging, and imports a list from a text file.
 - **Crop.** Drag the edges of the waveform, or press `[` and `]` at the playhead. Hold Shift to
   turn off snapping. Transcribe again to transcribe only the cropped part.
-- **Search.** The search box matches titles and transcript text, ignoring accents.
+- **Search.** The search box matches titles, notes and transcript text, ignoring accents.
+  `#word` in it filters by tag.
+- **Tags and notes.** Under the title, add tags ("+ tag", with completion) and a note. The most
+  used tags show as chips above the list; click one to filter, click again to clear. A long
+  library is grouped by month, and each transcribed recording shows its word count, speaking
+  rate and share of silence.
 - **Close the window while recording** and the recording continues, with a tray icon to stop
   it.
 - **Appearance.** Light by default; Settings → Appearance switches to dark or follows the
@@ -172,7 +177,8 @@ echo-app sources                  list inputs (* marks the default)
 echo-app import PATH...           import files or folders
 echo-app transcribe ID... | --all [--wait] [--no-adapter] [--context TEXT] [--language CODE]
 echo-app cancel ID
-echo-app list [QUERY]             list or search recordings
+echo-app list [QUERY] [--tag T]   list or search recordings (#word in QUERY is a tag)
+echo-app tag ID [+TAG ...] [-TAG ...]   show, add or remove tags
 echo-app export ID [--format txt|md|srt|vtt|json] [--out PATH]
 echo-app models download | status
 echo-app recover                  repair recordings interrupted by a crash

@@ -24,19 +24,13 @@ manager) SHALL be imported by the running instance.
 - **THEN** the existing window comes to the front and the voice note is imported
 
 ### Requirement: Library list
-The library SHALL list recordings newest first with title, date, duration and a status that updates
-live: recording (with elapsed time), finalizing, queued, transcribing (with percent and time left),
-transcribed, edited, failed, needs attention, recovered. An empty library SHALL explain how to
-record or import. A search box SHALL filter by title and transcript text, ignoring accents and case.
+The list SHALL show recordings newest first, grouped by month, with title, date, duration and
+status, and SHALL filter by search text and by tags shown as chips above it. Selecting a
+recording SHALL show its tags, notes and statistics (words, words per minute, silence share).
 
-#### Scenario: Live transcription status
-- **WHEN** a recording is being transcribed
-- **THEN** its row shows the percentage and time remaining, updated at least every few seconds,
-  and the row changes to transcribed when done without user action
-
-#### Scenario: Search ignores accents
-- **WHEN** the user types "reunion"
-- **THEN** recordings whose title or transcript contains "reunión" are listed
+#### Scenario: Filter by tag
+- **WHEN** the user clicks the "entrevista" chip
+- **THEN** only recordings with that tag are listed, and the chip shows as active until cleared
 
 ### Requirement: Drag and drop import
 Dropping files or folders anywhere on the window SHALL import them, showing progress and a summary

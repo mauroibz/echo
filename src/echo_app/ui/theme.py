@@ -363,6 +363,20 @@ QWidget#card {{ background: {t.surface}; border: 1px solid {t.line}; border-radi
 QFrame#notice {{ background: {t.accent_soft}; border: none; border-radius: 10px; }}
 QFrame#chip {{ background: {t.raised}; border: 1px solid {t.accent}; border-radius: 17px; }}
 QLineEdit#markernote {{ background: {glass}; color: {t.on_deep}; border: 1px solid {t.foam}; border-radius: 10px; padding: 6px 8px; }}
+QToolButton#tagchip {{ background: {glass}; color: {t.on_deep}; border: 1px solid {glass_line}; border-radius: 11px;
+    padding: 2px 9px; }}
+QToolButton#tagchip:hover {{ background: {glass_hover}; }}
+QToolButton#tagchip:checked {{ background: {t.foam}; color: {t.deep_top}; border-color: {t.foam}; }}
+QToolButton#tageditchip {{ background: {t.accent_soft}; color: {t.accent_deep}; border: none; border-radius: 11px;
+    padding: 2px 9px; }}
+QToolButton#tageditchip:hover {{ background: {t.coral}; color: #ffffff; }}
+QLineEdit#tagentry {{ background: transparent; border: 1px dashed {t.line}; border-radius: 11px; padding: 2px 8px;
+    color: {t.ink}; }}
+QLineEdit#tagentry:focus {{ border: 1px solid {t.accent}; background: {t.raised}; }}
+QPlainTextEdit#notes {{ background: transparent; border: 1px solid transparent; border-radius: 6px; color: {t.ink};
+    padding: 0 2px; }}
+QPlainTextEdit#notes:hover {{ border-color: {t.line}; }}
+QPlainTextEdit#notes:focus {{ background: {t.raised}; border-color: {t.accent}; }}
 QPlainTextEdit#editor {{ background: {t.surface}; color: {t.ink}; border: none;
     selection-background-color: {t.accent_soft}; selection-color: {t.ink}; }}
 QLineEdit#title {{ background: transparent; border: 1px solid transparent; color: {t.ink}; padding: 2px 4px; }}

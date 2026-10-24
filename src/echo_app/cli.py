@@ -39,14 +39,35 @@ def _cmd_list(args) -> int:
     lib = Library(cfg.data_path)
     idx = Index(lib)
     idx.sync()
-    rows = idx.list(args.query or "")
+    rows = idx.list(args.query or "", tags=args.tag or ())
     for r in rows:
         rec = lib.get(r["id"])
         n = len(rec.meta.markers) if rec else 0
         marks = f"  [{n} marker{'s' if n != 1 else ''}]" if n else ""
-        print(f"{r['id']}  {_fmt_dur(r['duration']):>8}  {r['transcript_status']:<8}  {r['title']}{marks}")
+        tags = "  " + " ".join(f"#{t}" for t in rec.meta.tags) if rec and rec.meta.tags else ""
+        print(f"{r['id']}  {_fmt_dur(r['duration']):>8}  {r['transcript_status']:<8}  {r['title']}{marks}{tags}")
     if not rows:
-        print("No recordings." if not args.query else "No matches.")
+        print("No recordings." if not (args.query or args.tag) else "No matches.")
+    return 0
+
+
+def _cmd_tag(args) -> int:
+    from .library import Library, fold_tag
+    from .settings import load
+
+    cfg, _ = load()
+    rec = Library(cfg.data_path).get(args.id)
+    if rec is None:
+        print(f"No recording {args.id}", file=sys.stderr)
+        return 1
+    tags = list(rec.meta.tags)
+    for change in args.changes:
+        if change.startswith("-") and len(change) > 1:
+            tags = [t for t in tags if fold_tag(t) != fold_tag(change[1:])]
+        elif change.strip("+"):
+            tags.append(change.lstrip("+"))
+    tags = rec.set_tags(tags)
+    print(" ".join(f"#{t}" for t in tags) or "No tags.")
     return 0
 
 
@@ -105,11 +126,17 @@ def build_parser() -> argparse.ArgumentParser:
     s.set_defaults(func=_cmd_gui)
 
     s = sub.add_parser("list", help="list recordings")
-    s.add_argument("query", nargs="?", help="search titles and transcripts")
+    s.add_argument("query", nargs="?", help="search titles, notes and transcripts; #word is a tag")
+    s.add_argument("--tag", action="append", metavar="TAG", help="only recordings with this tag (repeatable)")
     s.set_defaults(func=_cmd_list)
 
     s = sub.add_parser("rescan", help="rebuild the library index from the recording folders")
     s.set_defaults(func=_cmd_rescan)
+
+    s = sub.add_parser("tag", help="show, add (+tag) or remove (-tag) a recording's tags")
+    s.add_argument("id")
+    s.add_argument("changes", nargs=argparse.REMAINDER, metavar="+TAG|-TAG")
+    s.set_defaults(func=_cmd_tag)
 
     s = sub.add_parser("export", help="write a transcript as text, Markdown, subtitles or JSON")
     s.add_argument("id")

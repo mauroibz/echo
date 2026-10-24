@@ -35,6 +35,9 @@ tag.
 - Correcting with the audio: Ctrl+. plays the passage at the cursor, Ctrl+Alt+. and Ctrl+Alt+,
   step through passages, Ctrl+Shift+. jumps to the next passage to check, and typing pauses
   the passage and replays it when you stop.
+- Tags and notes on recordings, tag chips that filter the list, `#tag` in the search, month
+  headings in long lists, and word count, speaking rate and silence share per recording;
+  `echo-app tag` and `echo-app list --tag`.
 
 ### Fixed
 

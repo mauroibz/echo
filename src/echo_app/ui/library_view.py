@@ -17,6 +17,13 @@ from .common import fmt_date, fmt_duration, fmt_eta
 
 ROLE_REC = Qt.ItemDataRole.UserRole + 1
 ROLE_STATUS = Qt.ItemDataRole.UserRole + 2
+ROLE_HEADER = Qt.ItemDataRole.UserRole + 3
+
+HEADER = "§"  # row ids starting with this are month headings
+GROUP_AFTER = 30  # recordings in the list before it is grouped by month...
+GROUP_MONTHS = 2  # ...or months it spans
+MONTHS = ("January", "February", "March", "April", "May", "June", "July", "August", "September", "October",
+          "November", "December")
 
 # Status kinds drive colors.
 K_RECORDING, K_BUSY, K_DONE, K_EDITED, K_WAIT, K_ERROR, K_NONE = (
@@ -88,6 +95,11 @@ class LibraryModel(QAbstractListModel):
         if not index.isValid() or index.row() >= len(self._rows):
             return None
         rid = self._rows[index.row()]
+        if rid.startswith(HEADER):
+            if role in (Qt.ItemDataRole.DisplayRole, ROLE_HEADER):
+                y, m = rid[1:].split("-")
+                return f"{MONTHS[int(m) - 1]} {y}"
+            return None
         rec = self._all.get(rid)
         if rec is None:
             return None
@@ -111,7 +123,36 @@ class LibraryModel(QAbstractListModel):
             return tip
         return None
 
+    def flags(self, index):
+        if index.isValid() and index.row() < len(self._rows) and self._rows[index.row()].startswith(HEADER):
+            return Qt.ItemFlag.NoItemFlags  # headings are neither selectable nor reachable by keys
+        return super().flags(index)
+
     # ---- data ----
+    def first_row(self) -> int:
+        """The first row holding a recording, or -1."""
+        return next((i for i, r in enumerate(self._rows) if not r.startswith(HEADER)), -1)
+
+    def nearest_row(self, row: int) -> int:
+        """The recording row at or before `row` (after it if none), for keeping a selection."""
+        rows = [i for i, r in enumerate(self._rows) if not r.startswith(HEADER)]
+        if not rows:
+            return -1
+        before = [i for i in rows if i <= row]
+        return before[-1] if before else rows[0]
+
+    def tag_counts(self) -> list[tuple[str, int]]:
+        """(tag, recordings) over the whole library, most used first; spelled as most often typed."""
+        from ..library import fold_tag
+
+        totals: dict[str, dict[str, int]] = {}
+        for rec in self._all.values():
+            for t in rec.meta.tags:
+                spellings = totals.setdefault(fold_tag(t), {})
+                spellings[t] = spellings.get(t, 0) + 1
+        out = [(max(sp, key=sp.get), sum(sp.values())) for sp in totals.values()]
+        return sorted(out, key=lambda x: (-x[1], fold_tag(x[0])))
+
     def recording(self, row: int) -> Recording | None:
         if 0 <= row < len(self._rows):
             return self._all.get(self._rows[row])
@@ -185,6 +226,16 @@ class LibraryModel(QAbstractListModel):
         ids = [rid for rid in self._all if self._filter is None or rid in self._filter
                or self._all[rid].meta.state == RECORDING]
         ids.sort(key=lambda r: (self._all[r].meta.created, r), reverse=True)
+        months = [self._all[r].meta.created[:7] for r in ids]
+        if len(ids) > GROUP_AFTER or len(set(months)) > GROUP_MONTHS:
+            grouped = []
+            last = None
+            for rid, month in zip(ids, months):
+                if month != last:
+                    grouped.append(HEADER + month)
+                    last = month
+                grouped.append(rid)
+            ids = grouped
         if ids == self._rows:
             if self._rows:
                 self.dataChanged.emit(self.index(0), self.index(len(self._rows) - 1))
@@ -206,9 +257,20 @@ class RowDelegate(QStyledItemDelegate):
 
     def sizeHint(self, option, index) -> QSize:
         fm = QFontMetrics(option.font)
+        if index.data(ROLE_HEADER):
+            return QSize(200, fm.height() + 14)
         return QSize(200, fm.height() * 2 + self.PAD * 2 + 8)
 
     def paint(self, p: QPainter, option: QStyleOptionViewItem, index: QModelIndex) -> None:
+        heading = index.data(ROLE_HEADER)
+        if heading:
+            p.save()
+            p.setFont(theme.display_font(0.78, QFont.Weight.ExtraBold))
+            p.setPen(QColor(theme.current().foam))
+            r = option.rect.adjusted(self.MARGIN + 6, 6, -self.MARGIN, 0)
+            p.drawText(r, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignBottom, heading.upper())
+            p.restore()
+            return
         rec: Recording = index.data(ROLE_REC)
         st: Status | None = index.data(ROLE_STATUS)
         if rec is None:

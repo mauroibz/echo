@@ -44,7 +44,8 @@ POSIX, `msvcrt.locking` on Windows. Every action in the window is also a CLI com
 ~/.local/share/echo/
   library.sqlite                  index with FTS5 search (rebuildable cache)
   recordings/<id>/                id = creation time + 4 hex digits
-    meta.json                     title, source, created, duration, sha256, crop, gaps, markers
+    meta.json                     title, source, created, duration, sha256, crop, gaps, markers,
+                                  tags, notes, language, context line
     takes/take-NNN.raw            raw PCM, only while recording or awaiting finalize
     session.json, status.json     supervisor state and heartbeat, only while recording
     audio.<ext>                   recorded FLAC, or the imported file byte for byte
@@ -212,6 +213,10 @@ difflib; each passage starts at the first of its words that still matches, a pas
 were all deleted is dropped, words added after a paragraph break belong to the next passage, and
 a start that would go backwards (a sentence moved elsewhere) is ignored. While the user types,
 the alignment is redone 0.4 s after the last keystroke.
+
+Tags are stored as typed in `meta.json` and compared folded (case and accents ignored), like
+the search. The index (schema 2) has a `tags` table and puts the notes in the full-text body;
+a schema change drops and rebuilds the index, so older installs pick both up on first start.
 
 ## Window
 

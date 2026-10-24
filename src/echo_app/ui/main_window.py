@@ -20,6 +20,7 @@ from .dialogs import AboutDialog, DoctorDialog, ModelDialog, SettingsDialog, Sho
 from .library_view import LibraryModel, RowDelegate
 from .player import PlayerPanel
 from .recorder_panel import RecorderPanel
+from .tags import TagBar
 from .transcript import TranscriptPanel
 
 log = logging.getLogger(__name__)
@@ -106,7 +107,7 @@ class MainWindow(QMainWindow):
         self.list.setModel(self.model)
         self.list.setItemDelegate(RowDelegate(self.list))
         self.list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
-        self.list.setUniformItemSizes(True)
+        self.list.setUniformItemSizes(False)  # month headings are shorter than rows
         self.list.setFrameShape(QFrame.Shape.NoFrame)
         self.list.setMouseTracking(True)
         self.list.viewport().setAttribute(Qt.WidgetAttribute.WA_Hover)
@@ -132,6 +133,9 @@ class MainWindow(QMainWindow):
         sl.setContentsMargins(14, 2, 14, 4)
         sl.setSpacing(12)
         sl.addWidget(self.search)
+        self.tag_bar = TagBar()
+        self.tag_bar.toggled.connect(self._toggle_tag)
+        sl.addWidget(self.tag_bar)
         self.list_label = QLabel("RECORDINGS")
         self.list_label.setFont(theme.display_font(0.78, QFont.Weight.ExtraBold))
         theme.set_role(self.list_label, eyebrow=True)
@@ -142,6 +146,7 @@ class MainWindow(QMainWindow):
         self.player = PlayerPanel()
         self.player.message.connect(self.show_message)
         self.player.renamed.connect(lambda rid, _t: self.model.reload(rid))
+        self.player.meta_changed.connect(self._meta_changed)
         self.player.renamed.connect(lambda rid, title: self.transcript.offer_title(rid, title))
         self.player.crop_saved.connect(self._crop_saved)
         self.player.export_requested.connect(self.export_audio)
@@ -305,8 +310,8 @@ class MainWindow(QMainWindow):
     def _select_initial(self):
         rid = self.state.get("selected")
         row = self.model.row_of(rid) if rid else -1
-        if row < 0 and self.model.rowCount():
-            row = 0
+        if row < 0:
+            row = self.model.first_row()
         if row >= 0:
             self.list.setCurrentIndex(self.model.index(row))
         self._update_empty()
@@ -360,8 +365,8 @@ class MainWindow(QMainWindow):
             else:
                 self.player.set_recording(fresh)
                 self.transcript.refresh()
-        elif self.model.rowCount() and not self.list.currentIndex().isValid():
-            self.list.setCurrentIndex(self.model.index(0))
+        elif self.model.first_row() >= 0 and not self.list.currentIndex().isValid():
+            self.list.setCurrentIndex(self.model.index(self.model.first_row()))
         recording = [r for r in self.model._all.values() if r.meta.state == RECORDING]
         if self.recorder_panel.session is None and recording:
             sess = recorder.active(self.library)
@@ -395,7 +400,26 @@ class MainWindow(QMainWindow):
         # Give a just-stopped recorder time to finish saving before treating it as dead.
         QTimer.singleShot(1500, lambda: run_task(recorder.recover_all, lib, on_done=done, on_error=failed))
 
+    def _update_tags(self):
+        from ..index import parse_query
+        from ..library import fold_tag
+
+        counts = self.model.tag_counts()
+        active = {fold_tag(t) for t in parse_query(self.search.text())[1]}
+        self.tag_bar.set_tags(counts, active)
+        self.player.tags.set_known([t for t, _n in counts])
+
+    def _toggle_tag(self, tag: str, on: bool):
+        """A chip adds or removes #tag in the search box, which stays the one place the filter lives."""
+        from ..library import fold_tag
+
+        words = [w for w in self.search.text().split() if not (w.startswith("#") and fold_tag(w[1:]) == fold_tag(tag))]
+        if on:
+            words.append(f"#{tag}")
+        self.search.setText(" ".join(words))
+
     def _update_empty(self):
+        self._update_tags()
         empty = self.model.rowCount() == 0
         if empty:
             self.empty.setText("No matches." if self.search.text() else
@@ -512,8 +536,8 @@ class MainWindow(QMainWindow):
             if self.search.text().strip() == q:
                 self.model.set_filter(ids)
                 self._update_empty()
-                if self.model.rowCount() and not self.list.currentIndex().isValid():
-                    self.list.setCurrentIndex(self.model.index(0))
+                if self.model.first_row() >= 0 and not self.list.currentIndex().isValid():
+                    self.list.setCurrentIndex(self.model.index(self.model.first_row()))
 
         run_task(query, on_done=done, on_error=lambda m: self.show_message(f"Search failed: {m}"))
 
@@ -641,8 +665,9 @@ class MainWindow(QMainWindow):
             self.show_message(f"Could not delete: {e}")
             return
         self.model.refresh()
-        if self.model.rowCount():
-            self.list.setCurrentIndex(self.model.index(min(row, self.model.rowCount() - 1)))
+        nearest = self.model.nearest_row(min(row, self.model.rowCount() - 1))
+        if nearest >= 0:
+            self.list.setCurrentIndex(self.model.index(nearest))
         self._last_selected = None
         self.show_message(f"Moved “{rec.meta.title}” to the trash.")
 
@@ -667,6 +692,10 @@ class MainWindow(QMainWindow):
 
         run_task(export.export_audio, rec, Path(path), on_done=done,
                  on_error=lambda m: self.show_message(f"Export failed: {m}"))
+
+    def _meta_changed(self, rid: str):
+        self.model.reload(rid)
+        self._update_tags()
 
     def _tray_mark(self):
         """From the tray the window may be hidden: mark without opening the note field."""

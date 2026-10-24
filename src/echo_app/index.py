@@ -8,9 +8,9 @@ from __future__ import annotations
 
 import sqlite3
 
-from .library import Library, Recording
+from .library import Library, Recording, fold_tag
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS recordings (
@@ -27,6 +27,8 @@ CREATE TABLE IF NOT EXISTS recordings (
 CREATE VIRTUAL TABLE IF NOT EXISTS search USING fts5(
     id UNINDEXED, title, body, tokenize = 'unicode61 remove_diacritics 2'
 );
+CREATE TABLE IF NOT EXISTS tags (id TEXT NOT NULL, tag TEXT NOT NULL, tag_folded TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS tags_folded ON tags (tag_folded);
 """
 
 
@@ -42,7 +44,8 @@ class Index:
         db.execute("PRAGMA journal_mode=WAL")
         version = db.execute("PRAGMA user_version").fetchone()[0]
         if version != SCHEMA_VERSION:
-            db.executescript("DROP TABLE IF EXISTS recordings; DROP TABLE IF EXISTS search;")
+            db.executescript("DROP TABLE IF EXISTS recordings; DROP TABLE IF EXISTS search; "
+                             "DROP TABLE IF EXISTS tags;")
             db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
         db.executescript(_SCHEMA)
         return db
@@ -68,13 +71,17 @@ class Index:
                  rec.transcript_status(), int(rec.is_edited()), self._mtime(rec)),
             )
             self.db.execute("DELETE FROM search WHERE id = ?", (m.id,))
-            self.db.execute("INSERT INTO search (id, title, body) VALUES (?,?,?)",
-                            (m.id, m.title, rec.text()))
+            body = "\n".join(p for p in (m.notes, rec.text()) if p)
+            self.db.execute("INSERT INTO search (id, title, body) VALUES (?,?,?)", (m.id, m.title, body))
+            self.db.execute("DELETE FROM tags WHERE id = ?", (m.id,))
+            self.db.executemany("INSERT INTO tags (id, tag, tag_folded) VALUES (?,?,?)",
+                                [(m.id, t, fold_tag(t)) for t in m.tags])
 
     def remove(self, rid: str) -> None:
         with self.db:
             self.db.execute("DELETE FROM recordings WHERE id = ?", (rid,))
             self.db.execute("DELETE FROM search WHERE id = ?", (rid,))
+            self.db.execute("DELETE FROM tags WHERE id = ?", (rid,))
 
     def sync(self) -> int:
         """Bring the index up to date with the folders. Returns the number of rows changed."""
@@ -95,12 +102,45 @@ class Index:
         with self.db:
             self.db.execute("DELETE FROM recordings")
             self.db.execute("DELETE FROM search")
+            self.db.execute("DELETE FROM tags")
         return self.sync()
 
-    def list(self, query: str = "") -> list[sqlite3.Row]:
-        if query.strip():
-            fts = " ".join(f'"{t.replace(chr(34), "")}"*' for t in query.split())
-            return self.db.execute(
-                "SELECT r.* FROM recordings r JOIN search s ON s.id = r.id "
-                "WHERE search MATCH ? ORDER BY r.created DESC", (fts,)).fetchall()
-        return self.db.execute("SELECT * FROM recordings ORDER BY created DESC").fetchall()
+    def list(self, query: str = "", tags=()) -> list[sqlite3.Row]:
+        """Recordings matching the words of `query` (titles, notes, transcripts) and every tag;
+        `#word` in the query is a tag too."""
+        words, tags = parse_query(query, tags)
+        sql = "SELECT r.* FROM recordings r"
+        args: list = []
+        where = []
+        if words:
+            sql += " JOIN search s ON s.id = r.id"
+            where.append("search MATCH ?")
+            args.append(" ".join(f'"{w.replace(chr(34), "")}"*' for w in words))
+        for t in tags:
+            where.append("r.id IN (SELECT id FROM tags WHERE tag_folded = ?)")
+            args.append(fold_tag(t))
+        if where:
+            sql += " WHERE " + " AND ".join(where)
+        return self.db.execute(sql + " ORDER BY r.created DESC", args).fetchall()
+
+    def tag_counts(self) -> list[tuple[str, int]]:
+        """(tag as most often typed, recordings) for every tag, most used first."""
+        rows = self.db.execute("SELECT tag_folded, tag, COUNT(*) n FROM tags GROUP BY tag_folded, tag").fetchall()
+        best: dict[str, tuple[str, int, int]] = {}  # folded -> (spelling, its count, total)
+        for r in rows:
+            spelling, n, total = best.get(r["tag_folded"], (r["tag"], 0, 0))
+            if r["n"] > n:
+                spelling, n = r["tag"], r["n"]
+            best[r["tag_folded"]] = (spelling, n, total + r["n"])
+        return sorted(((s, total) for s, _n, total in best.values()), key=lambda x: (-x[1], fold_tag(x[0])))
+
+
+def parse_query(query: str, tags=()) -> tuple[list[str], list[str]]:
+    """Split a search into words and tags ("#entrevista")."""
+    words, out_tags = [], list(tags)
+    for tok in query.split():
+        if tok.startswith("#") and len(tok) > 1:
+            out_tags.append(tok[1:])
+        elif tok != "#":
+            words.append(tok)
+    return words, out_tags

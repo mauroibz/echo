@@ -15,15 +15,13 @@ Echo SHALL store all user data under a single data directory, defaulting to
 - **THEN** it creates and uses `~/.local/share/echo`
 
 ### Requirement: One folder per recording
-Each recording SHALL live in its own folder under `recordings/`, named with its creation
-timestamp and a short unique suffix, containing a `meta.json` file with at least: id,
-title, created time, origin (recorded or imported), duration, audio file name and content
-hash when known, and non-destructive crop points.
+Each recording SHALL be a folder holding its audio, a `meta.json` with title, source, creation
+time, duration, hash, crop, gaps, markers, tags and notes, and its transcripts. Everything the
+index knows SHALL be derivable from these files.
 
-#### Scenario: Metadata written atomically
-- **WHEN** metadata is updated and the process is killed at any point
-- **THEN** `meta.json` holds either the previous or the new complete content, never a
-  partial file
+#### Scenario: Tags survive a rescan
+- **WHEN** the index is deleted and `echo-app rescan` runs
+- **THEN** every recording's tags and notes are searchable again
 
 ### Requirement: Originals are never altered
 Echo SHALL NOT modify or delete an original audio file except when the user deletes the

@@ -52,6 +52,19 @@ T_DONE = "done"
 T_FAILED = "failed"
 
 
+def clean_tag(tag: str) -> str:
+    """A tag as stored: 1 to 32 characters, no '#', commas or line breaks; '' if nothing is left."""
+    t = " ".join(str(tag).replace("#", " ").replace(",", " ").split())
+    return t[:32].strip()
+
+
+def fold_tag(tag: str) -> str:
+    """Tags compare without case or accents, like the search does."""
+    import unicodedata
+
+    return "".join(c for c in unicodedata.normalize("NFD", tag) if not unicodedata.combining(c)).casefold()
+
+
 def new_id(now: datetime | None = None) -> str:
     now = now or datetime.now()
     return f"{now:%Y-%m-%dT%H-%M-%S}_{secrets.token_hex(2)}"
@@ -78,6 +91,8 @@ class Meta:
     context_line: str = ""  # "who is speaking, what about": context for this recording's transcription
     markers: list[dict[str, Any]] = field(default_factory=list)  # [{"at": seconds of audio, "note": str}]
     language: str | None = None  # transcription language code; None = the default in settings
+    tags: list[str] = field(default_factory=list)  # as typed; compared folded (case and accents)
+    notes: str = ""
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "Meta":
@@ -200,6 +215,16 @@ class Recording:
 
     def effective_span(self) -> tuple[float, float | None]:
         return (self.meta.crop_start or 0.0, self.meta.crop_end)
+
+    def set_tags(self, tags) -> list[str]:
+        """Save valid tags, one per folded spelling, in the order given. Returns them."""
+        out: list[str] = []
+        for t in tags:
+            t = clean_tag(t)
+            if t and fold_tag(t) not in {fold_tag(x) for x in out}:
+                out.append(t)
+        self.update(tags=out)
+        return out
 
     def set_markers(self, markers: list[dict[str, Any]]) -> None:
         """Save markers sorted by time, each {"at": seconds, "note": text}."""
