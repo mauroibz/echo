@@ -1,12 +1,12 @@
 # Implementation report: the roadmap, 2026-10-24
 
-Branch `roadmap` (local, not pushed, not merged into `main`). It starts with the plan squashed
+Branch `roadmap`, released as 1.0.0 (merged into `main`, tag `v1.0.0`). It starts with the plan squashed
 into one commit authored by you ("Add the roadmap and its OpenSpec changes (final version of the
 plan)"), followed by one commit per change, a fix commit after an independent review, and status
 commits. No commit carries an AI co-author line.
 
-Your installed Echo runs from this clone, so opening Echo now runs this branch. To go back:
-`git switch main && ./install.sh`.
+Your installed Echo runs from this clone, so opening Echo runs this version. To go back to the
+previous one: `git checkout v0.1.0 && ./install.sh`.
 
 ## Where things stand
 
@@ -170,7 +170,8 @@ a passage that straddles a quick turn change gets one speaker.
   it, speakers are simply not labelled.
 - **Your library:** the index rebuilds itself at schema 2 on first start. It was tested on a copy
   of your real data: both recordings and their transcripts open, with no errors.
-- **Nothing was pushed.** The `v0.1.0` tag is local too.
+- **Released as 1.0.0.** `main` was fast-forwarded to this branch and tagged `v1.0.0`, with a
+  GitHub release. The older `v0.1.0` tag stays local.
 
 ## The independent review
 

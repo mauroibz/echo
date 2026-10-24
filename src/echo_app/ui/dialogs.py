@@ -230,15 +230,14 @@ class WaveBanner(QWidget):
         lay = QVBoxLayout(self)
         lay.setContentsMargins(24, 22, 24, 58)
         lay.setSpacing(6)
-        mark = QLabel("echo")
-        mark.setFont(theme.display_font(2.6, QFont.Weight.ExtraBold))
-        lay.addWidget(mark)
+        from .common import Wordmark
+
+        lay.addWidget(Wordmark(2.6))
         self.text = QLabel(text)
         self.text.setWordWrap(True)
         self.text.setFont(theme.display_font(1.05, QFont.Weight.DemiBold))
         lay.addWidget(self.text)
-        for lbl in (mark, self.text):
-            lbl.setStyleSheet("background: transparent;")
+        self.text.setStyleSheet("background: transparent;")
         self._style()
 
     def _style(self):

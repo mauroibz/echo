@@ -8,8 +8,9 @@ import traceback
 from datetime import datetime
 from typing import Any, Callable
 
-from PySide6.QtCore import QObject, QRunnable, QThreadPool, Qt, Signal
-from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
+from PySide6.QtCore import QObject, QRectF, QRunnable, QSize, QThreadPool, Qt, Signal
+from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPixmap
+from PySide6.QtWidgets import QWidget
 
 from .. import paths
 from . import theme
@@ -178,3 +179,66 @@ class UiState:
             atomic_write_json(self.path, self.data, mkdir=True)
         except OSError:
             log.warning("could not save UI state")
+
+
+# ---- the wordmark -----------------------------------------------------------------------------
+
+class Wordmark(QWidget):
+    """"echo" as a mark on the deep gradient: the word in a light gradient, and arcs centered on its
+    last "o" spreading out to the right and fading, like an echo."""
+
+    RINGS = ((1.32, 0.55), (1.72, 0.3), (2.12, 0.14))  # (radius in radii of the "o", opacity)
+    SPAN = 100  # degrees of each arc, centered on the right
+
+    def __init__(self, scale: float = 2.1, parent=None):
+        from PySide6.QtWidgets import QSizePolicy
+
+        super().__init__(parent)
+        self.font_ = theme.display_font(scale, QFont.Weight.ExtraBold)
+        self.setAccessibleName("Echo")
+        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+
+    def _paths(self):
+        from PySide6.QtGui import QFontMetricsF, QPainterPath
+
+        word, o = QPainterPath(), QPainterPath()
+        word.addText(0, 0, self.font_, "echo")
+        o.addText(QFontMetricsF(self.font_).horizontalAdvance("ech"), 0, self.font_, "o")
+        # Glyph outlines overlap inside a letter; filled odd-even, the overlaps would show as holes.
+        word.setFillRule(Qt.FillRule.WindingFill)
+        return word, o.boundingRect()
+
+    def sizeHint(self) -> QSize:
+        word, ob = self._paths()
+        r = word.boundingRect()
+        reach = ob.center().x() + ob.width() / 2 * self.RINGS[-1][0]
+        return QSize(int(reach - r.left()) + 8, int(r.height()) + 6)
+
+    def paintEvent(self, _):
+        from PySide6.QtCore import QPointF
+        from PySide6.QtGui import QLinearGradient, QPen
+
+        t = theme.current()
+        word, ob = self._paths()
+        r = word.boundingRect()
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.translate(3 - r.left(), 3 - r.top())
+        c, radius = ob.center(), ob.width() / 2
+        for scale, alpha in self.RINGS:
+            col = QColor(t.foam)
+            col.setAlphaF(alpha)
+            pen = QPen(col, max(1.2, radius * 0.2))
+            pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            p.setPen(pen)
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            rr = radius * scale
+            p.drawArc(QRectF(c.x() - rr, c.y() - rr, 2 * rr, 2 * rr), -self.SPAN * 8, self.SPAN * 16)
+        grad = QLinearGradient(QPointF(0, r.top()), QPointF(0, r.bottom()))
+        grad.setColorAt(0.0, QColor("#ffffff"))
+        grad.setColorAt(0.5, QColor(t.on_deep))
+        grad.setColorAt(1.0, QColor(t.foam))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(grad)
+        p.drawPath(word)
+        p.end()

@@ -202,7 +202,7 @@ nvtx = [
 
 [[package]]
 name = "echo-app"
-version = "0.1.0"
+version = "1.0.0"
 source = { virtual = "." }
 dependencies = [
     { name = "jeepney", marker = "sys_platform == 'linux' or (extra == 'extra-8-echo-app-cpu' and extra == 'extra-8-echo-app-cuda') or (extra == 'extra-8-echo-app-cpu' and extra == 'extra-8-echo-app-rocm') or (extra == 'extra-8-echo-app-cuda' and extra == 'extra-8-echo-app-rocm')" },

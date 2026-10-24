@@ -3,7 +3,7 @@
 Notable changes to Echo. Versions are git tags (`vX.Y.Z`); `main` may be ahead of the latest
 tag.
 
-## Unreleased
+## 1.0.0 - 2026-10-24
 
 ### Added
 
@@ -58,6 +58,11 @@ tag.
   transcripts one under the other, edited in place and played back to back, without merging
   any audio. Link a selection (Ctrl+L), drag one recording onto another, or accept the offer
   Echo makes after importing a burst of WhatsApp notes. `echo-app link` and `unlink`.
+
+### Changed
+
+- A new wordmark at the top left and on the welcome screen: "echo" with fading arcs spreading
+  from its last letter, like an echo.
 
 ### Fixed
 

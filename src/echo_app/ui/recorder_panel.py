@@ -15,7 +15,7 @@ from ..audio import backend, levels, monitor
 from ..audio.backend import INPUT, Source
 from ..library import Library
 from . import theme
-from .common import dot_icon, fmt_duration, icon, run_task
+from .common import Wordmark, dot_icon, fmt_duration, icon, run_task
 
 log = logging.getLogger(__name__)
 
@@ -139,9 +139,7 @@ class RecorderPanel(QWidget):
 
         brand = QHBoxLayout()
         brand.setSpacing(8)
-        self.wordmark = QLabel("echo")
-        self.wordmark.setFont(theme.display_font(2.1, QFont.Weight.ExtraBold))
-        self.wordmark.setAccessibleName("Echo")
+        self.wordmark = Wordmark(2.1)
         brand.addWidget(self.wordmark)
         brand.addStretch(1)
         self.state_label = QLabel("")
