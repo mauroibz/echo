@@ -8,8 +8,7 @@ changing the original audio.
 
 ### Requirement: Playback
 The user SHALL be able to play, pause, seek by clicking the waveform or with the keyboard, and set
-the speed (1x, 1.25x, 1.5x, 2x). Every imported or recorded format SHALL play; formats the media
-backend cannot open SHALL be played through a converted copy kept in the cache.
+the speed (1x, 1.25x, 1.5x, 2x). Every format that can be imported or recorded SHALL play.
 
 #### Scenario: Play a voice note
 - **WHEN** the user selects an imported `.opus` voice note and presses play

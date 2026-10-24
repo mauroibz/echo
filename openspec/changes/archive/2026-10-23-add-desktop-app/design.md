@@ -4,8 +4,7 @@
 
 Engine APIs exist and are stdlib-only: `recorder` (start/active/Session/recover_all),
 `importer`, `transcription` (request/cancel/ensure_worker), `library`, `index`, `doctor`,
-`audio.monitor` (LevelMonitor, Listener). PySide6-Essentials includes QtMultimedia with an
-FFmpeg backend. See proposal.md for motivation and PLAN.md section 10 for the quality bar.
+`audio.monitor` (LevelMonitor, Listener). See proposal.md for motivation and PLAN.md section 10 for the quality bar.
 
 ## Goals / Non-Goals
 
@@ -58,10 +57,14 @@ recording's folder with `state: recording`.
 
 ### Player
 
-`QMediaPlayer` + `QAudioOutput`. On a media error the file is converted once to FLAC in
-`~/.cache/echo/playback/<sha>.flac` and reloaded. Crop is enforced in `positionChanged`.
-Waveform peaks (min/max per 10 ms at 8 kHz decode) are cached in
-`~/.cache/echo/peaks/<sha>.npy`. Snapping looks for the quietest 10 ms bucket within ±0.3 s.
+Playback runs ffmpeg from the playhead (`-ss`, optional `-t` for the crop end, `atempo` for
+speed) piped into `pw-play`. Seeking or changing speed restarts the pipeline at the new
+position in about 0.1 s; the position is computed from the start time and speed. Rationale:
+QtMultimedia ships in PySide6-Addons (several hundred megabytes), while ffmpeg and PipeWire are
+already required, and ffmpeg decodes every format Echo can import, so no conversion fallback is
+needed. Crop is enforced by the pipeline itself. Waveform peaks (min/max per 10 ms at 8 kHz
+decode) are cached in `~/.cache/echo/peaks/<sha>.npy`. Snapping looks for the quietest 10 ms
+bucket within ±0.3 s.
 
 ### Editor
 
@@ -79,5 +82,6 @@ for unedited model text by rebuilding the same join as the worker and recording 
 
 ## Risks / Trade-offs
 
-- [QtMultimedia FFmpeg backend lacks a codec (e.g. AMR)] → cached FLAC conversion.
+- [Playback position drifts from what is heard by the output latency] → a fixed 60 ms
+  compensation; seeking restarts from an exact sample position, so drift never accumulates.
 - [Very large libraries] → scanning is O(folders) per second; fine to several thousand.
