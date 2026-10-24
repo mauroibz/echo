@@ -103,7 +103,7 @@ def main(argv: list[str] | None = None) -> int:
         argv = ["gui", *argv]
     args = parser.parse_args(argv)
     name = getattr(args, "command", None) or "gui"
-    logs.setup({"_recorder": "recorder", "_worker": "worker"}.get(name, name), verbose=args.verbose)
+    logs.setup({"gui": "gui", "_recorder": "recorder", "_worker": "worker"}.get(name, "cli"), verbose=args.verbose)
     if not args.command:
         return _cmd_gui(args)
     return args.func(args) or 0
