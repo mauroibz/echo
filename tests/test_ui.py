@@ -188,6 +188,56 @@ def test_search_filters_by_transcript(window, lib, tmp_path):
     assert wait_until(lambda: window.model.rowCount() == 2)
 
 
+def test_search_result_opens_with_its_words_found(window, lib, tmp_path):
+    rec = _transcribed(lib, tmp_path)
+    rec.save_edited("Hablamos del precio. Después, otra vez el precio final.")
+    importer.import_file(lib, wav(tmp_path / "otro.wav", 1, 700))
+    window.model.refresh()
+    window.list.setFocus()
+    assert wait_until(lambda: window.model.rowCount() == 2)
+    window.search.setText("precio")
+    assert wait_until(lambda: window.model._filter is not None and window.model.rowCount() == 1)
+    window._select(rec.id)
+    pump(100)
+    tp = window.transcript
+    assert tp.findbar.isVisible() and tp.find_edit.text() == "precio" and tp.find_count.text() == "1 of 2"
+    assert not tp.find_edit.hasFocus()
+    # Words that are not a phrase here are found one by one; tags are not words.
+    window.search.setText("final hablamos")
+    assert wait_until(lambda: tp.find_edit.text() == "final hablamos")
+    assert tp.find_count.text() == "1 of 2" and tp.editor.textCursor().selectedText() == "Hablamos"
+    window.search.setText("#entrevista precio")
+    assert window._search_words() == "precio"
+    # Clearing the search closes the find bar it opened; one the user opened stays.
+    window.search.setText("")
+    assert wait_until(lambda: not tp.findbar.isVisible())
+    tp.open_find()
+    window.search.setText("x")
+    window.search.setText("")
+    pump(400)
+    assert tp.findbar.isVisible()
+
+
+def test_search_finds_in_the_open_recording(window, lib, tmp_path):
+    # The open recording stays selected through the filter: the find bar opens all the same.
+    rec = _transcribed(lib, tmp_path)
+    rec.save_edited("Hablamos del precio.")
+    importer.import_file(lib, wav(tmp_path / "otro.wav", 1, 700))  # filtered out: the list resets
+    window.model.refresh()
+    assert wait_until(lambda: window.model.rowCount() == 2)
+    window._select(rec.id)
+    pump(100)
+    window.search.setText("precio")
+    assert wait_until(lambda: window.transcript.findbar.isVisible())
+    assert window.transcript.find_count.text() == "1 of 1"
+
+
+def test_search_shortcuts(window):
+    acts = {a.text(): [k.toString() for k in a.shortcuts()] for a in window.actions()}
+    assert acts["&Search all recordings"] == ["Ctrl+Shift+F", "Ctrl+K"]
+    assert acts["&Find in transcript…"] == ["Ctrl+F"]
+
+
 def test_status_shows_transcription_progress(window, lib, tmp_path):
     from echo_app.fsutil import atomic_write_json
     from echo_app.library import PROGRESS, REQUESTED

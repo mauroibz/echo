@@ -169,8 +169,10 @@ Model versions are pinned, and only weights and configuration are downloaded, ne
   everything for removing or merging, and imports a list from a text file.
 - **Crop.** Drag the edges of the waveform, or press `[` and `]` at the playhead. Hold Shift to
   turn off snapping. Transcribe again to transcribe only the cropped part.
-- **Search.** The search box matches titles, notes and transcript text, ignoring accents.
-  `#word` in it filters by tag.
+- **Search.** Ctrl+Shift+F (or Ctrl+K) searches titles, notes and transcript text of every
+  recording, ignoring accents; `#word` in it filters by tag. Opening a result shows its
+  transcript with the words already found (Enter or the arrows in the find bar step through
+  them). Ctrl+F finds within the open transcript.
 - **Tags and notes.** Under the title, add tags ("+ tag", with completion) and a note. The most
   used tags show as chips above the list; click one to filter, click again to clear. A long
   library is grouped by month, and each transcribed recording shows its word count, speaking

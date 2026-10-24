@@ -32,6 +32,16 @@ recording SHALL show its tags, notes and statistics (words, words per minute, si
 - **WHEN** the user clicks the "entrevista" chip
 - **THEN** only recordings with that tag are listed, and the chip shows as active until cleared
 
+### Requirement: Search everything, then find in one
+Ctrl+Shift+F (and Ctrl+K) SHALL focus the search of all recordings, and Ctrl+F SHALL find within
+the open transcript. Selecting a recording while a search is active SHALL open its transcript
+with the search's words already found, without moving the keyboard focus out of the list. When
+the words are not a phrase in that transcript, each word SHALL be found on its own.
+
+#### Scenario: Open a search result
+- **WHEN** the user searches all recordings for "precio" and clicks a result
+- **THEN** its transcript shows with "precio" found and highlighted, and the arrow keys still move in the list
+
 ### Requirement: Drag and drop import
 Dropping files or folders anywhere on the window SHALL import them, showing progress and a summary
 of imported, duplicate and rejected files. Dropped web links that are not local files SHALL be

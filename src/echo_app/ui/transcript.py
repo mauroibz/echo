@@ -30,6 +30,14 @@ def _fold(text: str) -> str:
     return "".join((unicodedata.normalize("NFD", c)[0] if c else c).lower() for c in text)
 
 
+def _occurrences(hay: str, needle: str) -> list[tuple[int, int]]:
+    out, i = [], hay.find(needle)
+    while i >= 0:
+        out.append((i, i + len(needle)))
+        i = hay.find(needle, i + 1)
+    return out
+
+
 def segment_spans(segments: list[dict]) -> list[tuple[int, int, float]]:
     """Character spans of each passage in the joined model text (mirrors planning.join_text)."""
     spans = []
@@ -382,6 +390,7 @@ class TranscriptPanel(QWidget):
         self._current_span = -1
         self._find_matches: list[tuple[int, int]] = []
         self._find_index = -1
+        self._find_from_search = False
         self._shown_signature = None
         self._autosave = QTimer(self, singleShot=True, interval=AUTOSAVE_MS, timeout=self.save)
         # While typing, passage positions follow the text a moment later (alignment of the edit).
@@ -531,6 +540,7 @@ class TranscriptPanel(QWidget):
         self.find_edit.setPlaceholderText("Find in transcript")
         self.find_edit.setClearButtonEnabled(True)
         self.find_edit.textChanged.connect(self._find_update)
+        self.find_edit.textEdited.connect(lambda _t: setattr(self, "_find_from_search", False))
         self.find_edit.returnPressed.connect(lambda: self._find_step(1))
         fl.addWidget(self.find_edit, 1)
         self.find_count = QLabel()
@@ -1270,6 +1280,7 @@ class TranscriptPanel(QWidget):
         if self.stack.currentWidget() is not self.page:
             return
         self.findbar.show()
+        self._find_from_search = False
         sel = self.editor.textCursor().selectedText()
         if sel and " " not in sel:
             self.find_edit.setText(sel)
@@ -1277,11 +1288,32 @@ class TranscriptPanel(QWidget):
         self.find_edit.selectAll()
         self._find_update()
 
-    def close_find(self):
+    def find_from_search(self, text: str):
+        """Show the find bar with the library search's words, leaving the focus where it is
+        (the list, while the user steps through results)."""
+        if self.stack.currentWidget() is not self.page:
+            return
+        self.findbar.show()
+        self._find_from_search = True
+        cur = self.editor.textCursor()
+        cur.setPosition(0)  # from the first occurrence, as a newly opened result
+        self.editor.setTextCursor(cur)
+        if self.find_edit.text() == text:
+            self._find_update()
+        else:
+            self.find_edit.setText(text)  # runs _find_update
+
+    def search_cleared(self):
+        """The library search was cleared: its find bar goes too, one the user opened stays."""
+        if self._find_from_search and self.findbar.isVisible():
+            self.close_find(focus=False)
+
+    def close_find(self, focus: bool = True):
+        self._find_from_search = False
         self.findbar.hide()
         self._find_matches = []
         self._apply_selections()
-        if self.stack.currentWidget() is self.page:
+        if focus and self.stack.currentWidget() is self.page:
             self.editor.setFocus()
 
     def _find_update(self):
@@ -1289,10 +1321,14 @@ class TranscriptPanel(QWidget):
         self._find_matches = []
         if q:
             hay = _fold(self.editor.toPlainText())
-            i = hay.find(q)
-            while i >= 0:
-                self._find_matches.append((i, i + len(q)))
-                i = hay.find(q, i + 1)
+            self._find_matches = _occurrences(hay, q)
+            if not self._find_matches and len(q.split()) > 1:
+                # The library search matches the words anywhere, so a search carried over from it
+                # (or typed here) that is not a phrase in this text finds each word instead.
+                spans = sorted(m for w in set(q.split()) for m in _occurrences(hay, w))
+                for a, b in spans:
+                    if not self._find_matches or a >= self._find_matches[-1][1]:
+                        self._find_matches.append((a, b))
         self._find_index = -1
         self._find_step(1)
 

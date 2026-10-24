@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QFileDialog, QFr
                                QWidget)
 
 from .. import APP_NAME, export, features, importer, recorder, settings, transcription
-from ..index import Index
+from ..index import Index, parse_query
 from ..library import READY, RECORDING, T_QUEUED, T_RUNNING, Library, Recording
 from . import theme
 from .common import RECORD_RED, UiState, app_icon, dot_icon, fmt_duration, icon, run_task
@@ -100,7 +100,7 @@ class MainWindow(QMainWindow):
         self.recorder_panel.recording_changed.connect(lambda _r: self._update_title())
 
         self.search = QLineEdit()
-        self.search.setPlaceholderText("Search titles and transcripts")
+        self.search.setPlaceholderText("Search all recordings (Ctrl+Shift+F)")
         self.search.setAccessibleName("Search recordings")
         self.search.addAction(icon("find", "on_deep_muted"), QLineEdit.ActionPosition.LeadingPosition)
         self._clear_search = self.search.addAction(icon("close", "on_deep"), QLineEdit.ActionPosition.TrailingPosition)
@@ -238,7 +238,9 @@ class MainWindow(QMainWindow):
         self._act(e, "Previous passage", lambda: self.transcript.step_passage(-1), "Ctrl+Alt+,", "skip-back")
         self._act(e, "Next passage to check", self.transcript.play_next_flagged, "Ctrl+Shift+.", "warning")
         e.addSeparator()
-        self._act(e, "&Search recordings", self._focus_search, "Ctrl+K", "find")
+        # Ctrl+Shift+F as in code editors (search everything; Ctrl+F finds in this one); Ctrl+K stays.
+        a_search = self._act(e, "&Search all recordings", self._focus_search, "Ctrl+Shift+F", "find")
+        a_search.setShortcuts([QKeySequence("Ctrl+Shift+F"), QKeySequence("Ctrl+K")])
         e.addSeparator()
         self.a_rename = self._act(e, "&Rename", self.player.focus_title, "F2", "rename")
         self.a_delete = self._act(e, "&Delete…", self.delete_selected, "Del", "delete")
@@ -413,7 +415,6 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(1500, lambda: run_task(recorder.recover_all, lib, on_done=done, on_error=failed))
 
     def _update_tags(self):
-        from ..index import parse_query
         from ..library import fold_tag
 
         counts = self.model.tag_counts()
@@ -512,6 +513,7 @@ class MainWindow(QMainWindow):
         self._last_selected = rec.id if rec else None
         self.player.set_recording(rec)
         self.transcript.set_recording(rec)
+        self._carry_search()
         self._update_actions()
 
     # ---- recording events ----
@@ -528,8 +530,20 @@ class MainWindow(QMainWindow):
         self.search.setFocus()
         self.search.selectAll()
 
+    def _search_words(self) -> str:
+        return " ".join(parse_query(self.search.text())[0])
+
+    def _carry_search(self):
+        """Open a search result with its words already found in the transcript, so finding
+        them there takes no second search."""
+        words = self._search_words()
+        if words and self.current() is not None:
+            self.transcript.find_from_search(words)
+
     def _run_search(self):
         q = self.search.text().strip()
+        if not self._search_words():
+            self.transcript.search_cleared()
         if not q:
             self.model.set_filter(None)
             self._update_empty()
@@ -550,6 +564,9 @@ class MainWindow(QMainWindow):
                 self._update_empty()
                 if self.model.first_row() >= 0 and not self.list.currentIndex().isValid():
                     self.list.setCurrentIndex(self.model.index(self.model.first_row()))
+                # Also when the open recording stays selected through the filter (no selection change).
+                if self.current() is not None and self.current().id in ids:
+                    self._carry_search()
 
         run_task(query, on_done=done, on_error=lambda m: self.show_message(f"Search failed: {m}"))
 

@@ -758,7 +758,7 @@ SHORTCUTS = [
     ("Show passage times", "Ctrl+T"),
     ("Export transcript", "Ctrl+E"),
     ("Import audio", "Ctrl+O"),
-    ("Search recordings", "Ctrl+K"),
+    ("Search all recordings (titles, notes, transcripts)", "Ctrl+Shift+F or Ctrl+K"),
     ("Rename", "F2"),
     ("Delete (to trash)", "Delete"),
     ("Settings", "Ctrl+,"),
