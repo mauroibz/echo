@@ -106,3 +106,28 @@ def test_never_overwrites_files_it_did_not_write_or_the_user_changed(tmp_path):
     counts = export.export_folder([library.get(rec.id)], vault)
     assert counts["kept"] == 1 and ours.read_text().endswith("mis apuntes\n")
     assert not (vault / "2026-10-24 Otra.md").exists()
+
+
+def test_a_linked_set_is_one_note(tmp_path):
+    from echo_app import sets
+
+    library = Library(tmp_path / "data")
+    a, b = _rec(library, "Audio 1"), _rec(library, "Audio 2")
+    b.update(created="2026-10-24T10:34:00-03:00")
+    b.set_markers([{"at": 6.5, "note": "precio"}])
+    vault = tmp_path / "vault"
+    assert export.export_folder([a, b], vault)["written"] == 2
+    st = sets.link(library, [a.id, b.id], title="Charla en audios")
+    counts = export.export_folder([library.get(a.id), library.get(b.id)], vault)
+    assert counts["written"] == 1 and counts["removed"] == 2
+    notes = sorted(p.name for p in vault.glob("*.md"))
+    assert notes == ["2026-10-24 Charla en audios.md"]
+    note = (vault / notes[0]).read_text()
+    assert note.startswith("# Charla en audios\n\n_2026-10-24 10:30 – 10:34_ · 2:24 · 2 parts\n")
+    assert "Audio: [1](<../data/recordings/" in note and "\n## 1. Audio 1\n\n_2026-10-24 10:30 · 1:12_\n" in note
+    assert "\n## 2. Audio 2\n" in note and "\n### 0:06 precio\n" in note
+    # Unlinked again: the set's note goes and each recording has its own.
+    sets.dissolve(library, st.id)
+    counts = export.export_folder([library.get(a.id), library.get(b.id)], vault)
+    assert counts["written"] == 2 and counts["removed"] == 1
+    assert len(list(vault.glob("*.md"))) == 2

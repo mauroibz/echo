@@ -142,3 +142,118 @@ class Playback:
         if self._dec is not None and self._dec.stderr:
             self._dec.stderr.close()
         self._out = self._dec = None
+
+
+class SetPlayback:
+    """A linked set's parts played back to back, on the set's timeline.
+
+    Positions are set time: the parts' cropped spans laid end to end (see sets.timeline). One
+    part plays at a time through a Playback; when it reaches the end of its span the next part
+    starts, which takes the same tenth of a second as a seek.
+    """
+
+    def __init__(self):
+        self.inner = Playback()
+        self.parts: list = []  # sets.Part
+        self.k = 0
+        self._end: float | None = None  # set time where a span stops
+        self.error: str | None = None
+
+    @property
+    def duration(self) -> float:
+        return sum(p.length for p in self.parts)
+
+    @property
+    def speed(self) -> float:
+        return self.inner.speed
+
+    @property
+    def path(self):
+        return self.inner.path
+
+    @property
+    def playing(self) -> bool:
+        return self.inner.playing
+
+    def load(self, parts: list) -> None:
+        self.stop()
+        self.parts = [p for p in parts if p.rec.audio_path is not None]
+        self.k = -1
+        self._end = None
+        self.error = None
+        self._use(0)
+
+    def _use(self, k: int) -> None:
+        if not self.parts:
+            self.inner.load(None, 0)
+            return
+        k = max(0, min(k, len(self.parts) - 1))
+        if k != self.k:
+            p = self.parts[k]
+            self.inner.load(p.rec.audio_path, p.rec.meta.duration or 0)
+            self.inner.seek(p.start)
+            self.k = k
+
+    def _part_at(self, t: float) -> int:
+        for i, p in enumerate(self.parts):
+            if t < p.offset + p.length - 0.02:
+                return i
+        return len(self.parts) - 1
+
+    def position(self) -> float:
+        if not self.parts:
+            return 0.0
+        p = self.parts[self.k]
+        return p.offset + max(0.0, self.inner.position() - p.start)
+
+    def _play_part(self, start: float) -> None:
+        p = self.parts[self.k]
+        stop = p.start + p.length
+        if self._end is not None:
+            stop = min(stop, p.to_part(self._end))
+        self.inner.play(p.to_part(start), stop)
+        self.error = self.inner.error
+
+    def play(self, start: float | None = None, end: float | None = None) -> None:
+        if not self.parts:
+            return
+        pos = self.position() if start is None else start
+        if pos >= self.duration - 0.05:
+            pos = 0.0
+        self._end = end
+        self._use(self._part_at(pos))
+        self._play_part(max(pos, self.parts[self.k].offset))
+
+    def poll(self) -> bool:
+        """Call periodically. True when playback reached its end (the set's, or a span's)."""
+        if not self.inner.poll():
+            return False
+        if self.inner.error:
+            self.error = self.inner.error
+            return True
+        if self._end is not None and self.position() >= self._end - 0.05:
+            return True
+        if self.k + 1 < len(self.parts):
+            self._use(self.k + 1)
+            self._play_part(self.parts[self.k].offset)
+            return False
+        return True
+
+    def pause(self) -> None:
+        self.inner.pause()
+
+    def stop(self) -> None:
+        self.inner.stop()
+
+    def seek(self, sec: float) -> None:
+        if not self.parts:
+            return
+        sec = max(0.0, min(sec, self.duration))
+        if self.playing:
+            self.play(sec, self._end)
+            return
+        self._use(self._part_at(sec))
+        self.inner.seek(self.parts[self.k].to_part(sec))
+
+    def set_speed(self, speed: float) -> None:
+        self.inner.set_speed(speed)

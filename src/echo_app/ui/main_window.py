@@ -7,18 +7,18 @@ from pathlib import Path
 
 from PySide6.QtCore import QEvent, QItemSelectionModel, QObject, QSize, Qt, QTimer, QUrl
 from PySide6.QtGui import QAction, QCloseEvent, QDesktopServices, QFont, QKeySequence, QShortcut
-from PySide6.QtWidgets import (QAbstractItemView, QApplication, QFileDialog, QFrame, QLabel, QLineEdit, QListView,
-                               QMainWindow, QMenu, QMessageBox, QSplitter, QStatusBar, QSystemTrayIcon, QVBoxLayout,
-                               QWidget)
+from PySide6.QtWidgets import (QAbstractItemView, QApplication, QFileDialog, QFrame, QHBoxLayout, QLabel, QLineEdit,
+                               QListView, QMainWindow, QMenu, QMessageBox, QSplitter, QStatusBar, QSystemTrayIcon,
+                               QToolButton, QVBoxLayout, QWidget)
 
-from .. import APP_NAME, export, features, importer, recorder, settings, transcription
+from .. import APP_NAME, export, features, importer, recorder, sets, settings, transcription
 from ..index import Index, parse_query
 from ..library import READY, RECORDING, T_QUEUED, T_RUNNING, Library, Recording
 from . import theme
 from .common import RECORD_RED, UiState, app_icon, dot_icon, fmt_duration, icon, run_task
 from .dialogs import (AboutDialog, DoctorDialog, ExportLibraryDialog, ModelDialog, SettingsDialog, ShortcutsDialog,
                       WelcomeDialog)
-from .library_view import LibraryModel, RowDelegate
+from .library_view import ROW_PART, ROW_SET, LibraryModel, RowDelegate
 from .player import PlayerPanel
 from .recorder_panel import RecorderPanel
 from .tags import TagBar
@@ -85,6 +85,8 @@ class MainWindow(QMainWindow):
         self._sync_ids: set[str] = set()
         self._sync_timer = QTimer(self, singleShot=True, interval=2000, timeout=self._sync_notes)
         self.model.recordings_changed.connect(self._notes_changed)
+        # Linking changes no recording folder: a synced notes folder is brought up to date as a whole.
+        self.model.sets_changed.connect(lambda: self._notes_changed(list(self.model._all)))
         self.model.recordings_changed.connect(self._deliver_quick_notes)
         self.shortcuts = None
         self.watcher = FolderWatcher(self.library, self)
@@ -111,11 +113,20 @@ class MainWindow(QMainWindow):
         self.search.textChanged.connect(lambda _t: self._search_timer.start())
 
         self.model = LibraryModel(self.library, self)
+        self.model.expanded = set(self.state.get("expanded") or [])
         self.model.modelReset.connect(lambda: QTimer.singleShot(0, self._update_empty))
         self.list = QListView()
         self.list.setModel(self.model)
-        self.list.setItemDelegate(RowDelegate(self.list))
-        self.list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        # A rebuilt list (a new recording, a set expanded) keeps what was selected. Connected after
+        # setModel, so it runs after the view's own reset has cleared the selection.
+        self.model.modelAboutToBeReset.connect(self._remember_selection)
+        self.model.modelReset.connect(self._restore_selection)
+        self.delegate = RowDelegate(self.list)
+        self.list.setItemDelegate(self.delegate)
+        self.list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.list.setDragDropMode(QAbstractItemView.DragDropMode.DragDrop)
+        self.list.setDefaultDropAction(Qt.DropAction.MoveAction)
+        self.list.setDropIndicatorShown(True)
         self.list.setUniformItemSizes(False)  # month headings are shorter than rows
         self.list.setFrameShape(QFrame.Shape.NoFrame)
         self.list.setMouseTracking(True)
@@ -124,7 +135,11 @@ class MainWindow(QMainWindow):
         self.list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.list.customContextMenuRequested.connect(self._context_menu)
         self.list.selectionModel().currentChanged.connect(self._selection_changed)
+        self.list.selectionModel().selectionChanged.connect(lambda *_a: self._update_selection_bar())
+        self.model.drop_requested.connect(self._dropped)
         self.list.setAccessibleName("Recordings")
+        self.list.viewport().installEventFilter(self)
+        self.list.installEventFilter(self)
         self.empty = QLabel("No recordings yet.\n\nPress Record (Ctrl+R),\nor drop audio files here.", self.list)
         self.empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.empty.setWordWrap(True)
@@ -151,12 +166,38 @@ class MainWindow(QMainWindow):
         sl.addWidget(self.list_label)
         ll.addWidget(sw)
         ll.addWidget(self.list, 1)
+        # Several rows selected: link them (or delete them) in one click.
+        self.selection_bar = QFrame()
+        self.selection_bar.setObjectName("selectionbar")
+        bl = QHBoxLayout(self.selection_bar)
+        bl.setContentsMargins(14, 8, 10, 8)
+        bl.setSpacing(6)
+        self.selection_label = QLabel()
+        self.selection_label.setFont(theme.display_font(0.9, QFont.Weight.Bold))
+        bl.addWidget(self.selection_label, 1)
+        self.link_btn = QToolButton()
+        self.link_btn.setObjectName("linkbtn")
+        self.link_btn.setText("Link")
+        self.link_btn.setIcon(icon("link", "deep_top"))
+        self.link_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.link_btn.setToolTip("Link them into one set, read and played in order (Ctrl+L)")
+        self.link_btn.clicked.connect(self.link_selected)
+        bl.addWidget(self.link_btn)
+        self.bar_delete = QToolButton()
+        self.bar_delete.setText("Delete…")
+        self.bar_delete.setIcon(icon("delete", "on_deep"))
+        self.bar_delete.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.bar_delete.clicked.connect(self.delete_selected)
+        bl.addWidget(self.bar_delete)
+        self.selection_bar.hide()
+        ll.addWidget(self.selection_bar)
 
         self.player = PlayerPanel()
         self.player.message.connect(self.show_message)
         self.player.renamed.connect(lambda rid, _t: self.model.reload(rid))
         self.player.meta_changed.connect(self._meta_changed)
         self.player.renamed.connect(lambda rid, title: self.transcript.offer_title(rid, title))
+        self.player.set_renamed.connect(self._rename_set)
         self.player.crop_saved.connect(self._crop_saved)
         self.player.export_requested.connect(self.export_audio)
         self.transcript = TranscriptPanel(self.library)
@@ -164,6 +205,7 @@ class MainWindow(QMainWindow):
         self.transcript.seek_requested.connect(self._seek_and_play)
         self.transcript.download_requested.connect(self.show_model_dialog)
         self.transcript.changed.connect(self.model.reload)
+        self.transcript.part_requested.connect(self._show_part)
         self.player.position_changed.connect(self.transcript.follow)
         self.transcript.attach_player(self.player)
         self.player.markers_changed.connect(lambda _rid: self.transcript.reload_markers())
@@ -242,6 +284,10 @@ class MainWindow(QMainWindow):
         a_search = self._act(e, "&Search all recordings", self._focus_search, "Ctrl+Shift+F", "find")
         a_search.setShortcuts([QKeySequence("Ctrl+Shift+F"), QKeySequence("Ctrl+K")])
         e.addSeparator()
+        self.a_link = self._act(e, "&Link selected recordings", self.link_selected, "Ctrl+L", "link")
+        self.a_part_up = self._act(e, "Move part up", lambda: self.move_part(-1), "Alt+Shift+Up")
+        self.a_part_down = self._act(e, "Move part down", lambda: self.move_part(1), "Alt+Shift+Down")
+        e.addSeparator()
         self.a_rename = self._act(e, "&Rename", self.player.focus_title, "F2", "rename")
         self.a_delete = self._act(e, "&Delete…", self.delete_selected, "Del", "delete")
         self.a_delete.setShortcutContext(Qt.ShortcutContext.WidgetShortcut)
@@ -314,9 +360,10 @@ class MainWindow(QMainWindow):
         self.state.set("split", self.split.sizes())
         self.state.set("right_split", self.right_split.sizes())
         self.state.set("speed", self.player.speed_value())
-        rec = self.current()
-        if rec:
-            self.state.set("selected", rec.id)
+        key = self.current_key()
+        if key:
+            self.state.set("selected", key)
+        self.state.set("expanded", sorted(self.model.expanded))
         self.state.save()
 
     def _select_initial(self):
@@ -371,7 +418,11 @@ class MainWindow(QMainWindow):
         self.model.refresh()
         self._update_empty()
         rec = self.current()
-        if rec is not None:
+        linked = self.current_set()
+        if linked is not None:
+            self.player.set_linked(*linked)
+            self.transcript.set_linked(*linked)
+        elif rec is not None:
             fresh = self.library.get(rec.id)
             if fresh is None:
                 self.player.set_recording(None)
@@ -482,6 +533,7 @@ class MainWindow(QMainWindow):
 
     def _update_actions(self):
         rec = self.current()
+        linked = self.current_set() is not None
         ready = rec is not None and rec.meta.state == READY
         for a in (self.a_export_audio, self.a_transcribe):
             a.setEnabled(ready)
@@ -489,14 +541,54 @@ class MainWindow(QMainWindow):
         self.a_copy.setEnabled(self.transcript.has_text())
         self.a_copy_times.setEnabled(self.transcript.has_text())
         self.a_cancel.setEnabled(ready and rec.transcript_status() in (T_RUNNING, T_QUEUED))
-        self.a_rename.setEnabled(rec is not None)
-        self.a_delete.setEnabled(rec is not None and rec.meta.state != RECORDING)
+        self.a_rename.setEnabled(rec is not None or linked)
+        self.a_delete.setEnabled((rec is not None and rec.meta.state != RECORDING) or linked)
         self.a_folder.setEnabled(rec is not None)
+        part = rec is not None and self.model.set_of(rec.id) is not None
+        self.a_part_up.setEnabled(part)
+        self.a_part_down.setEnabled(part)
+        self._update_selection_bar()
 
     # ---- selection ----
     def current(self) -> Recording | None:
+        """The recording selected (a part of a set too); None when a set row is selected."""
         idx = self.list.currentIndex()
         return self.model.recording(idx.row()) if idx.isValid() else None
+
+    def current_set(self):
+        """(LinkedSet, parts) when a set row is selected."""
+        idx = self.list.currentIndex()
+        return self.model.linked_set(idx.row()) if idx.isValid() else None
+
+    def current_key(self) -> str | None:
+        """The id of the selected row: a recording's or a set's."""
+        idx = self.list.currentIndex()
+        return self.model.row_id(idx.row()) if idx.isValid() else None
+
+    def _remember_selection(self):
+        self._kept_key = self.current_key()
+        self._kept_selection = [self.model.row_id(i.row()) for i in self.list.selectionModel().selectedRows()]
+
+    def _restore_selection(self):
+        key = getattr(self, "_kept_key", None)
+        row = self.model.row_of(key) if key else -1
+        if row < 0 and key and not sets.is_set_id(key):
+            # A recording that went into a set (or whose set was collapsed): select its set.
+            sid = self.model.set_of(key)
+            row = self.model.row_of(sid) if sid else -1
+        if row < 0:
+            return
+        sm = self.list.selectionModel()
+        sm.blockSignals(True)
+        sm.setCurrentIndex(self.model.index(row), QItemSelectionModel.SelectionFlag.ClearAndSelect)
+        for k in getattr(self, "_kept_selection", []):
+            r = self.model.row_of(k) if k else -1
+            if r >= 0:
+                sm.select(self.model.index(r), QItemSelectionModel.SelectionFlag.Select)
+        sm.blockSignals(False)
+        self.list.viewport().update()
+        if self.current_key() != self._last_selected:
+            self._selection_changed(self.list.currentIndex(), None)
 
     def _select(self, rid: str):
         self.model.refresh()
@@ -507,14 +599,63 @@ class MainWindow(QMainWindow):
             self.list.scrollTo(self.model.index(row))
 
     def _selection_changed(self, current, _previous):
-        rec = self.model.recording(current.row()) if current.isValid() else None
-        if rec is not None and rec.id == self._last_selected:
+        key = self.model.row_id(current.row()) if current.isValid() else None
+        if key is not None and key == self._last_selected:
+            self._update_actions()
             return
-        self._last_selected = rec.id if rec else None
-        self.player.set_recording(rec)
-        self.transcript.set_recording(rec)
+        self._last_selected = key
+        linked = self.model.linked_set(current.row()) if current.isValid() else None
+        if linked is not None:
+            self.player.set_linked(*linked)
+            self.transcript.set_linked(*linked)
+        else:
+            rec = self.model.recording(current.row()) if current.isValid() else None
+            self.player.set_recording(rec)
+            self.transcript.set_recording(rec)
         self._carry_search()
         self._update_actions()
+
+    # ---- linked sets in the list ----
+    def eventFilter(self, obj, event):
+        if obj is self.list.viewport() and event.type() == QEvent.Type.MouseButtonPress \
+                and event.button() == Qt.MouseButton.LeftButton:
+            idx = self.list.indexAt(event.position().toPoint())
+            if idx.isValid() and self.model.kind(idx.row()) == ROW_SET \
+                    and self.delegate.chevron_rect(self.list.visualRect(idx)).contains(event.position().toPoint()):
+                self._toggle_expanded(self.model.row_id(idx.row()))
+                return True
+        if obj is self.list.viewport() and event.type() == QEvent.Type.MouseButtonDblClick:
+            idx = self.list.indexAt(event.position().toPoint())
+            if idx.isValid() and self.model.kind(idx.row()) == ROW_SET:
+                self._toggle_expanded(self.model.row_id(idx.row()))
+                return True
+        if obj is self.list and event.type() == QEvent.Type.KeyPress and not event.modifiers():
+            idx = self.list.currentIndex()
+            kind = self.model.kind(idx.row()) if idx.isValid() else None
+            if event.key() == Qt.Key.Key_Right and kind == ROW_SET:
+                self.model.set_expanded(self.model.row_id(idx.row()), True)
+                return True
+            if event.key() == Qt.Key.Key_Left and kind == ROW_SET:
+                self.model.set_expanded(self.model.row_id(idx.row()), False)
+                return True
+            if event.key() == Qt.Key.Key_Left and kind == ROW_PART:
+                self._select(self.model.set_of(self.current().id))
+                return True
+        return super().eventFilter(obj, event)
+
+    def _toggle_expanded(self, sid: str):
+        self.model.set_expanded(sid, not self.model.is_expanded(sid))
+
+    def _rename_set(self, sid: str, title: str):
+        sets.rename(self.library, sid, title)
+        self.model.reload_sets()
+
+    def _show_part(self, rid: str):
+        """A part heading clicked in a set's transcript: show that recording, under its open set."""
+        sid = self.model.set_of(rid)
+        if sid:
+            self.model.set_expanded(sid, True)
+        self._select(rid)
 
     # ---- recording events ----
     def _recording_started(self, rid: str):
@@ -537,7 +678,7 @@ class MainWindow(QMainWindow):
         """Open a search result with its words already found in the transcript, so finding
         them there takes no second search."""
         words = self._search_words()
-        if words and self.current() is not None:
+        if words and (self.current() is not None or self.current_set() is not None):
             self.transcript.find_from_search(words)
 
     def _run_search(self):
@@ -565,7 +706,9 @@ class MainWindow(QMainWindow):
                 if self.model.first_row() >= 0 and not self.list.currentIndex().isValid():
                     self.list.setCurrentIndex(self.model.index(self.model.first_row()))
                 # Also when the open recording stays selected through the filter (no selection change).
-                if self.current() is not None and self.current().id in ids:
+                linked = self.current_set()
+                if (self.current() is not None and self.current().id in ids) or \
+                        (linked is not None and any(r.id in ids for r in linked[1])):
                     self._carry_search()
 
         run_task(query, on_done=done, on_error=lambda m: self.show_message(f"Search failed: {m}"))
@@ -647,11 +790,37 @@ class MainWindow(QMainWindow):
         idx = self.list.indexAt(pos)
         if not idx.isValid():
             return
+        if len(self._selected_keys()) > 1 and self.list.selectionModel().isSelected(idx):
+            m = QMenu(self)
+            m.addAction(icon("link"), f"Link {len(self._selected_keys())} recordings", self.link_selected)
+            m.addSeparator()
+            m.addAction(icon("delete"), "Delete…", self.delete_selected)
+            m.exec(self.list.viewport().mapToGlobal(pos))
+            return
         self.list.setCurrentIndex(idx)
+        linked = self.model.linked_set(idx.row())
+        if linked is not None:
+            st = linked[0]
+            m = QMenu(self)
+            m.addAction(icon("play"), "Play", self.player.toggle_play)
+            m.addAction(icon("rename"), "Rename", self.player.focus_title)
+            m.addAction(icon("collapse" if self.model.is_expanded(st.id) else "expand"),
+                        "Hide parts" if self.model.is_expanded(st.id) else "Show parts",
+                        lambda: self._toggle_expanded(st.id))
+            m.addAction(icon("copy"), "Copy transcript", self.transcript.copy_all)
+            m.addAction(icon("export"), "Export transcript…", self.transcript.export_text)
+            m.addSeparator()
+            m.addAction(icon("unlink"), "Unlink", lambda: self.unlink_set(st.id))
+            m.addAction(icon("delete"), "Delete…", self.delete_selected)
+            m.exec(self.list.viewport().mapToGlobal(pos))
+            return
         rec = self.model.recording(idx.row())
         if rec is None:
             return
         m = QMenu(self)
+        if self.model.set_of(rec.id):
+            m.addAction(icon("unlink"), "Remove from set", lambda: self.remove_from_set(rec.id))
+            m.addSeparator()
         ready = rec.meta.state == READY
         if ready:
             m.addAction(icon("play"), "Play", self.player.toggle_play)
@@ -674,7 +843,105 @@ class MainWindow(QMainWindow):
         d.setEnabled(rec.meta.state != RECORDING)
         m.exec(self.list.viewport().mapToGlobal(pos))
 
+    def _selected_keys(self) -> list[str]:
+        rows = sorted(i.row() for i in self.list.selectionModel().selectedRows())
+        return [k for k in (self.model.row_id(r) for r in rows) if k and self.model.kind(self.model.row_of(k))
+                in ("rec", ROW_SET, ROW_PART)]
+
+    def _update_selection_bar(self):
+        n = len(self._selected_keys())
+        self.selection_bar.setVisible(n > 1)
+        self.selection_label.setText(f"{n} selected")
+        self.a_link.setEnabled(n > 1)
+
+    def link_selected(self):
+        keys = self._selected_keys()
+        if len(keys) < 2:
+            self.show_message("Select two or more recordings to link (Ctrl+click or Shift+click).")
+            return
+        try:
+            st = sets.link(self.library, keys)
+        except (KeyError, ValueError, OSError) as e:
+            self.show_message(f"Could not link them: {e}")
+            return
+        self.model.reload_sets()
+        self._select(st.id)
+        self.show_message(f"Linked {len(st.members)} recordings. Drag a part to reorder it, or out to unlink it.")
+
+    def unlink_set(self, sid: str):
+        st = self.model.get_set(sid)
+        parts = self.model.parts_of(sid)
+        sets.dissolve(self.library, sid)
+        self.model.reload_sets()
+        if parts:
+            self._select(parts[0].id)
+        if st is not None:
+            self.show_message(f"Unlinked “{st.title}”: its {len(parts)} recordings are listed on their own again.")
+
+    def remove_from_set(self, rid: str):
+        sets.unlink(self.library, rid)
+        self.model.reload_sets()
+        self._select(rid)
+
+    def move_part(self, direction: int):
+        rec = self.current()
+        sid = self.model.set_of(rec.id) if rec else None
+        if sid is None:
+            return
+        members = [r.id for r in self.model.parts_of(sid)]
+        k = members.index(rec.id)
+        if not 0 <= k + direction < len(members):
+            return
+        full = self.model.get_set(sid).members  # with missing members, which keep their places
+        target = full.index(members[k + direction])
+        sets.move(self.library, sid, rec.id, target)
+        self.model.reload_sets()
+        self._select(rec.id)
+
+    def _dropped(self, ids: list, target: str | None, sid: str | None, before: str | None):
+        """A drag in the list: onto a row (target) links, between parts (into set `sid`, before the
+        part `before`) places, between top-level rows takes parts out of their set."""
+        try:
+            if target is not None:
+                tsid = self.model.set_of(target) or (target if sets.is_set_id(target) else None)
+                ids = [i for i in ids if i != target and i != tsid]
+                if not ids:
+                    return
+                st = sets.link(self.library, [tsid or target, *ids])
+                if tsid and not sets.is_set_id(target):
+                    # Dropped on a part: the new ones go right after it, in the order dragged.
+                    for n, rid in enumerate(i for i in ids if not sets.is_set_id(i)):
+                        st = sets.move(self.library, st.id, rid, st.members.index(target) + 1 + n)
+                select = st.id
+            elif sid is not None:
+                moving = [i for i in ids if not sets.is_set_id(i) and i != before]
+                if not moving:
+                    return
+                for rid in moving:
+                    st = sets.get(self.library, sid)
+                    rest = [m for m in st.members if m != rid]
+                    sets.move(self.library, sid, rid, rest.index(before) if before in rest else len(rest))
+                select = moving[0]
+            else:
+                for rid in ids:
+                    if not sets.is_set_id(rid) and self.model.set_of(rid):
+                        sets.unlink(self.library, rid)
+                select = ids[0]
+        except (KeyError, ValueError, OSError) as e:
+            self.show_message(f"Could not link them: {e}")
+            return
+        self.model.reload_sets()
+        self._select(select)
+
     def delete_selected(self):
+        keys = self._selected_keys()
+        if len(keys) > 1:
+            self._delete_many(keys)
+            return
+        linked = self.current_set()
+        if linked is not None:
+            self._delete_set(*linked)
+            return
         rec = self.current()
         if rec is None or rec.meta.state == RECORDING:
             return
@@ -699,6 +966,64 @@ class MainWindow(QMainWindow):
             self.list.setCurrentIndex(self.model.index(nearest))
         self._last_selected = None
         self.show_message(f"Moved “{rec.meta.title}” to the trash.")
+
+    def _delete_set(self, st, parts):
+        box = QMessageBox(QMessageBox.Icon.Question, "Delete linked set",
+                          f"“{st.title}” links {len(parts)} recordings.", parent=self)
+        box.setInformativeText("Unlink them to keep each recording, or move all of them and their "
+                               "transcripts to the trash.")
+        unlink = box.addButton("Unlink", QMessageBox.ButtonRole.AcceptRole)
+        trash = box.addButton(f"Move {len(parts)} to the trash", QMessageBox.ButtonRole.DestructiveRole)
+        box.addButton(QMessageBox.StandardButton.Cancel)
+        box.setDefaultButton(unlink)
+        box.exec()
+        if box.clickedButton() is unlink:
+            self.unlink_set(st.id)
+        elif box.clickedButton() is trash:
+            self._trash([r for r in parts if r.meta.state != RECORDING])
+            sets.dissolve(self.library, st.id)
+            self.model.reload_sets()
+
+    def _delete_many(self, keys: list[str]):
+        recs: dict[str, Recording] = {}
+        for k in keys:
+            if sets.is_set_id(k):
+                recs.update({r.id: r for r in self.model.parts_of(k)})
+            else:
+                r = self.library.get(k)
+                if r is not None:
+                    recs[r.id] = r
+        recs = {i: r for i, r in recs.items() if r.meta.state != RECORDING}
+        if not recs:
+            return
+        r = QMessageBox.question(self, "Delete recordings",
+                                 f"Move {len(recs)} recordings and their transcripts to the trash?\n"
+                                 "You can restore them from the trash.")
+        if r == QMessageBox.StandardButton.Yes:
+            self._trash(list(recs.values()))
+
+    def _trash(self, recs: list[Recording]):
+        row = self.list.currentIndex().row()
+        shown = {self.player.rec.id} if self.player.rec else set()
+        shown |= {p.rec.id for p in self.player.parts}
+        if shown & {r.id for r in recs}:
+            self.player.set_recording(None)
+            self.transcript.set_recording(None)
+        done = 0
+        for rec in recs:
+            transcription.cancel(rec)
+            try:
+                self.library.delete(rec)
+                done += 1
+            except OSError as e:
+                self.show_message(f"Could not delete “{rec.meta.title}”: {e}")
+        self.model.refresh()
+        nearest = self.model.nearest_row(min(row, self.model.rowCount() - 1))
+        if nearest >= 0:
+            self.list.setCurrentIndex(self.model.index(nearest))
+        self._last_selected = None
+        if done:
+            self.show_message(f"Moved {done} recording{'s' if done != 1 else ''} to the trash.")
 
     def show_in_folder(self):
         rec = self.current()

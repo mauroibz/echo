@@ -22,6 +22,9 @@ from .common import fmt_date, fmt_duration, fmt_eta, icon, run_task
 log = logging.getLogger(__name__)
 
 AUTOSAVE_MS = 1000
+# Block states marking a linked set's fixed lines: the part's heading, a line saying why it has no
+# text yet, and the blank line between parts. Body lines carry no state.
+HEAD, LOCK, SEP = 100_000, 200_000, 300_000
 REPLAY_AFTER_MS = 1000  # after this long without typing, the passage being corrected plays again
 
 
@@ -227,6 +230,7 @@ class TimestampMargin(QWidget):
 
 class Editor(QPlainTextEdit):
     ctrl_clicked = Signal(int)  # character position
+    heading_clicked = Signal(int)  # a linked set's part number (from 0)
     marker_clicked = Signal(float)  # seconds
     speaker_clicked = Signal(int, object)  # speaker number, global position
     MAX_TEXT_WIDTH_CHARS = 90
@@ -236,6 +240,10 @@ class Editor(QPlainTextEdit):
         self.menu_hook = None  # callable(menu, position) adding actions for the clicked spot
         self.tooltip_hook = None  # callable(position) -> tooltip text for that spot, or None
         self.key_hook = None  # called on every typing key, before the edit
+        # A linked set: edit_guard(lo, hi) says whether the text between two positions may change
+        # (False across or inside a part's heading); heading_at(pos) is the part whose heading is there.
+        self.edit_guard = None
+        self.heading_at = None
         self.margin = TimestampMargin(self)
         self.margin.hide()
         self.updateRequest.connect(lambda _r, _dy: self.margin.update())
@@ -264,7 +272,43 @@ class Editor(QPlainTextEdit):
         super().resizeEvent(e)
         self._place_margin()
 
+    def _edit_range(self, e) -> tuple[int, int] | None:
+        """The text a key would change, or None for keys that change nothing (moving, copying)."""
+        cur = self.textCursor()
+        a, b = cur.selectionStart(), cur.selectionEnd()
+        K, SK = Qt.Key, QKeySequence.StandardKey
+        word_back = e.matches(SK.DeleteStartOfWord)
+        word_fwd = e.matches(SK.DeleteEndOfWord) or e.matches(SK.DeleteEndOfLine)
+        if e.matches(SK.Undo) or e.matches(SK.Redo) or e.matches(SK.Copy) or e.matches(SK.SelectAll):
+            return None
+        if e.matches(SK.Cut) or e.matches(SK.Paste):
+            return a, b
+        if e.key() in (K.Key_Backspace, K.Key_Delete) or word_back or word_fwd:
+            if a != b:
+                return a, b
+            c = QTextCursor(cur)
+            if word_back:
+                c.movePosition(QTextCursor.MoveOperation.PreviousWord, QTextCursor.MoveMode.KeepAnchor)
+            elif word_fwd:
+                c.movePosition(QTextCursor.MoveOperation.EndOfWord if e.matches(SK.DeleteEndOfWord)
+                               else QTextCursor.MoveOperation.EndOfBlock, QTextCursor.MoveMode.KeepAnchor)
+                if c.position() == a:
+                    c.movePosition(QTextCursor.MoveOperation.NextCharacter, QTextCursor.MoveMode.KeepAnchor)
+            elif e.key() == K.Key_Backspace:
+                c.movePosition(QTextCursor.MoveOperation.PreviousCharacter, QTextCursor.MoveMode.KeepAnchor)
+            else:
+                c.movePosition(QTextCursor.MoveOperation.NextCharacter, QTextCursor.MoveMode.KeepAnchor)
+            return min(c.position(), c.anchor()), max(c.position(), c.anchor())
+        if e.text() and not (e.modifiers() & (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.AltModifier)):
+            return a, b  # typing (Enter and Tab too) replaces the selection
+        return None
+
     def keyPressEvent(self, e):
+        if self.edit_guard is not None:
+            rng = self._edit_range(e)
+            if rng is not None and not self.edit_guard(*rng):
+                e.accept()  # the part's heading, or another part: nothing changes
+                return
         if self.key_hook and e.text() and not (e.modifiers() & (Qt.KeyboardModifier.ControlModifier
                                                                 | Qt.KeyboardModifier.AltModifier)):
             self.key_hook()
@@ -272,11 +316,30 @@ class Editor(QPlainTextEdit):
             self.key_hook()
         super().keyPressEvent(e)
 
+    def insertFromMimeData(self, source):
+        if self.edit_guard is not None:
+            cur = self.textCursor()
+            if not self.edit_guard(cur.selectionStart(), cur.selectionEnd()):
+                return
+        super().insertFromMimeData(source)
+
     def mousePressEvent(self, e: QMouseEvent):
         if e.modifiers() & Qt.KeyboardModifier.ControlModifier and e.button() == Qt.MouseButton.LeftButton:
             self.ctrl_clicked.emit(self.cursorForPosition(e.position().toPoint()).position())
             return
+        if self.heading_at is not None and e.button() == Qt.MouseButton.LeftButton:
+            k = self.heading_at(self.cursorForPosition(e.position().toPoint()).position())
+            if k is not None:
+                self.heading_clicked.emit(k)
+                return
         super().mousePressEvent(e)
+
+    def mouseMoveEvent(self, e: QMouseEvent):
+        if self.heading_at is not None and not e.buttons():
+            k = self.heading_at(self.cursorForPosition(e.position().toPoint()).position())
+            self.viewport().setCursor(Qt.CursorShape.PointingHandCursor if k is not None
+                                      else Qt.CursorShape.IBeamCursor)
+        super().mouseMoveEvent(e)
 
     def event(self, e):
         if e.type() == e.Type.ToolTip and self.tooltip_hook:
@@ -293,6 +356,12 @@ class Editor(QPlainTextEdit):
 
     def contextMenuEvent(self, e):
         menu = self.createStandardContextMenu(e.pos())
+        if self.edit_guard is not None:
+            cur = self.textCursor()
+            if not self.edit_guard(cur.selectionStart(), cur.selectionEnd()):
+                for a in menu.actions():
+                    if a.objectName() in ("edit-cut", "edit-paste", "edit-delete"):
+                        a.setEnabled(False)
         if self.menu_hook:
             self.menu_hook(menu, self.cursorForPosition(e.pos()).position())
         menu.exec(e.globalPos())
@@ -370,8 +439,21 @@ class StateView(QWidget):
         self.buttons.addStretch(1)
 
 
+class SetPart:
+    """One part of a linked set as laid out in the editor."""
+
+    def __init__(self, rec: Recording, timeline_part, heading: str, state: str | None):
+        self.rec = rec
+        self.tl = timeline_part  # sets.Part: offset and crop on the set's timeline
+        self.heading = heading
+        self.state = state  # why there is no text yet; None when the part has text to edit
+        self.loaded = ""  # the text shown when loaded or last saved
+        self.sig = None
+
+
 class TranscriptPanel(QWidget):
     seek_requested = Signal(float)
+    part_requested = Signal(str)  # a linked set's part heading was clicked: show that recording
     message = Signal(str)
     download_requested = Signal()
     changed = Signal(str)  # recording id whose files changed
@@ -382,6 +464,8 @@ class TranscriptPanel(QWidget):
         super().__init__(parent)
         self.library = library
         self.rec: Recording | None = None
+        self.linked = None  # the LinkedSet shown instead of a recording
+        self._parts: list[SetPart] = []
         self._loading = False
         self._spans: list[tuple[int, int, float]] = []
         self._corrections: list[tuple[int, int, dict]] = []  # absolute span and the logged edit
@@ -500,6 +584,9 @@ class TranscriptPanel(QWidget):
         self.editor.ctrl_clicked.connect(self._on_ctrl_click)
         self.editor.marker_clicked.connect(self.marker_clicked.emit)
         self.editor.speaker_clicked.connect(self._speaker_menu)
+        self.editor.heading_clicked.connect(lambda k: self.part_requested.emit(self._parts[k].rec.id)
+                                            if 0 <= k < len(self._parts) else None)
+        self.editor.document().contentsChange.connect(self._check_structure)
         # Centered reading column on wide windows, on a full-width text background.
         column = QWidget()
         cl = QHBoxLayout(column)
@@ -570,6 +657,9 @@ class TranscriptPanel(QWidget):
 
     # ---- selection and refresh ----
     def set_recording(self, rec: Recording | None):
+        if self.linked is not None:
+            self.save()
+            self._leave_set()
         if self.rec is not None and (rec is None or rec.id != self.rec.id):
             self.save()
         switching = rec is None or self.rec is None or rec.id != self.rec.id
@@ -590,8 +680,299 @@ class TranscriptPanel(QWidget):
                 return None
         return (rec.id, mt(TRANSCRIPT), rec.is_edited(), mt(CORRECTED))
 
+    # ---- a linked set ----
+    def _leave_set(self):
+        self.linked, self._parts = None, []
+        self.editor.edit_guard = self.editor.heading_at = None
+        self.editor.setAcceptDrops(True)
+        self._shown_signature = None
+        self.close_find()
+        self._replay.stop()
+        self._audio_k, self._typing_paused = None, False
+        self._offer([])
+        self._loading = True
+        self.editor.setPlainText("")
+        self._loading = False
+        for a in (self.act_retx, self.act_retx_base, self.lang_menu.menuAction(), self.act_speakers):
+            a.setVisible(True)
+
+    def set_linked(self, linked, parts: list[Recording]):
+        """Show a linked set: its parts' transcripts one under the other, edited in place."""
+        if self.linked is None or linked.id != self.linked.id:
+            self.save()
+            if self.linked is None:
+                self.set_recording(None)
+            else:
+                self._leave_set()
+            self.linked = linked
+            self.editor.edit_guard = self._edit_allowed
+            self.editor.heading_at = self._heading_at
+            self.editor.setAcceptDrops(False)  # dragging text could carry it into another part
+            for a in (self.act_retx, self.act_retx_base, self.lang_menu.menuAction(), self.act_speakers):
+                a.setVisible(False)  # these act on one recording: select the part
+        self.linked = linked
+        self._set_parts = parts
+        self.refresh()
+
+    @staticmethod
+    def _part_state(rec: Recording) -> str | None:
+        if rec.meta.state == RECORDING:
+            return "Recording in progress"
+        if rec.meta.state != READY:
+            return "Needs attention: select this part to repair it"
+        if rec.is_edited() or rec.path(TRANSCRIPT).exists():
+            return None
+        st = rec.transcript_status()
+        if st == T_RUNNING:
+            p = rec.progress() or {}
+            frac = (p.get("done", 0) / p["total"]) if p.get("total") else 0
+            return f"Transcribing… {frac:.0%}"
+        if st == T_QUEUED:
+            return "Waiting to transcribe"
+        if st == T_FAILED:
+            return "Transcription failed: select this part to try again"
+        return "Not transcribed yet: select this part to transcribe it"
+
+    def _set_signature(self, parts: list[Recording]):
+        return tuple((self._signature(r), self._part_state(r), r.meta.title, r.meta.speakers_off,
+                      tuple(sorted(r.meta.speakers.items())), r.meta.crop_start, r.meta.crop_end) for r in parts)
+
+    def _refresh_set(self):
+        from .. import sets
+
+        parts = [self.library.get(r.id) or r for r in self._set_parts]
+        self._set_parts = parts
+        self.stack.setCurrentWidget(self.page)
+        self.notice.hide()
+        sig = (self.linked.id, self._set_signature(parts))
+        if sig == self._shown_signature:
+            self._update_set_status()
+            return
+        if self._autosave.isActive():
+            self.save()  # unsaved typing becomes the parts' edited text before anything reloads
+            parts = [self.library.get(r.id) or r for r in parts]
+            self._set_parts = parts
+            sig = (self.linked.id, self._set_signature(parts))
+        for r in parts:
+            self._apply_dictionary(r)
+        tl = sets.timeline(parts)
+        self._parts = []
+        for k, (r, part) in enumerate(zip(parts, tl)):
+            length = f"  ·  {fmt_duration(part.length)}" if r.meta.duration else ""
+            heading = f"{k + 1}  ·  {r.meta.title}  ·  {fmt_date(r.meta.created)}{length}"
+            self._parts.append(SetPart(r, part, heading, self._part_state(r)))
+        self._load_set_text()
+        self._shown_signature = sig
+        self._update_set_status()
+
+    def _load_set_text(self):
+        cur_pos = self.editor.textCursor().position()
+        scroll = self.editor.verticalScrollBar().value()
+        lines: list[tuple[str, int]] = []  # (text, block state); body text may hold several lines
+        for k, part in enumerate(self._parts):
+            if k:
+                lines.append(("", SEP))
+            lines.append((part.heading, HEAD + k))
+            if part.state is not None:
+                lines.append((part.state, LOCK + k))
+            else:
+                part.loaded = part.rec.text().rstrip("\n")
+                lines.append((part.loaded, -1))
+        self._loading = True
+        doc = self.editor.document()
+        doc.setUndoRedoEnabled(False)
+        self.editor.setPlainText("\n".join(t for t, _s in lines))
+        block = doc.begin()
+        for text, state in lines:
+            n = text.count("\n") + 1
+            for _ in range(n):
+                block.setUserState(state)
+                block = block.next()
+        t = theme.current()
+        head_fmt = QTextCharFormat()
+        head_fmt.setFontWeight(QFont.Weight.Bold)
+        head_fmt.setForeground(QColor(t.accent_deep))
+        lock_fmt = QTextCharFormat()
+        lock_fmt.setFontItalic(True)
+        lock_fmt.setForeground(QColor(t.muted))
+        block = doc.begin()
+        while block.isValid():
+            st = block.userState()
+            if HEAD <= st < SEP and block.length() > 1:
+                c = QTextCursor(block)
+                c.movePosition(QTextCursor.MoveOperation.EndOfBlock, QTextCursor.MoveMode.KeepAnchor)
+                c.setCharFormat(head_fmt if st < LOCK else lock_fmt)
+            block = block.next()
+        doc.setUndoRedoEnabled(True)
+        self._loading = False
+        c = self.editor.textCursor()
+        c.setPosition(min(cur_pos, doc.characterCount() - 1))
+        self.editor.setTextCursor(c)
+        self.editor.verticalScrollBar().setValue(scroll)
+        self._corrections = []
+        self._current_span = -1
+        self._align_now()
+
+    def _bodies(self) -> list[tuple[int, int] | None]:
+        """Each part's editable text as (start, end) positions; None for a part without text."""
+        doc = self.editor.document()
+        out: list[tuple[int, int] | None] = [None] * len(self._parts)
+        k, start, end = -1, None, None
+        block = doc.begin()
+
+        def close():
+            if 0 <= k < len(out) and start is not None and self._parts[k].state is None:
+                out[k] = (start, end)
+
+        while block.isValid():
+            st = block.userState()
+            if HEAD <= st < LOCK:
+                close()
+                k, start, end = st - HEAD, None, None
+            elif st >= LOCK:
+                pass
+            else:
+                if start is None:
+                    start = block.position()
+                end = block.position() + block.length() - 1
+            block = block.next()
+        close()
+        return out
+
+    def _edit_allowed(self, lo: int, hi: int) -> bool:
+        return any(b is not None and b[0] <= lo and hi <= b[1] for b in self._bodies())
+
+    def _heading_at(self, pos: int) -> int | None:
+        block = self.editor.document().findBlock(pos)
+        st = block.userState()
+        return st - HEAD if HEAD <= st < LOCK else None
+
+    def _structure_ok(self) -> bool:
+        heads = []
+        block = self.editor.document().begin()
+        while block.isValid():
+            if HEAD <= block.userState() < LOCK:
+                heads.append(block.text())
+            block = block.next()
+        return heads == [p.heading for p in self._parts]
+
+    def _check_structure(self, _pos, _removed, _added):
+        """The last guard: an edit that reached a heading anyway (an input method, a drop) is undone."""
+        if self.linked is None or self._loading or self._structure_ok():
+            return
+        QTimer.singleShot(0, self._restore_structure)
+
+    def _restore_structure(self):
+        if self.linked is None or self._structure_ok():
+            return
+        self.editor.undo()
+        if not self._structure_ok():
+            self._shown_signature = None
+            self._refresh_set()
+        self.message.emit("Each part's heading stays as it is; edit the text under it.")
+
+    def _part_text(self, k: int, bodies=None) -> str | None:
+        bodies = self._bodies() if bodies is None else bodies
+        b = bodies[k]
+        if b is None:
+            return None
+        c = QTextCursor(self.editor.document())
+        c.setPosition(b[0])
+        c.setPosition(b[1], QTextCursor.MoveMode.KeepAnchor)
+        return c.selection().toPlainText()
+
+    def _save_set(self):
+        if not self._structure_ok():
+            self.message.emit("Not saved: a part's heading changed. The text is shown again as saved.")
+            self._shown_signature = None
+            self._refresh_set()
+            return
+        bodies = self._bodies()
+        for k, part in enumerate(self._parts):
+            text = self._part_text(k, bodies)
+            if text is None or text == part.loaded:
+                continue
+            rec = part.rec
+            try:
+                if text == rec.base_text().rstrip("\n"):
+                    if rec.is_edited():
+                        rec.revert_edits()
+                else:
+                    rec.save_edited(text)
+            except OSError as e:
+                self.message.emit(f"Could not save your edits: {e}")
+                return
+            part.loaded = text
+            self.changed.emit(rec.id)
+            if rec.is_edited():
+                self._learn_from(rec, text)
+        self._shown_signature = (self.linked.id, self._set_signature([p.rec for p in self._parts]))
+        self._update_set_status()
+
+    def _update_set_status(self):
+        edited = sum(1 for p in self._parts if p.rec.is_edited())
+        waiting = sum(1 for p in self._parts if p.state is not None)
+        bits = [f"{len(self._parts)} parts"]
+        if edited:
+            bits.append(f"{edited} edited")
+        if waiting:
+            bits.append(f"{waiting} without text yet")
+        self.status.setText(" · ".join(bits))
+        self.act_revert.setEnabled(False)
+        self._update_flag_count()
+
+    def _set_segments(self) -> list[dict]:
+        """Every part's shown segments on the set's timeline, each knowing its part."""
+        out = []
+        for k, part in enumerate(self._parts):
+            if part.state is not None:
+                continue
+            for sg in shown_segments(part.rec):
+                out.append({**sg, "start": part.tl.to_set(float(sg.get("start", 0.0))),
+                            "end": part.tl.to_set(float(sg.get("end", 0.0))), "_part": k})
+        return out
+
+    def _align_set(self):
+        """Passage spans of every part, in document positions and set time."""
+        text = self.editor.toPlainText()
+        bodies = self._bodies()
+        segs = self._set_segments()
+        self._segments = segs
+        passages, corrections = [], []
+        self._correction_part = {}
+        for k, part in enumerate(self._parts):
+            b = bodies[k]
+            if b is None:
+                continue
+            idx = [i for i, sg in enumerate(segs) if sg["_part"] == k]
+            local = [segs[i] for i in idx]
+            language = (part.rec.transcript() or {}).get("language", "es")
+            body = text[b[0]:b[1]]
+            if local:
+                passages += [(b[0] + a, b[0] + e, idx[j]) for a, e, j in align.align(local, body, language) if e > a]
+            if not part.rec.is_edited() and body == part.loaded:
+                c = part.rec.corrected()
+                if c:
+                    offsets = segment_offsets(local, language)
+                    for ed in c.get("edits", []):
+                        base = offsets.get(ed.get("segment"))
+                        if base is not None:
+                            corrections.append((b[0] + base + ed["start"], b[0] + base + ed["end"], ed))
+                            self._correction_part[id(ed)] = part.rec
+        self._passages = passages
+        self._spans = [(a, e, float(segs[k].get("start", 0.0))) for a, e, k in passages]
+        self._flagged = [(a, e, segs[k]) for a, e, k in passages
+                         if segs[k].get("flags") and text[a:e].strip() == (segs[k].get("text") or "").strip()]
+        self._corrections = corrections
+        self._update_margin()
+        self._apply_selections()
+        self._update_flag_count()
+
     def refresh(self):
         """Re-evaluate what to show for the current recording (called on every library change)."""
+        if self.linked is not None:
+            self._refresh_set()
+            return
         rec = self.rec
         if rec is None:
             self.stack.setCurrentWidget(self.state)
@@ -782,7 +1163,7 @@ class TranscriptPanel(QWidget):
 
     # ---- editing ----
     def _on_text_changed(self):
-        if self._loading or self.rec is None:
+        if self._loading or (self.rec is None and self.linked is None):
             return
         self._corrections = []  # corrections belong to the unedited text
         self._apply_selections()
@@ -792,6 +1173,9 @@ class TranscriptPanel(QWidget):
     def _align_now(self):
         """Passage spans of the editor's current text, aligned to the model's passages, and the
         flagged passages whose text is still what the model wrote (editing one clears its mark)."""
+        if self.linked is not None:
+            self._align_set()
+            return
         segs = self._segments
         text = self.editor.toPlainText()
         language = ((self.rec.transcript() if self.rec else None) or {}).get("language", "es")
@@ -839,6 +1223,8 @@ class TranscriptPanel(QWidget):
 
     def _speaker_labels(self) -> list[tuple[int, str, str, int]]:
         """A name where the speaker changes: the user's, a suggestion with "?", or "Speaker N"."""
+        if self.linked is not None:
+            return self._set_speaker_labels()
         rec = self.rec
         if rec is None or rec.meta.speakers_off:
             return []
@@ -856,7 +1242,27 @@ class TranscriptPanel(QWidget):
             out.append((a, name, self.SPEAKER_COLORS[(n - 1) % len(self.SPEAKER_COLORS)], n))
         return out
 
+    def _set_speaker_labels(self) -> list[tuple[int, str, str, int]]:
+        """Speaker names across a set's parts (naming them is done on the part); a part starts afresh."""
+        out, last = [], None
+        for a, _b, k in self._passages:
+            sg = self._segments[k]
+            rec = self._parts[sg["_part"]].rec
+            info = (rec.transcript() or {}).get("speakers") or {}
+            n = sg.get("speaker")
+            key = (sg["_part"], n)
+            if rec.meta.speakers_off or not info or n is None or key == last:
+                continue
+            last = key
+            suggested = info.get("suggested") or {}
+            name = rec.meta.speakers.get(str(n)) or (f"{suggested[str(n)]}?" if str(n) in suggested else f"Speaker {n}")
+            out.append((a, name, self.SPEAKER_COLORS[(n - 1) % len(self.SPEAKER_COLORS)], n))
+        return out
+
     def _speaker_menu(self, n: int, pos):
+        if self.linked is not None:
+            self.message.emit("Name speakers on the part: click its heading.")
+            return
         rec = self.rec
         if rec is None:
             return
@@ -919,10 +1325,15 @@ class TranscriptPanel(QWidget):
 
     def _marker_anchors(self) -> list[tuple[int, dict]]:
         """Each marker at the start of the passage it falls in (or the next one)."""
-        if self.rec is None or not self._spans:
+        if self.linked is not None:
+            markers = [{"at": p.tl.to_set(float(m["at"])), "note": m.get("note") or ""}
+                       for p in self._parts for m in p.rec.meta.markers]
+        else:
+            markers = self.rec.meta.markers if self.rec is not None else []
+        if not markers or not self._spans:
             return []
         out = []
-        for m in self.rec.meta.markers:
+        for m in markers:
             at = float(m["at"])
             pos = self._spans[0][0]
             for a, _b, start in self._spans:
@@ -934,7 +1345,11 @@ class TranscriptPanel(QWidget):
         return out
 
     def reload_markers(self):
-        if self.rec is not None:
+        if self.linked is not None:
+            for part in self._parts:
+                part.rec = self.library.get(part.rec.id) or part.rec
+            self._update_margin()
+        elif self.rec is not None:
             self.rec = self.library.get(self.rec.id) or self.rec
             self._update_margin()
 
@@ -950,6 +1365,10 @@ class TranscriptPanel(QWidget):
 
     def save(self):
         self._autosave.stop()
+        if self.linked is not None:
+            if self._parts:
+                self._save_set()
+            return
         rec = self.rec
         if rec is None or self.stack.currentWidget() is not self.page:
             return
@@ -969,13 +1388,17 @@ class TranscriptPanel(QWidget):
         self._update_status(rec)
         self.changed.emit(rec.id)
         if rec.is_edited():
-            d = dictionary.current()
-            learned = dictionary.new_aliases(rec.model_text(), text, d)
-            if learned:
-                # A known name corrected from a new spelling: record it, visibly, without asking.
-                if self._dict_update(lambda d: [d.add(d.find(n).kind, n, [a]) for n, a in learned if d.find(n)]):
-                    self.message.emit(" ".join(f"“{a}” will be corrected to “{n}” from now on." for n, a in learned))
-            self._offer(dictionary.edit_candidates(rec.model_text(), text, dictionary.current(), rec.id))
+            self._learn_from(rec, text)
+
+    def _learn_from(self, rec: Recording, text: str):
+        """After saving edited text: new spellings of known names, and words to offer."""
+        d = dictionary.current()
+        learned = dictionary.new_aliases(rec.model_text(), text, d)
+        if learned:
+            # A known name corrected from a new spelling: record it, visibly, without asking.
+            if self._dict_update(lambda d: [d.add(d.find(n).kind, n, [a]) for n, a in learned if d.find(n)]):
+                self.message.emit(" ".join(f"“{a}” will be corrected to “{n}” from now on." for n, a in learned))
+        self._offer(dictionary.edit_candidates(rec.model_text(), text, dictionary.current(), rec.id))
 
     def revert(self, confirm: bool = True):
         rec = self.rec
@@ -1146,7 +1569,7 @@ class TranscriptPanel(QWidget):
 
     def _menu_hook(self, menu, pos: int):
         edit = self._correction_at(pos)
-        if edit is None or self.rec is None:
+        if edit is None or (self.rec is None and self.linked is None):
             return
         first = menu.actions()[0] if menu.actions() else None
         act = QAction(icon("revert"), f"Undo this correction (back to “{edit['before']}”)", menu)
@@ -1156,7 +1579,7 @@ class TranscriptPanel(QWidget):
             menu.insertSeparator(first)
 
     def _undo_correction(self, edit: dict):
-        rec = self.rec
+        rec = self.rec if self.linked is None else getattr(self, "_correction_part", {}).get(id(edit))
         if rec is None:
             return
         dictionary.undo(rec, edit)
@@ -1238,7 +1661,15 @@ class TranscriptPanel(QWidget):
         run_task(go, on_done=done, on_error=lambda m: self.message.emit(f"Saving failed: {m}"))
         self.state.show_state("Saving…", busy=True)
 
+    def _set_recordings(self) -> list[Recording]:
+        return [self.library.get(p.rec.id) or p.rec for p in self._parts]
+
     def copy_all(self):
+        if self.linked is not None:
+            self.save()
+            QApplication.clipboard().setText(export.render_set(self.linked.title, self._set_recordings(), ".txt"))
+            self.message.emit("All parts copied.")
+            return
         if self.rec is None or self.stack.currentWidget() is not self.page:
             return
         self.save()
@@ -1247,10 +1678,17 @@ class TranscriptPanel(QWidget):
 
     def export_text(self):
         rec = self.rec
-        if rec is None or self.stack.currentWidget() is not self.page:
+        if (rec is None and self.linked is None) or self.stack.currentWidget() is not self.page:
             return
         self.save()
-        start = os.path.join(os.path.expanduser("~"), export.suggested_name(rec, ".txt"))
+        if self.linked is not None:
+            from types import SimpleNamespace
+
+            name = export.suggested_name(SimpleNamespace(meta=SimpleNamespace(title=self.linked.title), id=self.linked.id),
+                                         ".txt")
+        else:
+            name = export.suggested_name(rec, ".txt")
+        start = os.path.join(os.path.expanduser("~"), name)
         filters = [f"{label} (*{ext})" for ext, label in export.TEXT_FORMATS.items()]
         path, flt = QFileDialog.getSaveFileName(self, "Export transcript", start, ";;".join(filters))
         if not path:
@@ -1259,13 +1697,21 @@ class TranscriptPanel(QWidget):
         if not path.lower().endswith(tuple(export.TEXT_FORMATS)):
             path += ext
         try:
-            out = export.export_transcript(rec, path)
+            if self.linked is not None:
+                out = export.export_set(self.linked.title, self._set_recordings(), path, self.linked.id)
+            else:
+                out = export.export_transcript(rec, path)
         except OSError as e:
             self.message.emit(f"Export failed: {e}")
             return
         self.message.emit(f"Saved {out}")
 
     def copy_with_timestamps(self):
+        if self.linked is not None:
+            self.save()
+            QApplication.clipboard().setText(export.set_with_timestamps(self._set_recordings()))
+            self.message.emit("All parts copied with passage times.")
+            return
         if self.rec is None or self.stack.currentWidget() is not self.page:
             return
         self.save()

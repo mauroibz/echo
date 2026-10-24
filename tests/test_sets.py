@@ -241,3 +241,75 @@ def test_cli_link_list_export_unlink(lib, capsys):
     assert sets.get(lib, sid) is None
     assert cli.main(["unlink", a.id]) == 1
     capsys.readouterr()
+
+
+class _FakeInner:
+    """A Playback stand-in: records what was played; `finish()` ends the current pipeline."""
+
+    def __init__(self):
+        self.path, self.speed, self.error = None, 1.0, None
+        self.calls, self._pos, self._end, self.playing, self._ended = [], 0.0, None, False, False
+
+    def load(self, path, duration):
+        self.path, self.playing, self._pos = path, False, 0.0
+
+    def seek(self, sec):
+        self._pos = sec
+
+    def play(self, start=None, end=None):
+        self._pos = self._pos if start is None else start
+        self._end, self.playing = end, True
+        self.calls.append((self.path.parent.name if self.path else None, round(self._pos, 2), end and round(end, 2)))
+
+    def position(self):
+        return self._pos
+
+    def finish(self):
+        self._pos, self._ended = self._end, True
+
+    def poll(self):
+        if self.playing and self._ended:
+            self.playing, self._ended = False, False
+            return True
+        return False
+
+    def pause(self):
+        self.playing = False
+
+    stop = pause
+
+    def set_speed(self, s):
+        self.speed = s
+
+
+def test_set_playback_hands_over_to_the_next_part(lib):
+    from echo_app.audio.playback import SetPlayback
+
+    a = _rec(lib, "A", "2026-10-23T14:02:00-03:00", duration=10.0)
+    b = _rec(lib, "B", "2026-10-23T14:04:00-03:00", duration=20.0)
+    b.update(crop_start=5.0, crop_end=15.0)
+    for r in (a, b):
+        (r.folder / "audio.wav").write_bytes(b"x")
+        r.update(audio="audio.wav")
+    pb = SetPlayback()
+    pb.inner = _FakeInner()
+    pb.load(sets.timeline([lib.get(a.id), lib.get(b.id)]))
+    assert pb.duration == 20.0
+    pb.play(0.0)
+    assert pb.inner.calls == [(a.id, 0.0, 10.0)]
+    pb.inner.finish()
+    assert pb.poll() is False and pb.inner.calls[-1] == (b.id, 5.0, 15.0)  # the next part, from its crop
+    assert pb.position() == 10.0
+    pb.inner.finish()
+    assert pb.poll() is True and pb.position() == 20.0
+    # Seeking into the second part while stopped, then a span inside it.
+    pb.seek(12.5)
+    assert pb.k == 1 and pb.inner.position() == 7.5
+    pb.play(11.0, 13.0)
+    assert pb.inner.calls[-1] == (b.id, 6.0, 8.0)
+    pb.inner.finish()
+    assert pb.poll() is True
+    # Playing from the end starts over.
+    pb.seek(20.0)
+    pb.play()
+    assert pb.inner.calls[-1] == (a.id, 0.0, 10.0)

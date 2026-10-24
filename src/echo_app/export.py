@@ -400,6 +400,61 @@ def export_folder(recs, dest: Path, timestamps: bool = False, audio: str = AUDIO
         return _export_folder(recs, Path(dest), timestamps, audio)
 
 
+def _audio_link(rec: Recording, dest: Path, audio: str) -> str | None:
+    src = rec.audio_path
+    if audio == AUDIO_NONE or src is None or not src.exists():
+        return None
+    if audio == AUDIO_COPY:
+        audio_dest = dest / "audio" / f"{rec.id}{src.suffix.lower()}"
+        if not audio_dest.exists() or audio_dest.stat().st_size != src.stat().st_size:
+            audio_dest.parent.mkdir(exist_ok=True)
+            shutil.copyfile(src, audio_dest)
+        return f"audio/{audio_dest.name}"
+    return Path(os.path.relpath(src, dest)).as_posix()
+
+
+def set_to_markdown(title: str, parts, timestamps: bool = False, audio_links=None) -> str:
+    """A linked set as one note: each part a section, its markers one level below."""
+    from .sets import timeline, total
+
+    tl = timeline(parts)
+    first, last = parts[0].meta.created, parts[-1].meta.created
+    span = _when(first) + (f" – {_when(last)[11:]}" if first[:10] == last[:10] else f" – {_when(last)}")
+    tags: list[str] = []
+    for r in parts:
+        tags += [t for t in r.meta.tags if t not in tags]
+    line = f"_{span}_ · {stamp(total(tl))} · {len(parts)} parts"
+    if tags:
+        line += " · " + " ".join("#" + t.replace(" ", "-") for t in tags)
+    head = [f"# {title}", "", line]
+    people: list[str] = []
+    for r in parts:
+        people += [n for n in _people(r, r.text()) if n not in people]
+    if people:
+        head.append(f"People: {', '.join(people)}")
+    links = [lk for lk in (audio_links or []) if lk]
+    if links:
+        head.append("Audio: " + ", ".join(f"[{k}](<{lk}>)" for k, lk in enumerate(links, 1)))
+    sections = []
+    for k, (r, p) in enumerate(zip(parts, tl), 1):
+        body = _markdown_body(r, r.text().strip(), timestamps).replace("\n## ", "\n### ")
+        if body.startswith("## "):
+            body = "#" + body
+        sec = [f"## {k}. {r.meta.title}", "", f"_{_when(r.meta.created)} · {stamp(p.length)}_"]
+        if r.meta.notes:
+            sec += ["", f"> {r.meta.notes}"]
+        if body.strip():
+            sec += ["", body.strip()]
+        sections.append("\n".join(sec))
+    return "\n".join(head) + "\n\n" + "\n\n".join(sections) + "\n"
+
+
+def set_note_name(title: str, parts) -> str:
+    from types import SimpleNamespace
+
+    return f"{parts[0].meta.created[:10]} {suggested_name(SimpleNamespace(meta=SimpleNamespace(title=title), id='set'), '.md')}"
+
+
 def _export_folder(recs, dest: Path, timestamps: bool, audio: str) -> dict[str, int]:
     dest.mkdir(parents=True, exist_ok=True)
     try:
@@ -408,32 +463,73 @@ def _export_folder(recs, dest: Path, timestamps: bool, audio: str) -> dict[str, 
         ledger = {}
     owner = {v.get("file"): rid for rid, v in ledger.items()}
     counts = {"written": 0, "unchanged": 0, "removed": 0, "kept": 0}
+    recs = list(recs)
+    # A linked set is one note; its parts get none of their own.
+    groups: dict[str, tuple] = {}
+    member_of: dict[str, str] = {}
+    live_sets: set[str] = set()
+    if recs:
+        from . import sets
+        from .library import Library
+
+        library = Library(recs[0].folder.parent.parent)
+        for st in sets.load_all(library):
+            parts = sets.present(library, st)
+            if len(parts) >= 2:
+                live_sets.add(st.id)
+                for r in parts:
+                    member_of[r.id] = st.id
+                groups[st.id] = (st, parts)
+
+    def drop(key: str):
+        entry = ledger.get(key)
+        if not entry:
+            return
+        old = entry.get("file")
+        if old and (dest / old).exists() and _file_sha(dest / old) != entry.get("sha"):
+            return  # changed by the user: theirs
+        if old and (dest / old).exists():
+            (dest / old).unlink()
+            counts["removed"] += 1
+        owner.pop(old, None)
+        ledger.pop(key, None)
+
+    items = []
+    done_sets: set[str] = set()
     for rec in recs:
-        if not rec.text().strip() and not rec.meta.notes:
-            continue  # nothing to read yet
-        entry = ledger.get(rec.id, {})
+        sid = member_of.get(rec.id)
+        if sid is None:
+            items.append((rec.id, rec, None))
+        else:
+            drop(rec.id)  # a note written before the recording was linked
+            if sid not in done_sets:
+                done_sets.add(sid)
+                items.append((sid, None, groups[sid]))
+    for key in [k for k in ledger if k.startswith("set_") and k not in live_sets]:
+        drop(key)  # a set that was unlinked
+    for key, rec, group in items:
+        if rec is not None:
+            if not rec.text().strip() and not rec.meta.notes:
+                continue  # nothing to read yet
+        elif not any(r.text().strip() or r.meta.notes for r in group[1]):
+            continue
+        entry = ledger.get(key, {})
         old = entry.get("file")
         untouched = bool(old) and _file_sha(dest / old) == entry.get("sha")
         if old and (dest / old).exists() and not untouched:
             counts["kept"] += 1  # the user changed this note: it is theirs now
             continue
-        name = note_name(rec)
+        name = note_name(rec) if rec is not None else set_note_name(group[0].title, group[1])
         if name != old:
             base, n = name[:-3], 2
-            while (dest / name).exists() or owner.get(name, rec.id) != rec.id:
+            while (dest / name).exists() or owner.get(name, key) != key:
                 name, n = f"{base} {n}.md", n + 1
-        link = None
-        src = rec.audio_path
-        if audio != AUDIO_NONE and src is not None and src.exists():
-            if audio == AUDIO_COPY:
-                audio_dest = dest / "audio" / f"{rec.id}{src.suffix.lower()}"
-                if not audio_dest.exists() or audio_dest.stat().st_size != src.stat().st_size:
-                    audio_dest.parent.mkdir(exist_ok=True)
-                    shutil.copyfile(src, audio_dest)
-                link = f"audio/{audio_dest.name}"
-            else:
-                link = Path(os.path.relpath(src, dest)).as_posix()
-        note = to_markdown(rec, timestamps, link).encode("utf-8")
+        if rec is not None:
+            note = to_markdown(rec, timestamps, _audio_link(rec, dest, audio)).encode("utf-8")
+        else:
+            st, parts = group
+            note = set_to_markdown(st.title, parts, timestamps,
+                                   [_audio_link(r, dest, audio) for r in parts]).encode("utf-8")
         sha = _sha(note)
         if old and old != name and untouched:
             (dest / old).unlink()
@@ -443,8 +539,8 @@ def _export_folder(recs, dest: Path, timestamps: bool, audio: str) -> dict[str, 
             counts["unchanged"] += 1
             continue
         (dest / name).write_bytes(note)
-        ledger[rec.id] = {"file": name, "sha": sha}
-        owner[name] = rec.id
+        ledger[key] = {"file": name, "sha": sha}
+        owner[name] = key
         counts["written"] += 1
     (dest / LEDGER).write_text(json.dumps(ledger, ensure_ascii=False, indent=1, sort_keys=True), encoding="utf-8")
     return counts

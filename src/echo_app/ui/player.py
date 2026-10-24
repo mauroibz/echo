@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QInputDialog, QLabel, QLi
                                QToolButton, QToolTip, QVBoxLayout, QWidget)
 
 from ..audio import peaks as peaks_mod
-from ..audio.playback import Playback
+from ..audio.playback import Playback, SetPlayback
 from ..library import READY, Recording
 from . import theme
 from .common import fmt_date, fmt_duration, icon, run_task
@@ -64,6 +64,10 @@ class WaveformView(QWidget):
         self.gaps: list[float] = []  # capture interruptions
         self.markers: list[dict] = []  # the user's markers: {"at", "note"}
         self.placeholder = ""
+        # A linked set is shown read-only: no crop handles and no marker editing (both belong to
+        # one recording), with a divider and the part number where each part starts.
+        self.editable = True
+        self.dividers: list[float] = []
         self._drag: str | None = None  # "start" | "end" | "seek" | "marker"
         self._drag_marker = -1
         self._last_handle = "start"
@@ -166,10 +170,22 @@ class WaveformView(QWidget):
             top, bottom = mid - max(hi, 0.02) * amp, mid - min(lo, -0.02) * amp
             p.setBrush(played if x0 <= played_x else rest)
             p.drawRoundedRect(QRectF(x0, top, step - 1, bottom - top), 1, 1)
+        # Part boundaries of a linked set
+        if self.dividers:
+            p.setFont(theme.display_font(0.75, QFont.Weight.Bold))
+            for k, tm in enumerate([0.0, *self.dividers]):
+                x = self._x(tm)
+                if k:
+                    p.setPen(QPen(theme.color("ink", 0.45), 1, Qt.PenStyle.DashLine))
+                    p.drawLine(QPointF(x, 0), QPointF(x, rect.height()))
+                p.setPen(QColor(t.muted))
+                p.drawText(QRectF(x + 4, rect.height() - 16, 30, 14), Qt.AlignmentFlag.AlignLeft, str(k + 1))
         # Shade outside the crop
         shade = QColor(surface)
         shade.setAlpha(200)
-        if self.crop_start:
+        if not self.editable:
+            pass
+        elif self.crop_start:
             p.fillRect(QRectF(0, 0, self._x(self.crop_start), rect.height()), shade)
         if self.crop_end is not None and self.crop_end < self.duration:
             xe = self._x(self.crop_end)
@@ -193,7 +209,7 @@ class WaveformView(QWidget):
             p.drawPolygon([QPointF(x - 5.5, 0), QPointF(x + 5.5, 0), QPointF(x + 5.5, 7), QPointF(x, 11),
                            QPointF(x - 5.5, 7)])
         # Crop handles (always drawn subtly at the edges so they are discoverable)
-        for which, tm in (("start", self._start()), ("end", self._end())):
+        for which, tm in (("start", self._start()), ("end", self._end())) if self.editable else ():
             x = self._x(tm)
             active = (which == "start" and self.crop_start) or (which == "end" and self.crop_end is not None)
             c = QColor(t.accent_deep) if active else theme.color("muted", 0.4)
@@ -218,7 +234,7 @@ class WaveformView(QWidget):
 
     # ---- interaction ----
     def _handle_at(self, x: float) -> str | None:
-        if self.duration <= 0:
+        if self.duration <= 0 or not self.editable:
             return None
         for which, t in (("start", self._start()), ("end", self._end())):
             if abs(self._x(t) - x) <= HANDLE_GRAB_PX:
@@ -227,7 +243,7 @@ class WaveformView(QWidget):
 
     def _marker_at(self, x: float, y: float | None = None) -> int:
         """Index of the user's marker under x (the flag at the top is easiest to grab), or -1."""
-        if self.duration <= 0:
+        if self.duration <= 0 or not self.editable:
             return -1
         reach = 7 if y is None or y < 14 else 4
         best, dist = -1, reach + 1
@@ -290,7 +306,7 @@ class WaveformView(QWidget):
         self._drag = None
 
     def mouseDoubleClickEvent(self, e: QMouseEvent):
-        if e.modifiers() & Qt.KeyboardModifier.ControlModifier and self.duration > 0:
+        if e.modifiers() & Qt.KeyboardModifier.ControlModifier and self.duration > 0 and self.editable:
             self.add_marker(self._t(e.position().x()))
         else:
             super().mouseDoubleClickEvent(e)
@@ -325,6 +341,9 @@ class WaveformView(QWidget):
         key, mods = e.key(), e.modifiers()
         if self.duration <= 0:
             return super().keyPressEvent(e)
+        if not self.editable and (key in (Qt.Key.Key_BracketLeft, Qt.Key.Key_BracketRight)
+                                  or mods & Qt.KeyboardModifier.ControlModifier):
+            return super().keyPressEvent(e)
         if key == Qt.Key.Key_BracketLeft:
             self._set_handle("start", self.position)
         elif key == Qt.Key.Key_BracketRight:
@@ -358,6 +377,7 @@ class WaveformView(QWidget):
 
 class PlayerPanel(QWidget):
     renamed = Signal(str, str)  # recording id, new title
+    set_renamed = Signal(str, str)  # set id, new title
     markers_changed = Signal(str)  # recording id
     meta_changed = Signal(str)  # recording id whose tags or notes changed
     span_finished = Signal()  # a passage started with play_span reached its end
@@ -371,9 +391,13 @@ class PlayerPanel(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.rec: Recording | None = None
+        self.linked = None  # the LinkedSet shown instead of a recording
+        self.parts: list = []  # its sets.Part timeline
         self._loaded_sha = None
         self._span: tuple[float, float] | None = None
-        self.player = Playback()
+        self._rec_player = Playback()
+        self._set_player = SetPlayback()
+        self.player = self._rec_player
         self._build()
         self._timer = QTimer(self, interval=40, timeout=self._tick)
         self.set_recording(None)
@@ -399,8 +423,9 @@ class PlayerPanel(QWidget):
         self.context.setObjectName("context")
         self.context.setFrame(False)
         self.context.setPlaceholderText("Who is speaking, what about (optional, helps transcription)")
-        self.context.setToolTip("Used as context when this recording is transcribed, together with the dictionary.\n"
-                                "For example: Entrevista con Lucía sobre PipeWire")
+        self._context_tip = ("Used as context when this recording is transcribed, together with the dictionary.\n"
+                             "For example: Entrevista con Lucía sobre PipeWire")
+        self.context.setToolTip(self._context_tip)
         self.context.setAccessibleName("Who is speaking, what about")
         self.context.editingFinished.connect(self._commit_context)
         lay.addWidget(self.context)
@@ -458,7 +483,101 @@ class PlayerPanel(QWidget):
         lay.addLayout(row)
 
     # ---- recording ----
+    def _leave_set(self):
+        if self.linked is None:
+            return
+        self._set_player.stop()
+        self._rec_player.set_speed(self._set_player.speed)
+        self.player = self._rec_player
+        self.linked, self.parts = None, []
+        self.wave.editable, self.wave.dividers = True, []
+        for w in (self.tags, self.notes, self.export_btn):
+            w.show()
+        self.title.setToolTip("Rename (F2)")
+        self.context.setToolTip(self._context_tip)
+
+    def set_linked(self, linked, parts: list[Recording]):
+        """Show a linked set: its title, its parts on one timeline, read-only waveform."""
+        from .. import sets
+
+        same = self.linked is not None and linked.id == self.linked.id
+        timeline = sets.timeline(parts)
+        sig = [(p.rec.id, p.rec.meta.sha256, p.start, p.length) for p in timeline]
+        if self.linked is None:
+            self.player.stop()
+            self._set_player.set_speed(self._rec_player.speed)
+        self.rec = None
+        self.linked = linked
+        self.player = self._set_player
+        for w in (self.tags, self.notes, self.export_btn, self.clear_crop_btn):
+            w.hide()
+        self.crop_label.setText("")
+        self.title.setEnabled(True)
+        self.title.setToolTip("Rename this set (F2)")
+        self.context.setToolTip("Used as context when each part is transcribed, together with the dictionary.")
+        if not self.title.hasFocus():
+            self.title.setText(linked.title)
+        contexts = {r.meta.context_line for r in parts}
+        if not self.context.hasFocus():
+            self.context.setText(contexts.pop() if len(contexts) == 1 else "")
+        self.context.setEnabled(True)
+        first, last = parts[0].meta.created, parts[-1].meta.created
+        span = fmt_date(first) + (f" to {fmt_date(last).split(' ')[-1]}" if first[:10] == last[:10] else
+                                  f" to {fmt_date(last)}")
+        self.subtitle.setText(f"{sets.summary(linked, parts)}  ·  {span}")
+        playable = any(p.rec.audio_path is not None and p.rec.audio_path.exists() for p in timeline)
+        for w in (self.play_btn, self.speed, self.wave):
+            w.setEnabled(playable)
+        if same and sig == getattr(self, "_set_sig", None):
+            self.wave.markers = self._set_markers(timeline)
+            self.wave.update()
+            return
+        self._set_sig = sig
+        self.parts = timeline
+        self._set_player.load(timeline)
+        self._sync_play_icon()
+        self.wave.editable = False
+        self.wave.dividers = [p.offset for p in timeline[1:]]
+        self.wave.placeholder = "Drawing waveform…"
+        self.wave.set_recording(sets.total(timeline), None, None, (), self._set_markers(timeline))
+        self.wave.set_peaks(None)
+        sid = linked.id
+        jobs = [(p.rec.audio_path, p.rec.meta.sha256, p.start, p.length) for p in timeline]
+
+        def compute():
+            chunks = []
+            for path, key, start, length in jobs:
+                n = int(round(length * peaks_mod.BUCKETS_PER_SECOND))
+                try:
+                    pk = peaks_mod.compute(path, key) if path is not None and path.exists() else None
+                except Exception:  # noqa: BLE001 - a part without a waveform still has its place
+                    pk = None
+                a = int(round(start * peaks_mod.BUCKETS_PER_SECOND))
+                chunk = pk[a:a + n] if pk is not None else np.zeros((0, 2), dtype=np.int16)
+                if len(chunk) < n:
+                    chunk = np.concatenate([chunk, np.zeros((n - len(chunk), 2), dtype=chunk.dtype)])
+                chunks.append(chunk)
+            return np.concatenate(chunks) if chunks else None
+
+        run_task(compute, on_done=lambda pk: self._set_peaks_ready(sid, pk),
+                 on_error=lambda m: log.warning("waveform failed: %s", m))
+        self._update_time()
+
+    @staticmethod
+    def _set_markers(timeline) -> list[dict]:
+        out = []
+        for p in timeline:
+            for m in p.rec.meta.markers:
+                if p.start <= m["at"] <= p.start + p.length:
+                    out.append({"at": p.to_set(m["at"]), "note": m.get("note") or ""})
+        return out
+
+    def _set_peaks_ready(self, sid: str, pk):
+        if self.linked is not None and self.linked.id == sid:
+            self.wave.set_peaks(pk)
+
     def set_recording(self, rec: Recording | None):
+        self._leave_set()
         same = rec is not None and self.rec is not None and rec.id == self.rec.id
         self.rec = rec
         playable = rec is not None and rec.meta.state == READY and rec.audio_path is not None and rec.audio_path.exists()
@@ -539,6 +658,14 @@ class PlayerPanel(QWidget):
             self.wave.set_peaks(pk)
 
     def _commit_title(self):
+        if self.linked is not None:
+            new = self.title.text().strip()
+            if not new:
+                self.title.setText(self.linked.title)
+            elif new != self.linked.title:
+                self.linked.title = new
+                self.set_renamed.emit(self.linked.id, new)
+            return
         if self.rec is None:
             return
         new = self.title.text().strip()
@@ -560,9 +687,15 @@ class PlayerPanel(QWidget):
             self.meta_changed.emit(self.rec.id)
 
     def _commit_context(self):
+        line = " ".join(self.context.text().split())
+        if self.linked is not None:
+            # A burst has the same people throughout: the line goes to every part.
+            for p in self.parts:
+                if p.rec.meta.context_line != line:
+                    p.rec.update(context_line=line)
+            return
         if self.rec is None:
             return
-        line = " ".join(self.context.text().split())
         if line != self.rec.meta.context_line:
             self.rec.update(context_line=line)
 
@@ -572,7 +705,7 @@ class PlayerPanel(QWidget):
 
     # ---- crop ----
     def _crop_changed(self, start, end):
-        if self.rec is None:
+        if self.rec is None or self.linked is not None:
             return
         self.rec.update(crop_start=round(start, 2) if start else None,
                         crop_end=round(end, 2) if end is not None else None)
@@ -586,6 +719,9 @@ class PlayerPanel(QWidget):
         self.markers_changed.emit(self.rec.id)
 
     def add_marker_at_playhead(self):
+        if self.linked is not None:
+            self.message.emit("Markers belong to one part: select the part to add one.")
+            return
         if self.rec is None or not self.wave.isEnabled():
             return
         at = self.player.position()
@@ -594,10 +730,11 @@ class PlayerPanel(QWidget):
 
     def jump_marker(self, direction: int):
         """Seek to the next (1) or previous (-1) marker, and keep playing if playing."""
-        if self.rec is None or not self.rec.meta.markers:
+        markers = self.wave.markers if self.linked is not None else (self.rec.meta.markers if self.rec else [])
+        if not markers:
             return
         pos = self.player.position()
-        ats = [m["at"] for m in self.rec.meta.markers]
+        ats = [m["at"] for m in markers]
         if direction > 0:
             target = next((a for a in ats if a > pos + 0.25), None)
         else:
@@ -623,9 +760,12 @@ class PlayerPanel(QWidget):
             self.crop_label.setText("")
 
     # ---- playback ----
+    def _shown(self) -> bool:
+        return self.rec is not None or self.linked is not None
+
     def play_span(self, start: float, end: float) -> None:
         """Play one passage and stop at its end (editing with the audio)."""
-        if self.rec is None or not self.play_btn.isEnabled():
+        if not self._shown() or not self.play_btn.isEnabled():
             return
         self._span = (start, end)
         self.player.play(start, end)
@@ -638,11 +778,13 @@ class PlayerPanel(QWidget):
         self._sync_play_icon()
 
     def toggle_play(self):
-        if self.rec is None or not self.play_btn.isEnabled():
+        if not self._shown() or not self.play_btn.isEnabled():
             return
         self._span = None
         if self.player.playing:
             self.player.pause()
+        elif self.linked is not None:
+            self.player.play(None, None)  # from the playhead; from the start once at the end
         else:
             start, end = self.rec.effective_span()
             pos = self.player.position()
@@ -653,7 +795,7 @@ class PlayerPanel(QWidget):
         self._sync_play_icon()
 
     def seek(self, sec: float):
-        if self.rec is None:
+        if not self._shown():
             return
         self.player.seek(sec)
         self.wave.set_position(sec)
@@ -671,7 +813,7 @@ class PlayerPanel(QWidget):
             self._tick()
 
     def _tick(self):
-        if self.rec is None:
+        if not self._shown():
             return
         if self.player.poll():
             self._sync_play_icon()
@@ -687,6 +829,8 @@ class PlayerPanel(QWidget):
 
     def _update_time(self):
         dur = (self.rec.meta.duration if self.rec else 0) or self.player.duration
+        if self.linked is not None:
+            dur = self.player.duration
         self.time.setText(f"{fmt_duration(self.player.position())} / {fmt_duration(dur)}")
 
     def speed_value(self) -> float:

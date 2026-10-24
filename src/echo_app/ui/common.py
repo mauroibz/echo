@@ -24,6 +24,7 @@ _ICONS = {
     "revert": "undo-2", "cancel": "x", "close": "x", "folder": "folder-open", "find": "search",
     "settings": "settings", "crop": "crop", "clear": "eraser", "help": "circle-help", "warning": "triangle-alert",
     "error": "circle-alert", "ok": "circle-check", "download": "download", "more": "ellipsis", "mic": "mic",
+    "set": "layers", "link": "link", "unlink": "unlink", "expand": "chevron-right", "collapse": "chevron-down",
 }
 
 
@@ -84,9 +85,16 @@ class Task(QRunnable):
                 result = self.fn(*self.args)
         except Exception as e:  # noqa: BLE001 - reported to the UI
             log.error("background task failed: %s", traceback.format_exc())
-            self.signals.failed.emit(str(e) or e.__class__.__name__)
+            self._emit(self.signals.failed, str(e) or e.__class__.__name__)
             return
-        self.signals.done.emit(result)
+        self._emit(self.signals.done, result)
+
+    @staticmethod
+    def _emit(signal, value) -> None:
+        try:
+            signal.emit(value)
+        except RuntimeError:
+            pass  # the window that asked is gone (closing, or a test's window torn down)
 
 
 _keep: set[Task] = set()
