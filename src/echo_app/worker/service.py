@@ -258,6 +258,12 @@ class Worker:
         if context:
             transcript["context"] = context
         atomic_write_json(rec.path(TRANSCRIPT), transcript)
+        try:
+            from .. import dictionary
+
+            dictionary.apply(rec)  # known aliases fixed in the copy the user sees
+        except Exception:  # noqa: BLE001 - a dictionary problem must not fail the transcription
+            log.exception("%s: dictionary correction failed", rec.id)
         # Only now is the job complete; a re-request in the meantime keeps its marker.
         if (self._request(rec) or {}).get("requested") == requested_at:
             rec.path(REQUESTED).unlink(missing_ok=True)

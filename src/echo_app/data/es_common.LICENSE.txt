@@ -1,0 +1,11 @@
+es_common.txt: the 5,000 most frequent words of Spanish subtitles, one per line, most frequent
+first. Echo uses it to tell common words from names when learning the dictionary.
+
+Source: FrequencyWords by Hermit Dave, content/2018/es/es_50k.txt (first 5,000 lines, counts
+removed), https://github.com/hermitdave/FrequencyWords, built from the OpenSubtitles 2018
+corpus (http://opus.nlpl.eu/OpenSubtitles2018.php).
+
+License: Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0),
+https://creativecommons.org/licenses/by-sa/4.0/. This file is an adaptation of the source
+(truncated, counts removed) and is shared under the same license. The license applies to
+es_common.txt only, not to the rest of Echo.

@@ -93,3 +93,36 @@ A list with name, kind, aliases, last used; Remove and Merge buttons; Import fro
   are filtered; if that is still noisy, raise the "seen twice" rule to three.
 - Context budget. Long dictionaries push old entries out of the sentence; the corrector still
   catches their aliases.
+
+## Decisions made while implementing
+
+- **Common-word list**: the first 5,000 lines of FrequencyWords' `es_50k.txt` (OpenSubtitles
+  2018), counts removed, in `src/echo_app/data/es_common.txt`. Its content license is CC BY-SA
+  4.0, stated in `es_common.LICENSE.txt` next to it and in the README credits.
+- **Candidate detection** groups adjacent changed words separated only by spaces into one
+  replacement ("lucia fernandes" → "Lucía Fernández") and treats case-only changes inside an
+  otherwise equal run ("surus" → "Surus") as replacements too. A title's first word counts only
+  as part of a longer name, and a common first word ("Charla Surus") is dropped from the run.
+- **A known name corrected from a new spelling** ("Villamil" → "Villaamil" when the entry has
+  only "villalmil") adds that spelling as an alias without a chip, with a status-bar message
+  saying so; it is visible and removable in Settings → Dictionary. Found in the end-to-end
+  check: without it, the corrections made after the first one were lost.
+- **Context budget** is counted as characters / 3, a conservative tokens estimate that needs
+  no tokenizer in the window process.
+- **The canonical spelling corrects its own case variants** ("surus" → "Surus") unless it is a
+  single common word.
+- **Settings → Dictionary** is a tab of the Settings dialog; its edits are saved with Save,
+  like the other settings. Kind for imported lines follows the same two-capitals rule.
+- **The status line** of the editor shows "N names corrected" when the corrector changed the
+  shown text.
+- **Smoke test (1.3)**: ten names do not reduce the word count. With ten names the model still
+  wrote "Zurus" on the test clip while two names fix it, so spelling is not asserted there.
+- **End-to-end check (4.3)**, real model on the GPU, three LibriVox chapters (Galdós, "Miau"):
+  with an empty dictionary chapter 1 spelled the character "Villaamil" as villalmil (3),
+  Villalmil (2) and Villa-al-Mil (1). Correcting the first occurrence as the editor saves it
+  produced the candidate Villaamil with alias villalmil; accepting it corrected 5 of the 6
+  occurrences in chapter 1 without re-transcribing (Villa-al-Mil is another spelling the user
+  would correct next). Chapter 2, transcribed with "Términos: Villaamil." in the context, spelled
+  it right 4 times out of 4; chapter 3 got 2 of 6 right ("Villamil" 4 times), which the new-alias
+  rule above then fixes once the user corrects one. The chip itself was exercised in the
+  offscreen UI tests, not by clicking in the window.

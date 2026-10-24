@@ -7,14 +7,15 @@ without risk of losing their edits.
 ## Requirements
 
 ### Requirement: Show the transcript
-Selecting a recording SHALL show its transcript next to the player: the user's edited text if any,
-otherwise the model transcript with paragraph breaks. Queued, running, failed and missing
-transcripts SHALL each show a clear state with the relevant action (transcribe, cancel, retry,
-download the model).
+The transcript panel SHALL show the user's edited text when it exists, else the corrected
+model text with each dictionary correction underlined, else the model text. Under the title
+it SHALL offer one optional line, "Who is speaking, what about", saved with the recording and
+used as context for its transcriptions. Under the editor it SHALL show at most one dictionary
+candidate chip at a time.
 
-#### Scenario: Open a transcribed recording
-- **WHEN** the user clicks a transcribed recording
-- **THEN** its transcript appears in the editor immediately
+#### Scenario: Context line
+- **WHEN** the user writes "Entrevista con Lucía sobre PipeWire" in the line and transcribes again
+- **THEN** that line precedes the dictionary sentence in the request's context
 
 ### Requirement: Edit with autosave
 Edits SHALL be saved automatically within two seconds of the last keystroke and on switching

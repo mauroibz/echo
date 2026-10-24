@@ -46,3 +46,23 @@ def test_short_output_is_retried(tmp_path, real_models, monkeypatch):
     monkeypatch.setattr(asr, "build_context", lambda extra: asr.STYLE_CONTEXT + " Términos: Surus, Mauro.")
     text = e.transcribe([clip], context="x")[0]
     assert "Mauro" in text and len(text.split()) >= asr.min_words(len(clip) / 16000)
+
+
+def test_dictionary_sentence_does_not_drop_speech(tmp_path, real_models):
+    from echo_app import dictionary
+    from echo_app.worker.asr import Engine
+
+    e = Engine()
+    clip = speech(tmp_path)
+    plain = e.transcribe([clip])[0]
+    d = dictionary.Dictionary()
+    for name in ("Lucía Fernández", "Mauro", "Surus", "PipeWire", "Joaquín Ibarra", "Valparaíso", "Cohere",
+                 "Marta Ruiz", "Tandil", "Kubernetes"):
+        d.add(dictionary.kind_of(name), name)
+    sentence, names = dictionary.context_sentence(d)
+    assert len(names) == 10
+    with_names = e.transcribe([clip], context=sentence)[0]
+    assert len(with_names.split()) >= len(plain.split())
+    # Spelling is not asserted: with ten names in the sentence the model still wrote "Zurus" on
+    # this clip (2026-10-24), while two names fix it (above). The corrector covers the rest.
+    assert "Mauro" in with_names

@@ -12,8 +12,8 @@ from PySide6.QtWidgets import (QApplication, QFileDialog, QFrame, QHBoxLayout, Q
                                QPlainTextEdit, QProgressBar, QPushButton, QStackedWidget, QTextEdit, QToolButton,
                                QVBoxLayout, QWidget)
 
-from .. import export, features, models, recorder, transcription
-from ..library import (EDITED, NEEDS_FINALIZE, READY, RECORDING, T_FAILED, T_QUEUED, T_RUNNING,
+from .. import dictionary, export, features, models, recorder, transcription
+from ..library import (CORRECTED, EDITED, NEEDS_FINALIZE, READY, RECORDING, T_FAILED, T_QUEUED, T_RUNNING,
                        TRANSCRIPT, Library, Recording)
 from . import theme
 from .common import fmt_date, fmt_duration, fmt_eta, icon, run_task
@@ -56,15 +56,58 @@ def _estimate(duration: float | None) -> str:
     return f", in about {round(est)} minute{'s' if round(est) != 1 else ''}"
 
 
+def _html(text: str) -> str:
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def segment_offsets(segments: list[dict]) -> dict[int, int]:
+    """Character offset of each non-empty segment in the joined text, by segment index."""
+    out = {}
+    pos = 0
+    first = True
+    for k, seg in enumerate(segments):
+        text = (seg.get("text") or "").strip()
+        if not text:
+            continue
+        if not first:
+            pos += 2 if seg.get("paragraph") else 1
+        # Edit positions refer to the unstripped segment text; the joined text is stripped.
+        out[k] = pos - (len(seg.get("text") or "") - len((seg.get("text") or "").lstrip()))
+        pos += len(text)
+        first = False
+    return out
+
+
+def shown_segments(rec: Recording) -> list[dict]:
+    """The model segments with the corrected texts when a corrected copy exists."""
+    t = rec.transcript() or {}
+    segs = t.get("segments", [])
+    c = rec.corrected()
+    if c and len(c.get("segments", [])) == len(segs):
+        segs = [{**s, "text": tx} for s, tx in zip(segs, c["segments"])]
+    return segs
+
+
 class Editor(QPlainTextEdit):
     ctrl_clicked = Signal(int)  # character position
     MAX_TEXT_WIDTH_CHARS = 90
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.menu_hook = None  # callable(menu, position) adding actions for the clicked spot
 
     def mousePressEvent(self, e: QMouseEvent):
         if e.modifiers() & Qt.KeyboardModifier.ControlModifier and e.button() == Qt.MouseButton.LeftButton:
             self.ctrl_clicked.emit(self.cursorForPosition(e.position().toPoint()).position())
             return
         super().mousePressEvent(e)
+
+    def contextMenuEvent(self, e):
+        menu = self.createStandardContextMenu(e.pos())
+        if self.menu_hook:
+            self.menu_hook(menu, self.cursorForPosition(e.pos()).position())
+        menu.exec(e.globalPos())
+        menu.deleteLater()
 
 
 class StateView(QWidget):
@@ -150,6 +193,9 @@ class TranscriptPanel(QWidget):
         self.rec: Recording | None = None
         self._loading = False
         self._spans: list[tuple[int, int, float]] = []
+        self._corrections: list[tuple[int, int, dict]] = []  # absolute span and the logged edit
+        self._candidate: dictionary.Candidate | None = None
+        self._dict_version = None
         self._current_span = -1
         self._find_matches: list[tuple[int, int]] = []
         self._find_index = -1
@@ -247,6 +293,27 @@ class TranscriptPanel(QWidget):
         cl.addWidget(self.editor, 100)
         cl.addStretch(1)
         pl.addWidget(column, 1)
+        self.editor.menu_hook = self._menu_hook
+
+        # One dictionary suggestion at a time, offered after the save that produced it.
+        self.chip = QFrame()
+        self.chip.setObjectName("chip")
+        chl = QHBoxLayout(self.chip)
+        chl.setContentsMargins(12, 4, 6, 4)
+        chl.setSpacing(6)
+        self.chip_text = QLabel()
+        self.chip_text.setTextFormat(Qt.TextFormat.RichText)
+        chl.addWidget(self.chip_text, 1)
+        self.chip_add = QPushButton(icon("ok"), "Add")
+        self.chip_add.setToolTip("Spell it this way in new transcripts and fix it in existing ones")
+        self.chip_add.clicked.connect(self._accept_candidate)
+        chl.addWidget(self.chip_add)
+        self.chip_no = QPushButton("Not this word")
+        self.chip_no.setToolTip("Never suggest this word again")
+        self.chip_no.clicked.connect(self._decline_candidate)
+        chl.addWidget(self.chip_no)
+        self.chip.hide()
+        pl.addWidget(self.chip)
 
         self.findbar = QWidget()
         fl = QHBoxLayout(self.findbar)
@@ -291,6 +358,7 @@ class TranscriptPanel(QWidget):
         if switching:
             self._shown_signature = None
             self.close_find()
+            self._offer([])
         self.refresh()
 
     def _signature(self, rec: Recording):
@@ -299,7 +367,7 @@ class TranscriptPanel(QWidget):
                 return os.stat(rec.path(name)).st_mtime_ns
             except FileNotFoundError:
                 return None
-        return (rec.id, mt(TRANSCRIPT), rec.is_edited())
+        return (rec.id, mt(TRANSCRIPT), rec.is_edited(), mt(CORRECTED))
 
     def refresh(self):
         """Re-evaluate what to show for the current recording (called on every library change)."""
@@ -374,6 +442,7 @@ class TranscriptPanel(QWidget):
         self.stack.setCurrentWidget(self.page)
         if self._autosave.isActive() and self._shown_signature and self._shown_signature[0] == rec.id:
             self.save()  # unsaved typing becomes the edited text before anything reloads
+        self._apply_dictionary(rec)
         sig = self._signature(rec)
         if sig != self._shown_signature and not (self.editor.hasFocus() and self._shown_signature
                                                  and self._shown_signature[0] == rec.id
@@ -389,10 +458,23 @@ class TranscriptPanel(QWidget):
         if self.editor.toPlainText() != text:
             self.editor.setPlainText(text)
         self._loading = False
-        t = rec.transcript() or {}
-        self._spans = segment_spans(t.get("segments", [])) if not rec.is_edited() else []
+        self._load_spans(rec)
         self._current_span = -1
         self._apply_selections()
+
+    def _load_spans(self, rec: Recording):
+        self._spans, self._corrections = [], []
+        if rec.is_edited():
+            return
+        segs = shown_segments(rec)
+        self._spans = segment_spans(segs)
+        c = rec.corrected()
+        if c:
+            offsets = segment_offsets(segs)
+            for e in c.get("edits", []):
+                base = offsets.get(e.get("segment"))
+                if base is not None:
+                    self._corrections.append((base + e["start"], base + e["end"], e))
 
     def _update_status(self, rec: Recording):
         t = rec.transcript() or {}
@@ -401,7 +483,9 @@ class TranscriptPanel(QWidget):
         if rec.is_edited():
             self.status.setText("Edited" + (f" · model transcript from {when}" if when else ""))
         elif t:
-            self.status.setText(f"Model transcript · {when} · {model}")
+            n = len((rec.corrected() or {}).get("edits", []))
+            fixed = f" · {n} name{'s' if n != 1 else ''} corrected" if n else ""
+            self.status.setText(f"Model transcript · {when} · {model}{fixed}")
         else:
             self.status.setText("")
         self.act_revert.setEnabled(rec.is_edited() and bool(t))
@@ -467,6 +551,7 @@ class TranscriptPanel(QWidget):
         if self._loading or self.rec is None:
             return
         self._spans = []  # edits break the passage mapping
+        self._corrections = []
         self._apply_selections()
         self._autosave.start()
 
@@ -477,7 +562,7 @@ class TranscriptPanel(QWidget):
             return
         text = self.editor.toPlainText()
         try:
-            if text == rec.model_text():
+            if text == rec.base_text():
                 if rec.is_edited():
                     rec.revert_edits()
             elif text != rec.text() or not rec.is_edited():
@@ -490,6 +575,14 @@ class TranscriptPanel(QWidget):
         self._shown_signature = self._signature(rec)
         self._update_status(rec)
         self.changed.emit(rec.id)
+        if rec.is_edited():
+            d = dictionary.current()
+            learned = dictionary.new_aliases(rec.model_text(), text, d)
+            if learned:
+                # A known name corrected from a new spelling: record it, visibly, without asking.
+                dictionary.update(lambda d: [d.add(d.find(n).kind, n, [a]) for n, a in learned])
+                self.message.emit(" ".join(f"“{a}” will be corrected to “{n}” from now on." for n, a in learned))
+            self._offer(dictionary.edit_candidates(rec.model_text(), text, dictionary.current(), rec.id))
 
     def revert(self, confirm: bool = True):
         rec = self.rec
@@ -501,7 +594,7 @@ class TranscriptPanel(QWidget):
                                      "You can undo this with Ctrl+Z until you select another recording.")
             if r != QMessageBox.StandardButton.Yes:
                 return
-        model_text = rec.model_text()
+        model_text = rec.base_text()
         cur = self.editor.textCursor()
         cur.beginEditBlock()
         cur.select(QTextCursor.SelectionType.Document)
@@ -509,11 +602,83 @@ class TranscriptPanel(QWidget):
         cur.endEditBlock()
         self._autosave.stop()
         rec.revert_edits()
-        t = rec.transcript() or {}
-        self._spans = segment_spans(t.get("segments", []))
+        dictionary.apply(rec, dictionary.current())
+        self._load_spans(rec)
+        self._apply_selections()
         self._shown_signature = self._signature(rec)
         self._update_status(rec)
         self._update_notice(rec, rec.transcript_status())
+        self.changed.emit(rec.id)
+
+    # ---- dictionary ----
+    def _apply_dictionary(self, rec: Recording):
+        """Re-run the corrector when the dictionary changed since this transcript was corrected."""
+        d = dictionary.current()
+        if rec.is_edited() or not rec.path(TRANSCRIPT).exists():
+            return
+        try:
+            dictionary.apply(rec, d)
+        except OSError as e:
+            log.warning("dictionary correction failed for %s: %s", rec.id, e)
+
+    def _offer(self, candidates):
+        d = dictionary.current()
+        cand = next((c for c in candidates if not d.knows(c.name)), None)
+        self._candidate = cand
+        if cand is None:
+            self.chip.hide()
+            return
+        what = "person" if cand.kind == dictionary.PEOPLE else "term"
+        alias = f" (instead of “{cand.alias}”)" if cand.alias and cand.alias != cand.name else ""
+        self.chip_text.setText(f"Add <b>{_html(cand.name)}</b>{_html(alias)} to the dictionary as a {what}?")
+        self.chip.show()
+
+    def offer_title(self, rid: str, title: str):
+        """Capitalized words typed into a title are candidates too."""
+        rec = self.rec
+        if rec is None or rec.id != rid:
+            return
+        first = rec.text().split(".", 1)[0]
+        self._offer(dictionary.title_candidates(title, first, dictionary.current()))
+
+    def _accept_candidate(self):
+        cand = self._candidate
+        if cand is None:
+            return
+        dictionary.update(lambda d: d.add(cand.kind, cand.name, [cand.alias] if cand.alias else []))
+        self.message.emit(f"Added “{cand.name}” to the dictionary.")
+        self._offer([])
+        if self.rec is not None:
+            self.changed.emit(self.rec.id)
+
+    def _decline_candidate(self):
+        cand = self._candidate
+        if cand is None:
+            return
+        dictionary.update(lambda d: d.mute(cand.name))
+        self._offer([])
+
+    def _correction_at(self, pos: int):
+        return next((e for a, b, e in self._corrections if a <= pos <= b), None)
+
+    def _menu_hook(self, menu, pos: int):
+        edit = self._correction_at(pos)
+        if edit is None or self.rec is None:
+            return
+        first = menu.actions()[0] if menu.actions() else None
+        act = QAction(icon("revert"), f"Undo this correction (back to “{edit['before']}”)", menu)
+        act.triggered.connect(lambda: self._undo_correction(edit))
+        menu.insertAction(first, act)
+        if first is not None:
+            menu.insertSeparator(first)
+
+    def _undo_correction(self, edit: dict):
+        rec = self.rec
+        if rec is None:
+            return
+        dictionary.undo(rec, edit)
+        self._shown_signature = None
+        self.refresh()
         self.changed.emit(rec.id)
 
     # ---- actions ----
@@ -665,6 +830,18 @@ class TranscriptPanel(QWidget):
 
     def _apply_selections(self):
         sels = []
+        doc_end = self.editor.document().characterCount() - 1
+        for a, b, _e in self._corrections:
+            s = QTextEdit.ExtraSelection()
+            fmt = QTextCharFormat()
+            fmt.setUnderlineStyle(QTextCharFormat.UnderlineStyle.DashUnderline)
+            fmt.setUnderlineColor(QColor(theme.current().accent))
+            s.format = fmt
+            cur = QTextCursor(self.editor.document())
+            cur.setPosition(min(a, doc_end))
+            cur.setPosition(min(b, doc_end), QTextCursor.MoveMode.KeepAnchor)
+            s.cursor = cur
+            sels.append(s)
         if 0 <= self._current_span < len(self._spans):
             a, b, _ = self._spans[self._current_span]
             s = QTextEdit.ExtraSelection()

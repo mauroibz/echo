@@ -7,11 +7,12 @@ from pathlib import Path
 
 from PySide6.QtCore import QProcess, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QFont, QGuiApplication, QPainter
-from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QFrame,
-                               QGridLayout, QHBoxLayout, QLabel, QLineEdit, QProgressBar, QPushButton,
-                               QSpinBox, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog,
+                               QFormLayout, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QInputDialog, QLabel,
+                               QLineEdit, QProgressBar, QPushButton, QSpinBox, QTabWidget, QTreeWidget,
+                               QTreeWidgetItem, QVBoxLayout, QWidget)
 
-from .. import APP_NAME, __version__, doctor, features, models, selfcmd, settings, transcription
+from .. import APP_NAME, __version__, dictionary, doctor, features, models, selfcmd, settings, transcription
 from . import theme
 from .common import icon, run_task
 
@@ -329,14 +330,123 @@ class WelcomeDialog(FittedDialog):
 
 # ---- settings -----------------------------------------------------------------------------------
 
+class DictionaryPage(QWidget):
+    """The whole dictionary, for repair: remove, merge, import. Entries are learned elsewhere."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.dic = dictionary.load()
+        lay = QVBoxLayout(self)
+        lay.addWidget(_dim("Names and terms Echo spells as written here, in new transcripts and in existing ones. "
+                           "They are learned when you correct a transcript or name a recording; this list is for "
+                           "tidying up."))
+        self.tree = QTreeWidget()
+        self.tree.setHeaderLabels(["Name", "Kind", "Also written as", "Last used"])
+        self.tree.setRootIsDecorated(False)
+        self.tree.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.tree.setAlternatingRowColors(False)
+        self.tree.header().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        self.tree.itemSelectionChanged.connect(self._update_buttons)
+        lay.addWidget(self.tree, 1)
+        row = QHBoxLayout()
+        self.remove_btn = QPushButton(icon("delete"), "Remove")
+        self.remove_btn.clicked.connect(self._remove)
+        self.merge_btn = QPushButton("Merge…")
+        self.merge_btn.setToolTip("Keep one of the selected entries, with the spellings of all of them")
+        self.merge_btn.clicked.connect(self._merge)
+        imp = QPushButton(icon("import"), "Import from a text file…")
+        imp.setToolTip("One name or term per line")
+        imp.clicked.connect(self._import)
+        row.addWidget(self.remove_btn)
+        row.addWidget(self.merge_btn)
+        row.addStretch(1)
+        row.addWidget(imp)
+        lay.addLayout(row)
+        self.muted = _dim("")
+        lay.addWidget(self.muted)
+        self.changed = False
+        self._fill()
+
+    def _fill(self):
+        self.tree.clear()
+        for e in sorted(self.dic.entries, key=lambda e: dictionary.fold(e.name)):
+            used = e.used[:10] if e.used else "never"
+            it = QTreeWidgetItem([e.name, "person" if e.kind == dictionary.PEOPLE else "term", ", ".join(e.aliases),
+                                  used])
+            it.setData(0, Qt.ItemDataRole.UserRole, e.name)
+            self.tree.addTopLevelItem(it)
+        for c in range(4):
+            if c != 2:
+                self.tree.resizeColumnToContents(c)
+        n = len(self.dic.muted)
+        self.muted.setText(f"{n} word{'s' if n != 1 else ''} will not be suggested again." if n else "")
+        self._update_buttons()
+
+    def _selected(self) -> list[str]:
+        return [it.data(0, Qt.ItemDataRole.UserRole) for it in self.tree.selectedItems()]
+
+    def _update_buttons(self):
+        n = len(self._selected())
+        self.remove_btn.setEnabled(n >= 1)
+        self.merge_btn.setEnabled(n >= 2)
+
+    def _remove(self):
+        for name in self._selected():
+            self.dic.remove(name)
+        self.changed = True
+        self._fill()
+
+    def _merge(self):
+        names = self._selected()
+        keep, ok = QInputDialog.getItem(self, "Merge entries", "Keep this spelling:", names, 0, False)
+        if not ok:
+            return
+        for name in names:
+            if name != keep:
+                self.dic.merge(name, keep)
+        self.changed = True
+        self._fill()
+
+    def _import(self):
+        path, _ = QFileDialog.getOpenFileName(self, "Import names and terms", str(Path.home()),
+                                              "Text (*.txt);;All files (*)")
+        if not path:
+            return
+        try:
+            lines = Path(path).read_text(encoding="utf-8").splitlines()
+        except (OSError, UnicodeDecodeError) as e:
+            self.muted.setText(f"Could not read that file: {e}")
+            return
+        added = 0
+        for line in lines:
+            name = " ".join(line.split())
+            if name and not name.startswith("#") and self.dic.find(name) is None:
+                self.dic.add(dictionary.kind_of(name), name)
+                added += 1
+        self.changed = self.changed or bool(added)
+        self._fill()
+        self.muted.setText(f"Imported {added} new entr{'ies' if added != 1 else 'y'}.")
+
+    def save(self):
+        if self.changed:
+            self.dic.save()
+
+
 class SettingsDialog(QDialog):
     def __init__(self, recording_active: bool, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Settings")
-        self.setMinimumWidth(520)
+        self.setMinimumWidth(560)
         self.cfg, _ = settings.load()
         self._old_data = self.cfg.data_path
-        lay = QVBoxLayout(self)
+        outer = QVBoxLayout(self)
+        self.tabs = QTabWidget()
+        outer.addWidget(self.tabs)
+        general = QWidget()
+        lay = QVBoxLayout(general)
+        self.tabs.addTab(general, "General")
+        self.dictionary = DictionaryPage()
+        self.tabs.addTab(self.dictionary, "Dictionary")
         form = QFormLayout()
         form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
         row = QHBoxLayout()
@@ -388,12 +498,13 @@ class SettingsDialog(QDialog):
             for wdg in (self.auto, self.adapter, self.idle):
                 wdg.setEnabled(False)
             lay.addWidget(_dim("Transcription is not installed (./install.sh --with-transcription)."))
+        lay.addStretch(1)
         self.note = _dim("")
-        lay.addWidget(self.note)
+        outer.addWidget(self.note)
         bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
         bb.accepted.connect(self.accept)
         bb.rejected.connect(self.reject)
-        lay.addWidget(bb)
+        outer.addWidget(bb)
 
     def reject(self):
         if theme.mode() != self._mode_on_open:
@@ -425,6 +536,11 @@ class SettingsDialog(QDialog):
         self.cfg.worker_idle_minutes = self.idle.value()
         self.cfg.theme = self.theme.currentData()
         settings.save(self.cfg)
+        try:
+            self.dictionary.save()
+        except OSError as e:
+            self.note.setText(f"Could not save the dictionary: {e}")
+            return
         self.data_changed = self.cfg.data_path != self._old_data
         super().accept()
 

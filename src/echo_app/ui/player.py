@@ -293,6 +293,15 @@ class PlayerPanel(QWidget):
         self.subtitle.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         theme.set_role(self.subtitle, dim=True)
         lay.addWidget(self.subtitle)
+        self.context = QLineEdit()
+        self.context.setObjectName("context")
+        self.context.setFrame(False)
+        self.context.setPlaceholderText("Who is speaking, what about (optional, helps transcription)")
+        self.context.setToolTip("Used as context when this recording is transcribed, together with the dictionary.\n"
+                                "For example: Entrevista con Lucía sobre PipeWire")
+        self.context.setAccessibleName("Who is speaking, what about")
+        self.context.editingFinished.connect(self._commit_context)
+        lay.addWidget(self.context)
         self.wave = WaveformView()
         self.wave.seek_requested.connect(self.seek)
         self.wave.crop_changed.connect(self._crop_changed)
@@ -345,11 +354,13 @@ class PlayerPanel(QWidget):
         for w in (self.play_btn, self.speed, self.export_btn, self.wave):
             w.setEnabled(playable)
         self.title.setEnabled(rec is not None)
+        self.context.setEnabled(rec is not None)
         if rec is None:
             self.player.load(None, 0)
             self._sync_play_icon()
             self._loaded_sha = None
             self.title.setText("")
+            self.context.setText("")
             self.subtitle.setText("")
             self.wave.placeholder = ""
             self.wave.set_recording(0, None, None)
@@ -359,6 +370,8 @@ class PlayerPanel(QWidget):
             return
         if not self.title.hasFocus():
             self.title.setText(rec.meta.title)
+        if not self.context.hasFocus():
+            self.context.setText(rec.meta.context_line)
         bits = [fmt_date(rec.meta.created)]
         if rec.meta.duration:
             bits.append(fmt_duration(rec.meta.duration))
@@ -415,6 +428,13 @@ class PlayerPanel(QWidget):
         if new != self.rec.meta.title:
             self.rec.update(title=new)
             self.renamed.emit(self.rec.id, new)
+
+    def _commit_context(self):
+        if self.rec is None:
+            return
+        line = " ".join(self.context.text().split())
+        if line != self.rec.meta.context_line:
+            self.rec.update(context_line=line)
 
     def focus_title(self):
         self.title.setFocus()

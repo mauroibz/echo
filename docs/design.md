@@ -40,6 +40,7 @@ through signals and two small JSON files; it finds running supervisors by their 
     session.json, status.json     supervisor state and heartbeat, only while recording
     audio.<ext>                   recorded FLAC, or the imported file byte for byte
     transcript.json               model output with passage times (replaced per run)
+    transcript.corrected.json     the model output with dictionary corrections, each logged
     transcript.edited.txt         the user's text; the transcriber never writes it
     transcribe.requested          job marker with options
     transcribe.progress.json      written by the worker while it runs
@@ -106,6 +107,31 @@ passages transcribed without punctuation from 48 to 1. Naming people and terms t
 their spelling. If a passage comes back implausibly short (under 0.4 words per second), it is
 retried with the style sentence only, then with no context, so context can never silently drop
 speech.
+
+### Dictionary
+
+`~/.config/echo/glossary.toml` holds people and terms, each with a canonical spelling,
+aliases and when it was last used. It is applied in two layers, both driven by the app:
+
+- **In the model.** Every request builds a context sentence: the recording's optional line
+  ("who is speaking, what about"), then "Personas: … Términos: …" with the most recently used
+  entries first, cut at about 120 tokens. It is stored in `transcribe.requested`, so the worker
+  needs nothing new, and recorded in the transcript. The short-output retry described above is
+  the safety net against a sentence that breaks a passage.
+- **After the model.** The corrector replaces recorded aliases, and multi-word names within a
+  0.9 similarity ratio, in a copy (`transcript.corrected.json`), logging each replacement so
+  the editor underlines it and can undo it; undone spots are kept in that file and never
+  corrected again. A single common word is never replaced. It runs in the worker after each
+  job and in the window whenever the dictionary changed, so a new alias reaches old
+  transcripts without re-transcribing. It never runs on text the user edited.
+
+Entries are learned, not typed. On each save of an edit, the edited words are aligned with the
+model's (difflib on folded words). A replacement of one to three words is offered as a chip
+under the editor when its new spelling is capitalized away from a sentence start, or when the
+same replacement was made in another recording (counted in `~/.local/state/echo/
+candidates.json`). Pure case or accent fixes of the 5,000 most common Spanish words are
+ignored ("como" to "cómo"). Declining mutes the word. Capitalized words typed into a title are
+offered the same way.
 
 The stock feature extractor needs librosa; Echo subclasses it to use transformers' own Slaney
 mel filterbank, which matches librosa to within 4e-9 and keeps librosa, numba, scipy and
@@ -197,10 +223,9 @@ packages (Fedora's torch is CPU-only).
 
 ## Next
 
-- **Knowledge base.** A glossary of people and terms. In-model biasing is ready: the worker
-  accepts a per-job `context`, and the glossary only has to produce the sentence. Post-hoc
-  correction for what biasing misses would be a separate, logged and reversible layer on top of
-  the immutable model output.
+- **A personal adapter.** A LoRA trained on the user's own corrected transcripts (the model
+  and edited texts Echo keeps side by side), for systematic errors prompting cannot fix. Not
+  before the dictionary has been in daily use. See `docs/roadmap.md`.
 - **Speaker recognition.** The model does not do it. Speaker embeddings per speech segment,
   clustered and labeled, would fit on the existing segment boundaries; known speakers could live
   in the same glossary.

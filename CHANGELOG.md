@@ -15,6 +15,11 @@ tag.
   for an NVIDIA GPU, an AMD GPU (ROCm, untested) or the processor. On the processor Echo uses
   int8 weights and transcribes an hour of audio in about five minutes on a 6-core desktop.
   Echo says how long transcription takes on your computer once it has measured it.
+- A dictionary of people and terms that learns from your corrections: fix a name once and a
+  chip offers to add it; Echo then spells it right in new transcripts and fixes it in existing
+  ones, underlining every automatic correction with one-click undo. An optional "who is
+  speaking, what about" line per recording, `echo-app transcribe --context`, and Settings →
+  Dictionary to tidy the list.
 
 ### Fixed
 

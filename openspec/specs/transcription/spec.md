@@ -69,11 +69,12 @@ what the user sees, and the user SHALL be told that a newer model transcript is 
 
 ### Requirement: Model provenance
 Each transcript SHALL record the model and adapter repositories and revisions used, whether the
-adapter was enabled, the language, and the creation time.
+adapter was enabled, the language, the creation time, and the context sentence given to the
+model, if any.
 
 #### Scenario: Inspect provenance
-- **WHEN** a transcript is created with the adapter enabled
-- **THEN** its stored data names both the base model and adapter revisions
+- **WHEN** a transcript is created with the adapter enabled and a dictionary context
+- **THEN** its stored data names both revisions and the exact context sentence
 
 ### Requirement: Failures are reported, not silent
 If a transcription fails, Echo SHALL record a human-readable reason on the recording, stop

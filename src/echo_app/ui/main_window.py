@@ -142,6 +142,7 @@ class MainWindow(QMainWindow):
         self.player = PlayerPanel()
         self.player.message.connect(self.show_message)
         self.player.renamed.connect(lambda rid, _t: self.model.reload(rid))
+        self.player.renamed.connect(lambda rid, title: self.transcript.offer_title(rid, title))
         self.player.crop_saved.connect(self._crop_saved)
         self.player.export_requested.connect(self.export_audio)
         self.transcript = TranscriptPanel(self.library)

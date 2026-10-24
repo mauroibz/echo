@@ -42,7 +42,7 @@ def cmd_transcribe(args) -> int:
         if r.meta.state != READY:
             print(f"Skipping {r.id}: not ready ({r.meta.state})")
             continue
-        transcription.request(lib, r, adapter=adapter)
+        transcription.request(lib, r, adapter=adapter, context=args.context)
         print(f"Queued {r.id}  {r.meta.title}")
     if not args.wait:
         return 0
@@ -127,6 +127,8 @@ def register(sub) -> None:
     s.add_argument("--all", action="store_true", help="every recording without a transcript")
     s.add_argument("--wait", action="store_true", help="wait and show progress")
     s.add_argument("--no-adapter", action="store_true", help="use the base model without the Spanish adapter")
+    s.add_argument("--context", metavar="TEXT",
+                   help="who is speaking, what about (replaces the recording's own line for this run)")
     s.set_defaults(func=cmd_transcribe)
     s = sub.add_parser("cancel", help="cancel a queued or running transcription")
     s.add_argument("id")

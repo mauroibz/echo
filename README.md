@@ -122,6 +122,13 @@ Model versions are pinned, and only weights and configuration are downloaded, ne
   left show in the list. You can keep recording and editing meanwhile.
 - **Read and edit.** Click a recording. Copy with Ctrl+Shift+C, find with Ctrl+F, export with
   Ctrl+E. While playing, the current passage is highlighted.
+- **Names and terms.** When you correct a name in a transcript ("zurus" to "Surus"), a small
+  suggestion under the text offers to add it to the dictionary; one click, and Echo spells it
+  that way in new transcripts and fixes the old spelling in existing ones. Corrections Echo
+  makes are underlined; right-click one to undo it. "Not this word" stops the suggestion for
+  good. Names typed into a title are suggested the same way. The line under the title, "Who is
+  speaking, what about", is optional context for that recording. Settings → Dictionary lists
+  everything for removing or merging, and imports a list from a text file.
 - **Crop.** Drag the edges of the waveform, or press `[` and `]` at the playhead. Hold Shift to
   turn off snapping. Transcribe again to transcribe only the cropped part.
 - **Search.** The search box matches titles and transcript text, ignoring accents.
@@ -142,7 +149,7 @@ echo-app record [--wait] [--source NODE] [--title T]
 echo-app pause | resume | stop | status
 echo-app sources                  list inputs (* marks the default)
 echo-app import PATH...           import files or folders
-echo-app transcribe ID... | --all [--wait] [--no-adapter]
+echo-app transcribe ID... | --all [--wait] [--no-adapter] [--context TEXT]
 echo-app cancel ID
 echo-app list [QUERY]             list or search recordings
 echo-app models download | status
@@ -171,12 +178,14 @@ git fetch --tags && git checkout "$(git describe --tags --abbrev=0 origin/main)"
 |---|---|
 | Recordings and transcripts | `~/.local/share/echo/recordings/`, one folder per recording |
 | Settings | `~/.config/echo/settings.toml` |
+| Dictionary of names and terms | `~/.config/echo/glossary.toml` |
 | Logs | `~/.local/state/echo/` |
 | Waveform cache | `~/.cache/echo/` |
 | Models | `~/.cache/huggingface/hub/` |
 
 A recording folder holds `audio.flac` (or the imported file, unchanged), `meta.json`,
-`transcript.json` (model output with passage times) and `transcript.edited.txt` once you edit.
+`transcript.json` (model output with passage times), `transcript.corrected.json` when the
+dictionary fixed something in it, and `transcript.edited.txt` once you edit.
 Deleted recordings go to the desktop trash.
 
 ## Troubleshooting
@@ -221,7 +230,8 @@ Echo is released under the [MIT License](LICENSE).
 
 Speech recognition by Cohere Transcribe (Apache-2.0) with the Surus Spanish adapter
 (Apache-2.0); speech detection by Silero VAD (MIT). The models are downloaded separately under
-their own terms. Icons from [Lucide](https://lucide.dev) (ISC). Interface type set in
+their own terms. Icons from [Lucide](https://lucide.dev) (ISC). The list of common Spanish words used by the
+dictionary is from [FrequencyWords](https://github.com/hermitdave/FrequencyWords) (CC BY-SA 4.0). Interface type set in
 [Manrope](https://github.com/sharanda/manrope) (SIL Open Font License); the static weights in
 `src/echo_app/ui/assets/fonts/` are cut from the variable font. License texts sit next to those
 files.

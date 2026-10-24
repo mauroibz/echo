@@ -19,8 +19,6 @@ SPEED_JOBS = 10  # the speed estimate averages this many recent jobs
 EXPECTED_MIN_PER_HOUR = {features.CUDA: 1.0, features.CPU: 5.0}
 
 
-
-
 def lock_path() -> Path:
     return paths.runtime_dir() / "worker.lock"
 
@@ -83,12 +81,37 @@ def ensure_worker(lib: Library) -> bool:
     return True
 
 
-def request(lib: Library, rec: Recording, adapter: bool | None = None) -> bool:
+def build_context(rec: Recording, line: str | None = None) -> str:
+    """The context sentence for a job: the recording's own line, then the dictionary's entries.
+
+    The entries it names are marked as used, so the dictionary keeps the active ones in the
+    sentence when it grows beyond the budget.
+    """
+    from . import dictionary
+
+    d = dictionary.load()
+    text, included = dictionary.context_sentence(d, rec.meta.context_line if line is None else line)
+    if included:
+        d.touch(included)
+        try:
+            d.save()
+        except OSError:
+            pass
+    return text
+
+
+def request(lib: Library, rec: Recording, adapter: bool | None = None, context: str | None = None,
+            start_worker: bool = True) -> bool:
+    """Queue a transcription. `context` replaces the recording's context line for this job."""
     if adapter is None:
         cfg, _ = settings.load()
         adapter = cfg.use_adapter
-    rec.request_transcription(adapter=adapter)
-    return ensure_worker(lib)
+    options = {"adapter": adapter}
+    sentence = build_context(rec, context)
+    if sentence:
+        options["context"] = sentence
+    rec.request_transcription(**options)
+    return ensure_worker(lib) if start_worker else features.transcription_installed()
 
 
 def cancel(rec: Recording) -> None:

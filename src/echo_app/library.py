@@ -7,6 +7,7 @@ Layout of one recording folder::
         takes/                    raw PCM takes, only while recording or awaiting finalize
         audio.<ext>               the original audio (recorded FLAC or imported file, unmodified)
         transcript.json           raw model output, segments with times (immutable per run)
+        transcript.corrected.json the model output with dictionary corrections, each logged
         transcript.edited.txt     user edits, never overwritten by the transcriber
         transcribe.requested      job marker: transcription wanted (JSON options)
         transcribe.progress.json  written by the worker while running
@@ -31,6 +32,7 @@ from .fsutil import atomic_write_json, atomic_write_text, read_json
 META = "meta.json"
 TAKES = "takes"
 TRANSCRIPT = "transcript.json"
+CORRECTED = "transcript.corrected.json"
 EDITED = "transcript.edited.txt"
 REQUESTED = "transcribe.requested"
 PROGRESS = "transcribe.progress.json"
@@ -73,6 +75,7 @@ class Meta:
     recovered: bool = False  # finalized after a crash
     gaps: list[dict[str, Any]] = field(default_factory=list)  # capture interruptions
     error: str | None = None
+    context_line: str = ""  # "who is speaking, what about": context for this recording's transcription
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "Meta":
@@ -136,12 +139,23 @@ class Recording:
         t = self.transcript()
         return t.get("text", "") if t else ""
 
+    def corrected(self) -> dict[str, Any] | None:
+        """The dictionary-corrected copy of the current model transcript, if there is one."""
+        from .dictionary import read_corrected
+
+        return read_corrected(self)
+
+    def base_text(self) -> str:
+        """The text before the user's edits: the corrected model output, else the model output."""
+        c = self.corrected()
+        return c.get("text", "") if c else self.model_text()
+
     def text(self) -> str:
-        """What the user sees: their edited text if any, else the model output."""
+        """What the user sees: their edited text if any, else the (corrected) model output."""
         edited = self.path(EDITED)
         if edited.exists():
             return edited.read_text(encoding="utf-8")
-        return self.model_text()
+        return self.base_text()
 
     def is_edited(self) -> bool:
         return self.path(EDITED).exists()

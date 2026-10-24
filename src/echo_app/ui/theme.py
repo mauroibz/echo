@@ -361,11 +361,15 @@ QScrollBar::add-page, QScrollBar::sub-page {{ background: transparent; }}
 /* Cards on the canvas */
 QWidget#card {{ background: {t.surface}; border: 1px solid {t.line}; border-radius: 16px; }}
 QFrame#notice {{ background: {t.accent_soft}; border: none; border-radius: 10px; }}
+QFrame#chip {{ background: {t.raised}; border: 1px solid {t.accent}; border-radius: 17px; }}
 QPlainTextEdit#editor {{ background: {t.surface}; color: {t.ink}; border: none;
     selection-background-color: {t.accent_soft}; selection-color: {t.ink}; }}
 QLineEdit#title {{ background: transparent; border: 1px solid transparent; color: {t.ink}; padding: 2px 4px; }}
 QLineEdit#title:hover {{ border-color: {t.line}; }}
 QLineEdit#title:focus {{ background: {t.raised}; border-color: {t.accent}; }}
+QLineEdit#context {{ background: transparent; border: 1px solid transparent; border-radius: 6px; color: {t.muted}; padding: 1px 4px; font-style: italic; }}
+QLineEdit#context:hover {{ border-color: {t.line}; }}
+QLineEdit#context:focus {{ background: {t.raised}; border-color: {t.accent}; color: {t.ink}; font-style: normal; }}
 QToolButton#play {{ background: {t.accent}; border: none; border-radius: 21px; padding: 0; }}
 QToolButton#play:hover {{ background: {t.accent_deep}; }}
 QToolButton#play:disabled {{ background: {t.line}; }}
