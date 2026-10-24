@@ -143,8 +143,10 @@ the Python environment, the lockfile, disk space, the GPU, the Hugging Face logi
 files, and says how to fix whatever fails.
 
 - **The level meter does not move.** Pick another input; "(system default input)" in the tooltip
-  marks the system default. The meter runs only while the Echo window is focused, so the
-  microphone indicator is not on all the time.
+  marks the system default. After a few seconds of total silence Echo says so under the meter:
+  a connected microphone with its gain up never sends exact silence, so check the cable, the mute
+  switch and the gain (in the system sound settings or on the audio interface). The meter runs
+  while the Echo window is open and stops when it is minimized or hidden to the tray.
 - **Old voice notes (`.amr`) do not import.** Fedora's `ffmpeg-free` lacks the AMR decoder.
   Install `ffmpeg` from RPM Fusion.
 - **"Not enough GPU memory".** The model needs about 5 GB free. Close other programs that use the

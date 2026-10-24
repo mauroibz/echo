@@ -647,9 +647,17 @@ class MainWindow(QMainWindow):
         self._update_title()
 
     def changeEvent(self, e):
-        if e.type() == QEvent.Type.ActivationChange:
-            self.recorder_panel.set_window_active(self.isActiveWindow())
+        if e.type() == QEvent.Type.WindowStateChange:
+            self.recorder_panel.set_window_shown(self.isVisible() and not self.isMinimized())
         super().changeEvent(e)
+
+    def showEvent(self, e):
+        super().showEvent(e)
+        self.recorder_panel.set_window_shown(not self.isMinimized())
+
+    def hideEvent(self, e):
+        super().hideEvent(e)
+        self.recorder_panel.set_window_shown(False)
 
     def resizeEvent(self, e):
         super().resizeEvent(e)
@@ -664,7 +672,6 @@ class MainWindow(QMainWindow):
         if self.recorder_panel.session is not None and QSystemTrayIcon.isSystemTrayAvailable():
             e.ignore()
             self.hide()
-            self.recorder_panel.set_window_active(False)
             self.tray.show()
             if not self._told_background:
                 self.tray.showMessage(APP_NAME, "Still recording. Use the tray icon to show Echo or stop.",

@@ -18,6 +18,11 @@ from .common import RECORD_RED, dot_icon, fmt_duration, icon, run_task
 log = logging.getLogger(__name__)
 
 FLOOR_DB = -60.0
+# Exact digital silence: a connected microphone with its gain up never produces it.
+SILENT_DB = levels.SILENCE_DB + 1
+SILENT_AFTER_S = 4.0
+SILENT_HINT = ("No sound from this input for {s} seconds. Check that the microphone is connected, "
+               "not muted and its gain is up, or pick another input.")
 
 
 class LevelMeter(QWidget):
@@ -100,7 +105,8 @@ class RecorderPanel(QWidget):
         self._monitor: monitor.LevelMonitor | None = None
         self._listener = monitor.Listener()
         self._busy = False
-        self._active_window = True
+        self._window_shown = True
+        self._silent_since: float | None = None
         self._build()
         self._timer = QTimer(self, interval=100, timeout=self._tick)
         self._timer.start()
@@ -226,12 +232,15 @@ class RecorderPanel(QWidget):
             self._listener.start(self.current_source())
 
     # ---- monitoring ----
-    def set_window_active(self, active: bool):
-        self._active_window = active
+    def set_window_shown(self, shown: bool):
+        """The meter runs while the window is on screen, not minimized or hidden to the tray."""
+        if shown == self._window_shown:
+            return
+        self._window_shown = shown
         self._restart_monitor()
 
     def _want_monitor(self) -> bool:
-        return self.session is None and self._sources_loaded and (self._active_window or self.listen.isChecked())
+        return self.session is None and self._sources_loaded and (self._window_shown or self.listen.isChecked())
 
     def _restart_monitor(self):
         if self._monitor:
@@ -358,21 +367,38 @@ class RecorderPanel(QWidget):
             self.pause_btn.setIcon(icon("record" if paused else "pause"))
             self.pause_btn.setToolTip("Resume recording (Ctrl+Shift+R)" if paused else "Pause recording (Ctrl+Shift+R)")
             take = sess.current_take()
+            db = None
             if take is not None and not paused:
                 db, clip = levels.tail_peak(take, st.get("rate", 48000), st.get("channels", 1))
                 self.meter.set_level(db, clip)
             else:
                 self.meter.set_level(FLOOR_DB)
-            warn = st.get("warning")
-            self.warning.setText(warn or "")
-            self.warning.setVisible(bool(warn))
+            self._show_warning(st.get("warning") or self._silence_hint(db))
         else:
             self.state_label.setText("")
-            self.warning.hide()
+            db = None
             if self._monitor and self._monitor.running():
-                self.meter.set_level(self._monitor.level, self._monitor.take_clip())
+                db = self._monitor.level
+                self.meter.set_level(db, self._monitor.take_clip())
             else:
                 self.meter.set_level(FLOOR_DB)
+            self._show_warning(self._silence_hint(db))
+
+    def _silence_hint(self, db: float | None) -> str:
+        """A hint once the input has been exactly silent for a while; None level = not measuring."""
+        if db is None or db > SILENT_DB:
+            self._silent_since = None
+            return ""
+        now = time.monotonic()
+        if self._silent_since is None:
+            self._silent_since = now
+        secs = now - self._silent_since
+        return SILENT_HINT.format(s=int(secs)) if secs >= SILENT_AFTER_S else ""
+
+    def _show_warning(self, text: str):
+        if text != self.warning.text():
+            self.warning.setText(text)
+        self.warning.setVisible(bool(text))
 
     def shutdown(self):
         self._timer.stop()

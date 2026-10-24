@@ -244,6 +244,11 @@ class WelcomeDialog(FittedDialog):
 
         self.meter = LevelMeter()
         lay.addWidget(self.meter)
+        self.hint = QLabel()
+        self.hint.setWordWrap(True)
+        self.hint.setStyleSheet("color: #d9822b;")
+        self.hint.hide()
+        lay.addWidget(self.hint)
         self._meter_timer = QTimer(self, interval=60, timeout=self._mirror_meter)
         self._meter_timer.start()
         lay.addWidget(_heading("2. Transcription model", 1.1))
@@ -277,6 +282,11 @@ class WelcomeDialog(FittedDialog):
         m = self._panel.meter
         self.meter._level, self.meter._hold, self.meter._clip_until = m._level, m._hold, m._clip_until
         self.meter.update()
+        hint = self._panel.warning.text() if self._panel.warning.isVisibleTo(self._panel) else ""
+        if hint != self.hint.text() or bool(hint) != self.hint.isVisibleTo(self):
+            self.hint.setText(hint)
+            self.hint.setVisible(bool(hint))
+            self.fit()
 
     def done(self, r):
         self._meter_timer.stop()

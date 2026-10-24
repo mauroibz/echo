@@ -58,8 +58,9 @@ def window(qapp, lib, monkeypatch):
     monkeypatch.setattr(pipewire, "list_sources", lambda: [pipewire.Source("fake", "Test mic", pipewire.INPUT, 1, True)])
     st = common.UiState()
     st.data = {}
+    from echo_app.audio import monitor
+    monkeypatch.setattr(monitor.LevelMonitor, "start", lambda self: None)  # no idle meter stream in tests
     w = MainWindow(lib, st)
-    w.recorder_panel.set_window_active(False)  # no idle monitor stream in tests
     w.show()
     pump(200)
     yield w
@@ -255,3 +256,38 @@ def test_welcome_and_doctor_dialogs_build(qapp, window):
     d = DoctorDialog(window)
     assert wait_until(lambda: d.copy_btn.isEnabled(), 60)
     d.reject()
+
+
+def test_silent_input_shows_hint(window, monkeypatch):
+    from echo_app.ui import recorder_panel as rp
+    panel = window.recorder_panel
+    now = [1000.0]
+    monkeypatch.setattr(rp.time, "monotonic", lambda: now[0])
+    panel._silent_since = None
+    assert panel._silence_hint(-90.0) == ""
+    now[0] += rp.SILENT_AFTER_S
+    assert "No sound from this input for 4 seconds" in panel._silence_hint(-90.0)
+    assert panel._silence_hint(-40.0) == ""  # any sound clears it
+    assert panel._silence_hint(-90.0) == ""
+    assert panel._silence_hint(None) == ""  # not measuring
+
+
+def test_meter_runs_under_welcome_and_stops_when_minimized(window, monkeypatch):
+    from echo_app.ui.dialogs import WelcomeDialog
+
+    panel = window.recorder_panel
+    w = WelcomeDialog(panel, window)
+    w.show()
+    w.activateWindow()
+    pump(200)
+    assert panel._want_monitor()  # the welcome meter mirrors this one
+    monkeypatch.setattr(panel, "_silence_hint", lambda db: "No sound from this input for 4 seconds.")
+    pump(150)
+    assert w.hint.isVisibleTo(w) and "No sound" in w.hint.text()
+    w.done(0)
+    window.showMinimized()
+    pump(200)
+    assert not panel._want_monitor()
+    window.showNormal()
+    pump(200)
+    assert panel._want_monitor()
