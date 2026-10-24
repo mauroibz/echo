@@ -23,6 +23,7 @@ class Settings:
     auto_transcribe: bool = True  # queue transcription when a recording or import finishes
     worker_idle_minutes: int = 5
     theme: str = "light"  # light, dark or system
+    show_timestamps: bool = False  # passage start times in the transcript margin
 
     @property
     def data_path(self) -> Path:
@@ -38,6 +39,7 @@ _COMMENTS = {
     "auto_transcribe": "Transcribe new recordings and imports automatically",
     "worker_idle_minutes": "Minutes before the idle transcription worker exits and frees GPU memory",
     "theme": "Appearance: light, dark or system",
+    "show_timestamps": "Show passage start times next to the transcript",
 }
 
 

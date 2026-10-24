@@ -211,6 +211,8 @@ class MainWindow(QMainWindow):
 
         e = mb.addMenu("&Edit")
         self.a_copy = self._act(e, "&Copy transcript", self.transcript.copy_all, "Ctrl+Shift+C", "copy")
+        self.a_copy_times = self._act(e, "Copy with &timestamps", self.transcript.copy_with_timestamps, "Ctrl+Alt+C",
+                                      "copy")
         self._act(e, "&Find in transcript…", self.transcript.open_find, "Ctrl+F", "find")
         self._act(e, "&Search recordings", self._focus_search, "Ctrl+K", "find")
         e.addSeparator()
@@ -218,6 +220,13 @@ class MainWindow(QMainWindow):
         self.a_delete = self._act(e, "&Delete…", self.delete_selected, "Del", "delete")
         self.a_delete.setShortcutContext(Qt.ShortcutContext.WidgetShortcut)
         self.list.addAction(self.a_delete)
+
+        v = mb.addMenu("&View")
+        self.a_times = self._act(v, "&Passage times", lambda on: self.transcript.set_show_timestamps(on), "Ctrl+T",
+                                 "clock")
+        self.a_times.setCheckable(True)
+        self.a_times.setChecked(self.transcript.show_timestamps)
+        self.transcript.timestamps_toggled.connect(self.a_times.setChecked)
 
         r = mb.addMenu("&Recording")
         self.a_record = self._act(r, "&Record", self.recorder_panel.toggle_record, "Ctrl+R")
@@ -423,6 +432,7 @@ class MainWindow(QMainWindow):
             a.setEnabled(ready)
         self.a_export_text.setEnabled(self.transcript.has_text())
         self.a_copy.setEnabled(self.transcript.has_text())
+        self.a_copy_times.setEnabled(self.transcript.has_text())
         self.a_cancel.setEnabled(ready and rec.transcript_status() in (T_RUNNING, T_QUEUED))
         self.a_rename.setEnabled(rec is not None)
         self.a_delete.setEnabled(rec is not None and rec.meta.state != RECORDING)

@@ -6,13 +6,14 @@ import logging
 import os
 import unicodedata
 
-from PySide6.QtCore import QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QAction, QColor, QFont, QKeySequence, QMouseEvent, QTextCharFormat, QTextCursor
+from PySide6.QtCore import QRect, QSize, Qt, QTimer, Signal
+from PySide6.QtGui import (QAction, QColor, QFont, QKeySequence, QMouseEvent, QPainter, QTextCharFormat,
+                           QTextCursor)
 from PySide6.QtWidgets import (QApplication, QFileDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QMenu, QMessageBox,
                                QPlainTextEdit, QProgressBar, QPushButton, QStackedWidget, QTextEdit, QToolButton,
                                QVBoxLayout, QWidget)
 
-from .. import dictionary, export, features, models, recorder, transcription
+from .. import align, dictionary, export, features, models, recorder, settings, transcription
 from ..library import (CORRECTED, EDITED, NEEDS_FINALIZE, READY, RECORDING, T_FAILED, T_QUEUED, T_RUNNING,
                        TRANSCRIPT, Library, Recording)
 from . import theme
@@ -88,6 +89,41 @@ def shown_segments(rec: Recording) -> list[dict]:
     return segs
 
 
+class TimestampMargin(QWidget):
+    """Passage start times in the editor's left margin, on the first line of each passage."""
+
+    def __init__(self, editor: "Editor"):
+        super().__init__(editor)
+        self.editor = editor
+        self.stamps: list[tuple[int, float]] = []  # character position, seconds
+        self.setFont(theme.display_font(0.82, QFont.Weight.DemiBold, tabular=True))
+
+    def width_needed(self) -> int:
+        longest = max((export.stamp(t) for _p, t in self.stamps), key=len, default="0:00")
+        return self.fontMetrics().horizontalAdvance(longest) + 18
+
+    def paintEvent(self, _):
+        p = QPainter(self)
+        p.setPen(QColor(theme.current().muted))
+        doc = self.editor.document()
+        line = self.editor.fontMetrics().height()
+        last_y = None
+        for pos, sec in self.stamps:
+            cur = QTextCursor(doc)
+            cur.setPosition(min(pos, doc.characterCount() - 1))
+            r = self.editor.cursorRect(cur)
+            if r.bottom() < 0:
+                continue
+            if r.top() > self.height():
+                break
+            if last_y is not None and r.top() < last_y + line * 0.8:
+                continue  # two passages start on one line: the first one's time is enough
+            p.drawText(QRect(0, r.top(), self.width() - 10, r.height()),
+                       Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, export.stamp(sec))
+            last_y = r.top()
+        p.end()
+
+
 class Editor(QPlainTextEdit):
     ctrl_clicked = Signal(int)  # character position
     MAX_TEXT_WIDTH_CHARS = 90
@@ -95,6 +131,29 @@ class Editor(QPlainTextEdit):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.menu_hook = None  # callable(menu, position) adding actions for the clicked spot
+        self.margin = TimestampMargin(self)
+        self.margin.hide()
+        self.updateRequest.connect(lambda _r, _dy: self.margin.update())
+
+    def set_stamps(self, stamps: list[tuple[int, float]] | None):
+        """Show passage times (character position, seconds), or hide the margin with None."""
+        if stamps is None:
+            self.margin.hide()
+            self.setViewportMargins(0, 0, 0, 0)
+            return
+        self.margin.stamps = stamps
+        self.setViewportMargins(self.margin.width_needed(), 0, 0, 0)
+        self._place_margin()
+        self.margin.show()
+        self.margin.update()
+
+    def _place_margin(self):
+        cr = self.contentsRect()
+        self.margin.setGeometry(QRect(cr.left(), cr.top(), self.viewportMargins().left(), cr.height()))
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        self._place_margin()
 
     def mousePressEvent(self, e: QMouseEvent):
         if e.modifiers() & Qt.KeyboardModifier.ControlModifier and e.button() == Qt.MouseButton.LeftButton:
@@ -186,6 +245,7 @@ class TranscriptPanel(QWidget):
     message = Signal(str)
     download_requested = Signal()
     changed = Signal(str)  # recording id whose files changed
+    timestamps_toggled = Signal(bool)
 
     def __init__(self, library: Library, parent=None):
         super().__init__(parent)
@@ -201,6 +261,10 @@ class TranscriptPanel(QWidget):
         self._find_index = -1
         self._shown_signature = None
         self._autosave = QTimer(self, singleShot=True, interval=AUTOSAVE_MS, timeout=self.save)
+        # While typing, passage positions follow the text a moment later (alignment of the edit).
+        self._realign = QTimer(self, singleShot=True, interval=400, timeout=self._align_now)
+        self._segments: list[dict] = []
+        self.show_timestamps = settings.load()[0].show_timestamps
         self._build()
         self.set_recording(None)
 
@@ -235,8 +299,13 @@ class TranscriptPanel(QWidget):
             bar.addWidget(b)
             return b
 
+        self.times_btn = tool("Times", "clock", lambda: self.set_show_timestamps(self.times_btn.isChecked()),
+                              "Show passage start times in the margin (Ctrl+T)")
+        self.times_btn.setCheckable(True)
+        self.times_btn.setChecked(self.show_timestamps)
         self.copy_btn = tool("Copy", "copy", self.copy_all, "Copy the whole transcript (Ctrl+Shift+C)")
-        self.export_btn = tool("Export…", "export", self.export_text, "Save as .txt or .md (Ctrl+E)")
+        self.export_btn = tool("Export…", "export", self.export_text,
+                               "Save as text, Markdown, subtitles (SRT, VTT) or JSON (Ctrl+E)")
         self.more_btn = QToolButton()
         self.more_btn.setIcon(icon("more"))
         self.more_btn.setToolTip("More actions")
@@ -245,6 +314,7 @@ class TranscriptPanel(QWidget):
         self.more_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         menu = QMenu(self.more_btn)
         self.act_find = menu.addAction(icon("find"), "Find…  (Ctrl+F)", self.open_find)
+        menu.addAction(icon("copy"), "Copy with timestamps  (Ctrl+Alt+C)", self.copy_with_timestamps)
         menu.addSeparator()
         self.act_retx = menu.addAction(icon("transcribe"), "Transcribe again", lambda: self.request(None))
         self.act_retx_base = menu.addAction("Transcribe again without the Spanish adapter", lambda: self.request(False))
@@ -464,10 +534,13 @@ class TranscriptPanel(QWidget):
 
     def _load_spans(self, rec: Recording):
         self._spans, self._corrections = [], []
+        self._segments = shown_segments(rec)
         if rec.is_edited():
+            self._align_now()
             return
-        segs = shown_segments(rec)
+        segs = self._segments
         self._spans = segment_spans(segs)
+        self._update_margin()
         c = rec.corrected()
         if c:
             offsets = segment_offsets(segs)
@@ -550,10 +623,34 @@ class TranscriptPanel(QWidget):
     def _on_text_changed(self):
         if self._loading or self.rec is None:
             return
-        self._spans = []  # edits break the passage mapping
-        self._corrections = []
+        self._corrections = []  # corrections belong to the unedited text
         self._apply_selections()
         self._autosave.start()
+        self._realign.start()
+
+    def _align_now(self):
+        """Passage spans of the editor's current text, aligned to the model's passages."""
+        segs = self._segments
+        text = self.editor.toPlainText()
+        self._spans = [(a, b, float(segs[k].get("start", 0.0))) for a, b, k in align.align(segs, text) if b > a] \
+            if segs else []
+        self._update_margin()
+
+    def _update_margin(self):
+        if self.show_timestamps and self._spans:
+            self.editor.set_stamps([(a, t) for a, _b, t in self._spans])
+        else:
+            self.editor.set_stamps(None)
+
+    def set_show_timestamps(self, on: bool):
+        self.show_timestamps = on
+        self.times_btn.setChecked(on)
+        cfg, _ = settings.load()
+        if cfg.show_timestamps != on:
+            cfg.show_timestamps = on
+            settings.save(cfg)
+        self._update_margin()
+        self.timestamps_toggled.emit(on)
 
     def save(self):
         self._autosave.stop()
@@ -735,17 +832,26 @@ class TranscriptPanel(QWidget):
             return
         self.save()
         start = os.path.join(os.path.expanduser("~"), export.suggested_name(rec, ".txt"))
-        path, flt = QFileDialog.getSaveFileName(self, "Export transcript", start, "Text (*.txt);;Markdown (*.md)")
+        filters = [f"{label} (*{ext})" for ext, label in export.TEXT_FORMATS.items()]
+        path, flt = QFileDialog.getSaveFileName(self, "Export transcript", start, ";;".join(filters))
         if not path:
             return
-        if flt.startswith("Markdown") and not path.lower().endswith(".md"):
-            path += ".md"
+        ext = flt[flt.rfind("*") + 1:flt.rfind(")")] if "*" in flt else ".txt"
+        if not path.lower().endswith(tuple(export.TEXT_FORMATS)):
+            path += ext
         try:
             out = export.export_transcript(rec, path)
         except OSError as e:
             self.message.emit(f"Export failed: {e}")
             return
         self.message.emit(f"Saved {out}")
+
+    def copy_with_timestamps(self):
+        if self.rec is None or self.stack.currentWidget() is not self.page:
+            return
+        self.save()
+        QApplication.clipboard().setText(export.with_timestamps(self.rec))
+        self.message.emit("Transcript copied with passage times.")
 
     def has_text(self) -> bool:
         return self.stack.currentWidget() is self.page
@@ -825,8 +931,6 @@ class TranscriptPanel(QWidget):
             if a <= pos <= b:
                 self.seek_requested.emit(start)
                 return
-        if self.rec is not None and self.rec.is_edited():
-            self.message.emit("Ctrl+click to jump works on the unedited model transcript.")
 
     def _apply_selections(self):
         sels = []

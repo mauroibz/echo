@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from pathlib import Path
 
 from . import __version__
 
@@ -45,6 +46,35 @@ def _cmd_list(args) -> int:
     return 0
 
 
+def _cmd_export(args) -> int:
+    from . import export
+    from .library import Library
+    from .settings import load
+
+    cfg, _ = load()
+    rec = Library(cfg.data_path).get(args.id)
+    if rec is None:
+        print(f"No recording {args.id}", file=sys.stderr)
+        return 1
+    if not rec.text().strip():
+        print("That recording has no transcript yet.", file=sys.stderr)
+        return 1
+    fmt = "." + args.format if args.format else (Path(args.out).suffix.lower() if args.out else ".txt")
+    if fmt not in export.TEXT_FORMATS:
+        print(f"Unknown format {fmt}; use one of: {', '.join(f[1:] for f in export.TEXT_FORMATS)}", file=sys.stderr)
+        return 2
+    text = export.render_transcript(rec, fmt)
+    if not args.out:
+        sys.stdout.write(text)
+        return 0
+    out = Path(args.out)
+    if out.suffix.lower() != fmt:
+        out = out.with_suffix(fmt)
+    out.write_text(text, encoding="utf-8")
+    print(f"Saved {out}")
+    return 0
+
+
 def _cmd_doctor(args) -> int:
     from . import doctor
 
@@ -76,6 +106,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     s = sub.add_parser("rescan", help="rebuild the library index from the recording folders")
     s.set_defaults(func=_cmd_rescan)
+
+    s = sub.add_parser("export", help="write a transcript as text, Markdown, subtitles or JSON")
+    s.add_argument("id")
+    s.add_argument("--format", choices=["txt", "md", "srt", "vtt", "json"],
+                   help="default: from the --out suffix, else txt")
+    s.add_argument("--out", metavar="PATH", help="file to write; default: standard output")
+    s.set_defaults(func=_cmd_export)
 
     s = sub.add_parser("doctor", help="check prerequisites and install health")
     s.add_argument("--no-gpu", action="store_true", help="skip the GPU probe")

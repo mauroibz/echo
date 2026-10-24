@@ -32,8 +32,9 @@ voice notes.
 - **Imports anything.** Drag files or folders onto the window. WhatsApp voice notes (`.opus`,
   `.m4a`, `.amr`) are recognized and dated from their names, and duplicates are skipped.
 - **Lets you work with the text.** Click a recording to read its transcript, edit it (edits
-  save automatically and are never overwritten), search every transcript at once, copy or
-  export to `.txt` or `.md`, and Ctrl+click a passage to hear it.
+  save automatically and are never overwritten), search every transcript at once, show when
+  each passage starts, copy it with or without times, export it as text, Markdown, subtitles
+  (SRT, VTT) or JSON, and Ctrl+click a passage to hear it.
 - **Plays and crops.** A waveform with speed control and non-destructive crop that snaps to
   pauses.
 - **Keeps your files plain.** Each recording is a folder with its audio, a `meta.json` and its
@@ -120,8 +121,10 @@ Model versions are pinned, and only weights and configuration are downloaded, ne
   file with Echo from your file manager.
 - **Transcribe.** New recordings and imports are transcribed automatically; progress and time
   left show in the list. You can keep recording and editing meanwhile.
-- **Read and edit.** Click a recording. Copy with Ctrl+Shift+C, find with Ctrl+F, export with
-  Ctrl+E. While playing, the current passage is highlighted.
+- **Read and edit.** Click a recording. Copy with Ctrl+Shift+C (Ctrl+Alt+C with passage
+  times), find with Ctrl+F, export with Ctrl+E. View → Passage times (Ctrl+T) shows when each
+  passage starts. While playing, the current passage is highlighted, in edited text too.
+  Subtitles and timed exports use your edited text, placed on the passages it came from.
 - **Names and terms.** When you correct a name in a transcript ("zurus" to "Surus"), a small
   suggestion under the text offers to add it to the dictionary; one click, and Echo spells it
   that way in new transcripts and fixes the old spelling in existing ones. Corrections Echo
@@ -152,6 +155,7 @@ echo-app import PATH...           import files or folders
 echo-app transcribe ID... | --all [--wait] [--no-adapter] [--context TEXT]
 echo-app cancel ID
 echo-app list [QUERY]             list or search recordings
+echo-app export ID [--format txt|md|srt|vtt|json] [--out PATH]
 echo-app models download | status
 echo-app recover                  repair recordings interrupted by a crash
 echo-app finalize ID              retry saving a recording whose raw audio was kept

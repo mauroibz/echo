@@ -20,6 +20,9 @@ tag.
   ones, underlining every automatic correction with one-click undo. An optional "who is
   speaking, what about" line per recording, `echo-app transcribe --context`, and Settings →
   Dictionary to tidy the list.
+- Passage times: a margin with each passage's start time (Ctrl+T), "Copy with timestamps", and
+  export to SRT and VTT subtitles and JSON, from the edited text too; `echo-app export`.
+  Follow-along and Ctrl+click now work on edited transcripts.
 
 ### Fixed
 

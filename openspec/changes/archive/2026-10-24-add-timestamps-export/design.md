@@ -32,3 +32,18 @@ need that mapping for edited text.
   all five formats by extension; `export_transcript` dispatches on suffix.
 - **CLI.** `echo-app export ID [--format txt|md|srt|vtt|json] [--out PATH]`, default format
   from the suffix of `--out`, else `txt` to stdout.
+
+## Decisions made while implementing
+
+- **`align.align(segments, text)`** returns `(start, end, segment index)` and is exact (no diff)
+  when the text is the model text. Two rules beyond the design: words added right after a
+  paragraph break belong to the passage after it, and a start that would go backwards is dropped.
+- **Corrected text**: timed exports and the margin use the dictionary-corrected segments when a
+  corrected copy exists, so subtitles carry the corrected names.
+- **Margin painting** asks `cursorRect` for each passage start and skips a second time on the
+  same line; positions follow typing through a 0.4 s re-alignment timer.
+- **Ctrl+T** is the View menu's "Passage times" and a "Times" toggle in the transcript bar;
+  "Copy with timestamps" is in the Edit menu (Ctrl+Alt+C) and the transcript's "more" menu.
+- **The export dialog** offers the five formats as filters; a path without a known suffix gets
+  the chosen filter's.
+- **Done before `add-markers`**, whose design reuses this margin for marker anchors.

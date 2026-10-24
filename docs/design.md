@@ -181,6 +181,16 @@ punctuation, and in several places it kept words the GPU run dropped. bf16 agree
 (99.96% or better) at half the speed and needs a CPU with native bf16 (AVX-512 BF16 or AMX);
 it is the choice if the remaining int8 differences turn out to matter in daily use.
 
+### Passage times for edited text
+
+The editor, the margin times, follow-along and the timed exports (SRT, VTT, JSON, "copy with
+timestamps") all need to know which passage a piece of the shown text belongs to, also after the
+user has edited it. `align.py` aligns the folded words of the model text and the shown text with
+difflib; each passage starts at the first of its words that still matches, a passage whose words
+were all deleted is dropped, words added after a paragraph break belong to the next passage, and
+a start that would go backwards (a sentence moved elsewhere) is ignored. While the user types,
+the alignment is redone 0.4 s after the last keystroke.
+
 ## Window
 
 PySide6 (`PySide6-Essentials` only). Playback is ffmpeg piped into `pw-play`, which avoids
