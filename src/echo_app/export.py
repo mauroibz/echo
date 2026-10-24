@@ -93,7 +93,7 @@ def cues(rec: Recording) -> list[tuple[float, float, str, bool, int | None]]:
     c = rec.corrected()
     if c and len(c.get("segments", [])) == len(segs):
         segs = [{**sg, "text": tx} for sg, tx in zip(segs, c["segments"])]
-    return align.cues(segs, rec.text())
+    return align.cues(segs, rec.text(), t.get("language", "es"))
 
 
 def with_timestamps(rec: Recording) -> str:
@@ -277,29 +277,51 @@ def _sha(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+_EXPORT_LOCK = __import__("threading").Lock()  # one export at a time: each rewrites the ledger
+
+
+def _file_sha(path: Path) -> str | None:
+    try:
+        return _sha(path.read_bytes())
+    except OSError:
+        return None
+
+
 def export_folder(recs, dest: Path, timestamps: bool = False, audio: str = AUDIO_LINK) -> dict[str, int]:
     """One Markdown note per recording in `dest`, skipping notes that are up to date.
 
-    A ledger in the folder maps recording ids to the note's file and content hash, so renamed
-    recordings replace their old note and only changed notes are rewritten. Returns counts of
-    "written", "unchanged" and "removed" (old names of renamed recordings).
+    A ledger in the folder maps recording ids to the note's file and the hash of what was
+    written, so renamed recordings replace their old note and only changed notes are rewritten.
+    Echo only ever replaces or removes a file it wrote and nobody changed since: a note the user
+    edited is left as it is (and no longer updated), and an existing file with the same name gets
+    a numbered name instead. Returns counts of "written", "unchanged", "removed" (old notes of
+    renamed recordings) and "kept" (notes the user changed).
     """
-    dest = Path(dest)
+    with _EXPORT_LOCK:
+        return _export_folder(recs, Path(dest), timestamps, audio)
+
+
+def _export_folder(recs, dest: Path, timestamps: bool, audio: str) -> dict[str, int]:
     dest.mkdir(parents=True, exist_ok=True)
     try:
         ledger = json.loads((dest / LEDGER).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         ledger = {}
-    taken = {v.get("file") for k, v in ledger.items()}
-    counts = {"written": 0, "unchanged": 0, "removed": 0}
+    owner = {v.get("file"): rid for rid, v in ledger.items()}
+    counts = {"written": 0, "unchanged": 0, "removed": 0, "kept": 0}
     for rec in recs:
         if not rec.text().strip() and not rec.meta.notes:
             continue  # nothing to read yet
         entry = ledger.get(rec.id, {})
-        name = entry.get("file") if entry.get("file") == note_name(rec) else note_name(rec)
-        if name != entry.get("file"):
+        old = entry.get("file")
+        untouched = bool(old) and _file_sha(dest / old) == entry.get("sha")
+        if old and (dest / old).exists() and not untouched:
+            counts["kept"] += 1  # the user changed this note: it is theirs now
+            continue
+        name = note_name(rec)
+        if name != old:
             base, n = name[:-3], 2
-            while name in taken and name != entry.get("file"):
+            while (dest / name).exists() or owner.get(name, rec.id) != rec.id:
                 name, n = f"{base} {n}.md", n + 1
         link = None
         src = rec.audio_path
@@ -314,16 +336,16 @@ def export_folder(recs, dest: Path, timestamps: bool = False, audio: str = AUDIO
                 link = Path(os.path.relpath(src, dest)).as_posix()
         note = to_markdown(rec, timestamps, link).encode("utf-8")
         sha = _sha(note)
-        old = entry.get("file")
-        if old and old != name and (dest / old).exists():
+        if old and old != name and untouched:
             (dest / old).unlink()
+            owner.pop(old, None)
             counts["removed"] += 1
-        if entry.get("sha") == sha and old == name and (dest / name).exists():
+        if old == name and untouched and entry.get("sha") == sha:
             counts["unchanged"] += 1
             continue
         (dest / name).write_bytes(note)
         ledger[rec.id] = {"file": name, "sha": sha}
-        taken.add(name)
+        owner[name] = rec.id
         counts["written"] += 1
     (dest / LEDGER).write_text(json.dumps(ledger, ensure_ascii=False, indent=1, sort_keys=True), encoding="utf-8")
     return counts

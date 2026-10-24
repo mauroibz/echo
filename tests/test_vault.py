@@ -51,7 +51,7 @@ def test_folder_export_skips_up_to_date_and_follows_renames(tmp_path):
     assert export.export_folder([rec], vault)["written"] == 1
     note = vault / "2026-10-24 Charla con Lucía.md"
     assert note.exists() and "Audio: [audio.opus](<../data/recordings/" in note.read_text()
-    assert export.export_folder([rec], vault) == {"written": 0, "unchanged": 1, "removed": 0}
+    assert export.export_folder([rec], vault) == {"written": 0, "unchanged": 1, "removed": 0, "kept": 0}
     rec.update(title="Entrevista Lucía")
     counts = export.export_folder([library.get(rec.id)], vault)
     assert counts["written"] == 1 and counts["removed"] == 1
@@ -88,3 +88,21 @@ def test_window_keeps_the_folder_up_to_date(window, lib, tmp_path):
     rec.update(title="Renombrada")
     window._refresh()
     assert wait_until(lambda: (vault / "2026-10-24 Renombrada.md").exists(), 10)
+
+
+def test_never_overwrites_files_it_did_not_write_or_the_user_changed(tmp_path):
+    library = Library(tmp_path / "data")
+    rec = _rec(library)
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    mine = vault / "2026-10-24 Charla con Lucía.md"
+    mine.write_text("my own note")  # already there, not Echo's
+    export.export_folder([rec], vault)
+    assert mine.read_text() == "my own note" and (vault / "2026-10-24 Charla con Lucía 2.md").exists()
+    # The user edits Echo's note: it is left alone from then on, also when the recording is renamed.
+    ours = vault / "2026-10-24 Charla con Lucía 2.md"
+    ours.write_text(ours.read_text() + "\nmis apuntes\n")
+    rec.update(title="Otra")
+    counts = export.export_folder([library.get(rec.id)], vault)
+    assert counts["kept"] == 1 and ours.read_text().endswith("mis apuntes\n")
+    assert not (vault / "2026-10-24 Otra.md").exists()

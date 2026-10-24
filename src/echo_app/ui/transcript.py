@@ -70,8 +70,9 @@ def _html(text: str) -> str:
     return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
-def segment_offsets(segments: list[dict]) -> dict[int, int]:
+def segment_offsets(segments: list[dict], language: str = "es") -> dict[int, int]:
     """Character offset of each non-empty segment in the joined text, by segment index."""
+    sep = align.separator(language)
     out = {}
     pos = 0
     first = True
@@ -80,7 +81,7 @@ def segment_offsets(segments: list[dict]) -> dict[int, int]:
         if not text:
             continue
         if not first:
-            pos += 2 if seg.get("paragraph") else 1
+            pos += 2 if seg.get("paragraph") else sep
         # Edit positions refer to the unstripped segment text; the joined text is stripped.
         out[k] = pos - (len(seg.get("text") or "") - len((seg.get("text") or "").lstrip()))
         pos += len(text)
@@ -682,7 +683,7 @@ class TranscriptPanel(QWidget):
         segs = self._segments
         c = rec.corrected()
         if c:
-            offsets = segment_offsets(segs)
+            offsets = segment_offsets(segs, (rec.transcript() or {}).get("language", "es"))
             for e in c.get("edits", []):
                 base = offsets.get(e.get("segment"))
                 if base is not None:
@@ -783,7 +784,8 @@ class TranscriptPanel(QWidget):
         flagged passages whose text is still what the model wrote (editing one clears its mark)."""
         segs = self._segments
         text = self.editor.toPlainText()
-        passages = [(a, b, k) for a, b, k in align.align(segs, text) if b > a] if segs else []
+        language = ((self.rec.transcript() if self.rec else None) or {}).get("language", "es")
+        passages = [(a, b, k) for a, b, k in align.align(segs, text, language) if b > a] if segs else []
         self._passages = passages
         self._spans = [(a, b, float(segs[k].get("start", 0.0))) for a, b, k in passages]
         self._flagged = [(a, b, segs[k]) for a, b, k in passages
@@ -882,8 +884,9 @@ class TranscriptPanel(QWidget):
         names = dict(rec.meta.speakers)
         if name:
             names[str(n)] = name
-            if dictionary.current().find(name) is None:
-                dictionary.update(lambda d: d.add(dictionary.PEOPLE, name))
+            if dictionary.current().find(name) is None and \
+                    not self._dict_update(lambda d: d.add(dictionary.PEOPLE, name)):
+                return
             centroid = (((rec.transcript() or {}).get("speakers") or {}).get("centroids") or {}).get(str(n))
             if centroid:
                 dictionary.remember_voice(dictionary.current().find(name).name, centroid)
@@ -960,8 +963,8 @@ class TranscriptPanel(QWidget):
             learned = dictionary.new_aliases(rec.model_text(), text, d)
             if learned:
                 # A known name corrected from a new spelling: record it, visibly, without asking.
-                dictionary.update(lambda d: [d.add(d.find(n).kind, n, [a]) for n, a in learned])
-                self.message.emit(" ".join(f"“{a}” will be corrected to “{n}” from now on." for n, a in learned))
+                if self._dict_update(lambda d: [d.add(d.find(n).kind, n, [a]) for n, a in learned if d.find(n)]):
+                    self.message.emit(" ".join(f"“{a}” will be corrected to “{n}” from now on." for n, a in learned))
             self._offer(dictionary.edit_candidates(rec.model_text(), text, dictionary.current(), rec.id))
 
     def revert(self, confirm: bool = True):
@@ -1106,7 +1109,8 @@ class TranscriptPanel(QWidget):
         cand = self._candidate
         if cand is None:
             return
-        dictionary.update(lambda d: d.add(cand.kind, cand.name, [cand.alias] if cand.alias else []))
+        if not self._dict_update(lambda d: d.add(cand.kind, cand.name, [cand.alias] if cand.alias else [])):
+            return
         self.message.emit(f"Added “{cand.name}” to the dictionary.")
         self._offer([])
         if self.rec is not None:
@@ -1116,8 +1120,16 @@ class TranscriptPanel(QWidget):
         cand = self._candidate
         if cand is None:
             return
-        dictionary.update(lambda d: d.mute(cand.name))
-        self._offer([])
+        if self._dict_update(lambda d: d.mute(cand.name)):
+            self._offer([])
+
+    def _dict_update(self, change) -> bool:
+        try:
+            dictionary.update(change)
+            return True
+        except dictionary.Unreadable as e:
+            self.message.emit(str(e))
+            return False
 
     def _correction_at(self, pos: int):
         return next((e for a, b, e in self._corrections if a <= pos <= b), None)

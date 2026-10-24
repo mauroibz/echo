@@ -24,9 +24,16 @@ def _words(text: str) -> list[tuple[int, int, str]]:
     return [(m.start(), m.end(), _fold(m.group())) for m in _WORD.finditer(text)]
 
 
-def model_spans(segments: list[dict]) -> list[tuple[int, int, int]]:
+def separator(language: str) -> int:
+    """Characters between passages in the joined text: none for languages written without spaces."""
+    return 0 if language in ("ja", "zh") else 1
+
+
+def model_spans(segments: list[dict], language: str = "es") -> list[tuple[int, int, int]]:
     """(start, end, segment index) of each non-empty segment in the joined model text, which is
-    the passages joined with a space, or a blank line before a paragraph (planning.join_text)."""
+    the passages joined with a space (nothing for Chinese and Japanese), or a blank line before a
+    paragraph (planning.join_text)."""
+    sep = separator(language)
     spans = []
     pos = 0
     first = True
@@ -35,22 +42,22 @@ def model_spans(segments: list[dict]) -> list[tuple[int, int, int]]:
         if not text:
             continue
         if not first:
-            pos += 2 if seg.get("paragraph") else 1
+            pos += 2 if seg.get("paragraph") else sep
         spans.append((pos, pos + len(text), k))
         pos += len(text)
         first = False
     return spans
 
 
-def align(segments: list[dict], text: str) -> list[tuple[int, int, int]]:
+def align(segments: list[dict], text: str, language: str = "es") -> list[tuple[int, int, int]]:
     """(start, end, segment index) spans of `text` for every non-empty segment, in order.
 
     When `text` is the joined model text this is exact; for edited text it follows the words.
     """
     from .worker.planning import join_text
 
-    model_text = join_text(segments)
-    spans = model_spans(segments)
+    model_text = join_text(segments, language)
+    spans = model_spans(segments, language)
     if text == model_text:
         return spans
     mw, ew = _words(model_text), _words(text)
@@ -108,12 +115,12 @@ def align(segments: list[dict], text: str) -> list[tuple[int, int, int]]:
     return result
 
 
-def cues(segments: list[dict], text: str) -> list[tuple[float, float, str, bool, int | None]]:
+def cues(segments: list[dict], text: str, language: str = "es") -> list[tuple[float, float, str, bool, int | None]]:
     """(start s, end s, text, starts a paragraph, speaker number) per passage of `text`, for
     subtitles and exports. Passages whose text the user deleted are left out.
     """
     out = []
-    for s, e, k in align(segments, text):
+    for s, e, k in align(segments, text, language):
         piece = text[s:e].strip()
         if not piece:
             continue

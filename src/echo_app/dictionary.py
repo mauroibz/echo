@@ -85,11 +85,16 @@ class Entry:
         return [self.name, *self.aliases]
 
 
+class Unreadable(OSError):
+    """The dictionary file does not parse; it is not saved over until it does."""
+
+
 @dataclass
 class Dictionary:
     entries: list[Entry] = field(default_factory=list)
     muted: list[str] = field(default_factory=list)
     path: Path | None = None
+    broken: str = ""  # why the file could not be read; such a dictionary is never saved
 
     # ---- lookup ----
     def find(self, name: str) -> Entry | None:
@@ -159,6 +164,8 @@ class Dictionary:
 
     # ---- persistence ----
     def save(self, path: Path | None = None) -> None:
+        if self.broken:
+            raise Unreadable(f"The dictionary file could not be read ({self.broken}); fix it or remove it first.")
         path = path or self.path or dictionary_path()
         lines = ["# Echo dictionary: people and terms, learned from your corrections. Hand edits are fine.\n"]
         lines.append(f"muted = {_toml_list(self.muted)}\n")
@@ -188,7 +195,9 @@ def dictionary_path() -> Path:
 
 
 def load(path: Path | None = None) -> Dictionary:
-    """Read the dictionary; a missing file is empty, an unreadable one is kept aside."""
+    """Read the dictionary. A missing file is an empty dictionary. A file that does not parse
+    (a hand edit with a typo, or an editor half-way through saving) is left exactly as it is: the
+    result is marked broken and refuses to be saved, so nothing written over it can lose entries."""
     path = path or dictionary_path()
     d = Dictionary(path=path)
     if not path.exists():
@@ -196,11 +205,8 @@ def load(path: Path | None = None) -> Dictionary:
     try:
         raw = tomllib.loads(path.read_text(encoding="utf-8"))
     except (tomllib.TOMLDecodeError, UnicodeDecodeError, OSError) as e:
-        log.warning("dictionary unreadable (%s); starting empty, old file kept as .bad", e)
-        try:
-            path.replace(path.with_suffix(".toml.bad"))
-        except OSError:
-            pass
+        log.warning("dictionary unreadable: %s", e)
+        d.broken = str(e)
         return d
     d.muted = [m for m in raw.get("muted", []) if isinstance(m, str)]
     for kind in KINDS:
@@ -226,7 +232,13 @@ def current() -> Dictionary:
     except OSError:
         stamp = None
     if _cached is None or _cached[0] != stamp or _cached[1].path != path:
-        _cached = (stamp, load(path))
+        fresh = load(path)
+        if fresh.broken and _cached is not None and _cached[1].path == path and not _cached[1].broken:
+            # Keep using the last good copy until the file parses again (also read-only: a
+            # change goes through update(), which reads the file and refuses while it is broken).
+            _cached = (stamp, _cached[1])
+        else:
+            _cached = (stamp, fresh)
     return _cached[1]
 
 

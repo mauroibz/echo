@@ -54,7 +54,8 @@ class PortAudioCapture:
         self._queue: queue.Queue[bytes | None] = queue.Queue()
         self._file = open(self.path, "ab", buffering=0)
         self._error: str | None = None
-        self._log = log_file
+        # Its own handle on the take's log: the caller closes the one it passed once we are running.
+        self._log = open(self.path.with_suffix(".log"), "ab")
         try:
             self.rate = rate
             self._stream = sd.RawInputStream(samplerate=rate, channels=channels, dtype="int16", device=device,
@@ -108,6 +109,7 @@ class PortAudioCapture:
         except OSError:
             pass
         self._file.close()
+        self._log.close()
 
 
 class PortAudioStream:

@@ -148,6 +148,12 @@ class Recording:
         return self
 
     def update(self, **changes: Any) -> None:
+        """Change some fields and save. The file is read first, so changes made by another process
+        meanwhile (the window renaming a recording the supervisor is about to finalize) are kept."""
+        try:
+            self.reload()
+        except (FileNotFoundError, json.JSONDecodeError, TypeError):
+            pass  # not written yet: the fields in memory are all there is
         for k, v in changes.items():
             if not hasattr(self.meta, k):
                 raise AttributeError(k)

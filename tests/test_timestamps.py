@@ -99,3 +99,11 @@ def test_cli_export(tmp_path, capsys):
 def test_words_added_after_a_paragraph_break_join_the_next_passage():
     assert pieces("Hola mundo. Esto es una prueba.\n\nY ahora la segunda parte aquí.")[2] == \
         (2, "Y ahora la segunda parte aquí.")
+
+
+def test_chinese_passages_have_no_separator():
+    segs = [{"start": 0.0, "end": 2.0, "text": "明天早上", "paragraph": True},
+            {"start": 2.0, "end": 4.0, "text": "我要去办公室。", "paragraph": False}]
+    text = join_text(segs, "zh")
+    assert text == "明天早上我要去办公室。"
+    assert [(text[a:b], k) for a, b, k in align.align(segs, text, "zh")] == [("明天早上", 0), ("我要去办公室。", 1)]

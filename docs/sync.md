@@ -40,5 +40,7 @@ are already up to date are not rewritten, so an Obsidian vault or any notes fold
 
 With "Keep this folder up to date while Echo runs", a recording's note is rewritten a couple of
 seconds after you edit its transcript, title, tags, markers or notes. Echo only ever writes
-outside its own folder there. Notes are regenerated from the recording, so edit the transcript
-in Echo rather than the note: changes made to a note are replaced the next time it is written.
+outside its own folder there, and only replaces or removes notes it wrote and nobody changed
+since: once you edit a note, it is yours and Echo stops updating it, and a file of yours with the
+same name as a note gets a numbered name instead. To keep a note in sync, edit the transcript in
+Echo rather than the note.

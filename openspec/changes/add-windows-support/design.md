@@ -78,3 +78,7 @@ reverses it and keeps recordings unless `-Purge`.
   shim in `%LOCALAPPDATA%\Echo\bin`), since a shortcut cannot set `PYTHONPATH`.
 - **Installer parameter** `-Compute cuda|cpu` rather than `-Profile`, which PowerShell reserves.
 - **The single-instance socket** is named after the account on Windows (there is no uid).
+- **Known limit, to settle with a Windows tester**: if the device's rate changes in the middle
+  of a recording (another program switches the shared-mode format), new takes cannot join the
+  recording, which has one rate; the supervisor says so and keeps retrying. Keeping such takes and
+  resampling them at finalize is the fix if it happens in practice.

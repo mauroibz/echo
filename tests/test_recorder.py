@@ -182,8 +182,15 @@ def test_everything_killed_then_recovered(lib):
     assert m.state == READY and m.recovered and 1.5 < m.duration < 2.5
 
 
+def _two_minutes_ago():
+    from datetime import datetime, timedelta
+
+    return (datetime.now().astimezone() - timedelta(minutes=2)).isoformat(timespec="seconds")
+
+
 def test_recording_state_without_takes_is_cleaned(lib):
     rec = lib.create("crashed early", "recorded", state=RECORDING)
+    rec.update(created=_two_minutes_ago())
     assert dict(recorder.recover_all(lib))[rec.id] == "empty"
     assert not rec.folder.exists()
 
@@ -362,3 +369,45 @@ def test_cli_mark_and_markers(lib, capsys):
     assert "aquí" in capsys.readouterr().out
     assert cli.main(["list"]) == 0
     assert "[1 marker]" in capsys.readouterr().out
+
+
+def test_a_recording_that_is_still_starting_is_not_recovered(lib):
+    """What start() leaves before the supervisor reports: a session file and no status."""
+    from echo_app.fsutil import atomic_write_json
+
+    rec = lib.create("starting", "recorded", state=RECORDING, sample_rate=RATE, channels=1)
+    rec.takes_dir.mkdir()
+    atomic_write_json(recorder.session_path(rec), {"version": 1, "rate": RATE, "channels": 1, "state": "starting",
+                                                   "events": [], "takes": [], "created": rec.meta.created})
+    assert dict(recorder.recover_all(lib))[rec.id] == "live" and rec.folder.exists()
+    rec.update(created=_two_minutes_ago())
+    s = recorder.load_session(rec)
+    s["created"] = rec.meta.created
+    atomic_write_json(recorder.session_path(rec), s)
+    assert dict(recorder.recover_all(lib))[rec.id] == "empty"  # long abandoned: cleaned up as before
+
+
+def test_edits_during_a_recording_survive_finalize(lib):
+    s = recorder.start(lib, rate=RATE)
+    time.sleep(0.8)
+    other = lib.get(s.rec.id)  # the window's copy
+    other.update(title="Reunión con Ana", title_auto=False, notes="importante", tags=["trabajo"])
+    assert s.stop(wait=20) == "ready"
+    m = lib.get(s.rec.id).meta
+    assert (m.title, m.title_auto, m.notes, m.tags) == ("Reunión con Ana", False, "importante", ["trabajo"])
+    assert m.state == READY and m.duration
+
+
+def test_a_device_that_cannot_be_opened_does_not_end_the_recording(lib):
+    """PortAudio raises its own errors (and ValueError with no input); the supervisor retries."""
+    rec = _make_takes(lib, [b"\x00\x01" * 1600])
+    sup = recorder.Supervisor(lib, rec)
+    sup.session = recorder.load_session(rec)
+
+    class Broken:
+        def start_capture(self, *a):
+            raise ValueError("No input device matching the query")
+
+    sup.backend = Broken()
+    assert sup._start_take() is False
+    assert sup.capture is None and "Could not start capture" in sup.warning

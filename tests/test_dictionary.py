@@ -35,11 +35,17 @@ def test_round_trip_and_hand_edits(tmp_path):
     assert D.load(path).find("pipewire").name == "PipeWire"
 
 
-def test_broken_file_is_kept_aside(tmp_path):
-    path = tmp_path / "glossary.toml"
-    path.write_text("[[people]\nname = ", encoding="utf-8")
-    assert D.load(path).entries == []
-    assert (tmp_path / "glossary.toml.bad").exists()
+def test_a_broken_file_is_never_saved_over(tmp_path, monkeypatch):
+    path = D.dictionary_path()
+    D.update(lambda d: d.add(D.TERMS, "Surus"))
+    assert D.current().find("Surus")
+    good = path.read_text()
+    path.write_text(good + "\n[[people]\nname = ", encoding="utf-8")  # mid-save, or a typo
+    assert D.current().find("Surus")  # the last good copy is still used
+    with pytest.raises(D.Unreadable):
+        D.update(lambda d: d.add(D.TERMS, "Otro"))
+    assert path.read_text().startswith(good)  # untouched, nothing moved aside
+    assert not list(path.parent.glob("*.bad"))
 
 
 def test_add_merges_aliases_and_merge_keeps_both():

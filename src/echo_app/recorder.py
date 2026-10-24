@@ -58,6 +58,7 @@ DISK_MARGIN = 100_000_000
 FAILS_BEFORE_DEFAULT = 3
 HEARTBEAT_STALE = 3.0  # a supervisor whose status is older than this is not answering
 HUNG_GRACE = 10.0  # ... and is treated as dead by recovery after this long
+STARTING_GRACE = 30.0  # a new recording whose supervisor has not reported yet is left alone this long
 CAPTURE_GROWING = 3.0  # a take written to within this many seconds still has a live capture
 
 # Session states (also shown in status.json)
@@ -130,14 +131,24 @@ class AdoptedCapture:
         self.path = path
 
     def alive(self) -> bool:
-        return take_growing(self.path) and (self.pid is None or pid_alive(self.pid))
+        return take_growing(self.path) and (self.pid is None or pid_alive(self.pid)) and self._same_process()
+
+    def _same_process(self) -> bool:
+        """Where /proc exists, the pid is still the capture writing this take (pids are reused)."""
+        if self.pid is None or not os.path.isdir("/proc"):
+            return True
+        try:
+            with open(f"/proc/{self.pid}/cmdline", "rb") as f:
+                return str(self.path).encode() in f.read()
+        except OSError:
+            return False
 
     def stop(self, timeout: float = 3.0) -> None:
         """SIGINT lets pw-record flush its buffer; escalate only if it hangs."""
         if self.pid is None:
             return
         for sig, wait in ((signal.SIGINT, timeout), (getattr(signal, "SIGKILL", signal.SIGTERM), 2.0)):
-            if not pid_alive(self.pid):
+            if not pid_alive(self.pid) or not self._same_process():
                 return
             try:
                 os.kill(self.pid, sig)
@@ -362,10 +373,13 @@ class Supervisor:
             n += 1
             path = self.rec.takes_dir / f"take-{n:03d}.raw"
         path.touch()
+        before = recorded_bytes(self.rec)  # audio already captured, without this new take
         logf = open(path.with_suffix(".log"), "ab")
         try:
             self.capture = self.backend.start_capture(self.source, self.rate, self.channels, path, logf)
-        except OSError as e:
+        except Exception as e:  # noqa: BLE001 - a device that cannot be opened now must not end the recording
+            # (PortAudio raises its own errors, and ValueError when there is no input at all.)
+            self.capture = None
             self.warning = f"Could not start capture: {e}"
             log.error(self.warning)
             return False
@@ -373,7 +387,7 @@ class Supervisor:
             logf.close()
         actual = getattr(self.capture, "rate", None)
         if actual and actual != self.rate:
-            if recorded_bytes(self.rec) == 0:
+            if before == 0:
                 # The device records only at its own rate (WASAPI shared mode); the session follows.
                 log.info("%s: device rate %d Hz instead of %d", self.rec.id, actual, self.rate)
                 self.session["rate"] = actual
@@ -628,13 +642,16 @@ class Supervisor:
                 if self.rec.takes_dir.is_dir():
                     self._status()
 
+        def stop_beat():
+            done.set()
+            t.join()
+
         t = threading.Thread(target=beat, daemon=True)
         t.start()
         try:
-            outcome = finalize(self.rec)
+            outcome = finalize(self.rec, before_cleanup=stop_beat)
         finally:
-            done.set()
-            t.join()
+            stop_beat()
         return 0 if outcome in ("ready", "empty") else 1
 
 
@@ -642,8 +659,17 @@ class Supervisor:
 # Finalize
 # ---------------------------------------------------------------------------------------------
 
-def finalize(rec: Recording, recovered: bool = False) -> str:
-    """Turn raw takes into verified FLAC. Returns 'ready', 'empty' or 'failed'."""
+def finalize(rec: Recording, recovered: bool = False, before_cleanup=None) -> str:
+    """Turn raw takes into verified FLAC. Returns 'ready', 'empty' or 'failed'.
+
+    `before_cleanup` is called before the takes folder is removed (the supervisor stops its
+    heartbeat there, so no status file is written into a folder being deleted).
+    """
+    def cleanup(path):
+        if before_cleanup is not None:
+            before_cleanup()
+        shutil.rmtree(path, ignore_errors=True)
+
     session = load_session(rec) or {}
     rate = session.get("rate") or rec.meta.sample_rate or 48000
     channels = session.get("channels") or rec.meta.channels or 1
@@ -652,10 +678,10 @@ def finalize(rec: Recording, recovered: bool = False) -> str:
     total = sum(p.stat().st_size // frame * frame for p in takes)
     if total == 0:
         log.info("%s: no audio captured, removing", rec.id)
-        shutil.rmtree(rec.folder, ignore_errors=True)
+        cleanup(rec.folder)
         return "empty"
     if rec.meta.state == READY and rec.audio_path and rec.audio_path.exists():
-        shutil.rmtree(rec.takes_dir, ignore_errors=True)  # crashed after finalize, before cleanup
+        cleanup(rec.takes_dir)  # crashed after finalize, before cleanup
         return "ready"
     partial = rec.folder / "audio.flac.partial"
     final = rec.folder / "audio.flac"
@@ -675,7 +701,7 @@ def finalize(rec: Recording, recovered: bool = False) -> str:
     rec.update(state=READY, audio=final.name, sha256=ffmpeg.sha256_file(final), markers=markers,
                duration=round(frames / rate, 3), sample_rate=rate, channels=channels,
                recovered=recovered or rec.meta.recovered, gaps=events, error=None)
-    shutil.rmtree(rec.takes_dir, ignore_errors=True)
+    cleanup(rec.takes_dir)
     fsync_dir(rec.folder)
     log.info("%s: finalized %.1f s", rec.id, frames / rate)
     try:
@@ -862,7 +888,25 @@ def recover_all(lib: Library) -> list[tuple[str, str]]:
     return actions
 
 
+def _starting(rec: Recording) -> bool:
+    """Created moments ago and its supervisor has not written a status yet: it is starting, not dead.
+
+    The window or a second key press can run recovery while a recording starts; without this, its
+    empty folder would look abandoned and be removed under the starting supervisor.
+    """
+    if rec.meta.state != RECORDING or read_status(rec):
+        return False
+    created = (load_session(rec) or {}).get("created") or rec.meta.created
+    try:
+        age = time.time() - datetime.fromisoformat(created).timestamp()
+    except (TypeError, ValueError):
+        return False
+    return -5 <= age < STARTING_GRACE
+
+
 def recover_one(lib: Library, rec: Recording) -> str | None:
+    if _starting(rec):
+        return "live"
     has_takes = rec.takes_dir.is_dir()
     if not has_takes:
         if rec.meta.state == RECORDING:
