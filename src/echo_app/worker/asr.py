@@ -81,9 +81,32 @@ def is_oom(e: BaseException) -> bool:
     return e.__class__.__name__ == "OutOfMemoryError" or "out of memory" in msg or "failed to allocate" in msg
 
 
+# Measured on a 10 GB card: the model holds 4.4 GB on the GPU with one passage per batch and
+# 5.0 GB with eight, and the driver keeps about 0.4 GB of its own. With less free than this, the
+# GPU cannot hold the model and the processor transcribes instead.
+GPU_MIN_FREE = int(4.8 * 2**30)
+
+
+def gpu_usable(torch) -> tuple[bool, str]:
+    """Whether the GPU can run the model, and why not. bfloat16 needs the hardware support of an
+    RTX 30 series (Ampere) card or newer; emulated, it is slower than the processor."""
+    if not torch.cuda.is_available():
+        return False, "no usable NVIDIA GPU"
+    try:
+        native = torch.cuda.is_bf16_supported(including_emulation=False)
+    except TypeError:  # older torch
+        native = torch.cuda.get_device_capability()[0] >= 8
+    if not native:
+        return False, "the GPU predates the RTX 30 series (no native bfloat16)"
+    free, _total = torch.cuda.mem_get_info()
+    if free < GPU_MIN_FREE:
+        return False, f"only {free / 2**30:.1f} GB of GPU memory is free (the model needs about 5 GB)"
+    return True, ""
+
+
 def physical_cores() -> int:
     """Physical cores: hyperthread siblings share the vector units, so more threads than cores
-    is slower (5.4x against 4.6x real time with 6 against 11 threads on a 6-core Ryzen)."""
+    is slower (5.4x against 4.6x real time with 6 against 11 threads on a 6-core desktop CPU)."""
     cores = set()
     try:
         with open("/proc/cpuinfo") as f:
@@ -208,6 +231,7 @@ class Engine:
         self._vad = None
         self.device = "cpu"
         self.batch_size = 8
+        self.on_processor_because = ""  # why the processor was used although GPU use was asked for
         self.with_scores = True  # mean token log-probability per passage, for low-confidence marking
 
     # ---- loading ----
@@ -230,18 +254,38 @@ class Engine:
             fe = _feature_extractor(json.load(f))
         tokenizer = AutoTokenizer.from_pretrained(base)
         self._processor = CohereAsrProcessor(feature_extractor=fe, tokenizer=tokenizer)
-        cuda = self.use_gpu and torch.cuda.is_available()
-        self.device = "cuda" if cuda else "cpu"
-        dtype = torch.bfloat16 if cuda else torch.float32
-        try:
+        cuda = False
+        if self.use_gpu and torch.cuda.is_available():
+            cuda, why = gpu_usable(torch)
+            if not cuda:
+                self.on_processor_because = why
+                log.warning("transcribing on the processor: %s", why)
+
+        def load_on(cuda: bool):
+            self.device = "cuda" if cuda else "cpu"
             model = CohereAsrForConditionalGeneration.from_pretrained(
-                base, dtype=dtype, attn_implementation="sdpa", use_safetensors=True)
+                base, dtype=torch.bfloat16 if cuda else torch.float32, attn_implementation="sdpa",
+                use_safetensors=True)
             model.to(self.device).eval()
             from peft import PeftModel
 
             peft = PeftModel.from_pretrained(model, models.snapshot_dir(models.ADAPTER)).eval()
             if not cuda:
                 quantize_for_cpu(peft)
+            return model, peft
+
+        try:
+            try:
+                model, peft = load_on(cuda)
+            except Exception as e:
+                if not (cuda and is_oom(e)):
+                    raise
+                # Another program took the GPU memory meanwhile: the processor still works.
+                self._release()
+                cuda = False
+                self.on_processor_because = "the GPU ran out of memory while loading the model"
+                log.warning("transcribing on the processor: %s", self.on_processor_because)
+                model, peft = load_on(False)
         except Exception as e:
             if is_oom(e):
                 self._release()

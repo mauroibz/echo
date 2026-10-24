@@ -34,7 +34,7 @@ what to look for.
 
 Tests: 237 pass in the fast suite (6 opt-in hardware tests skipped). The hardware suites pass on
 this machine too: real PipeWire kill-and-recover, real PortAudio recording and crash recovery,
-and the real-model smoke tests on the RTX 3080.
+and the real-model smoke tests on the GPU.
 
 ## What each change does, and how it was checked
 
@@ -48,7 +48,7 @@ It now installs the pinned Python explicitly.
 **Compute profiles.** `./install.sh --with-transcription` picks `cuda`, `rocm` or `cpu` from the
 hardware. All three are in the one hash-locked lockfile, and the `cuda` set is identical to
 before. On the processor the engine uses int8 linear layers, one thread per physical core, and
-batches sized to free memory. Measured on this Ryzen 5 7600X against the GPU on 6, 21 and 62
+batches sized to free memory. Measured on this machine's 6-core processor against the GPU on 6, 21 and 62
 minute recordings:
 
 | | Speed | Agreement with the GPU |

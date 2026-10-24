@@ -14,7 +14,7 @@ from .library import Library, Recording
 
 SPEED_JOBS = 10  # the speed estimate averages this many recent jobs
 # Before the first job on a machine: minutes of work per hour of audio, measured on the
-# reference machines in docs/design.md (an RTX 3080; a 6-core Ryzen 5 7600X for the CPU).
+# reference machines in docs/design.md (a 10 GB RTX 30 series card; a 6-core desktop CPU).
 EXPECTED_MIN_PER_HOUR = {features.CUDA: 1.0, features.CPU: 5.0}
 
 

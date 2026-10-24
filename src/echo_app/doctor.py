@@ -302,18 +302,25 @@ def check_worker(gpu: bool = True) -> list[Check]:
     if gpu:
         code = ("import torch,json;ok=torch.cuda.is_available();"
                 "print(json.dumps([ok, torch.cuda.get_device_name(0) if ok else '', "
-                "torch.cuda.get_device_properties(0).total_memory if ok else 0, torch.__version__]))")
+                "torch.cuda.get_device_properties(0).total_memory if ok else 0, torch.__version__, "
+                "torch.cuda.get_device_capability(0)[0] if ok else 0]))")
         try:
             r = subprocess.run([sys.executable, "-P", "-c", code], capture_output=True, text=True, timeout=120)
             import json
-            ok, name, mem, ver = json.loads(r.stdout.strip().splitlines()[-1])
+            ok, name, mem, ver, major = json.loads(r.stdout.strip().splitlines()[-1])
         except Exception as e:  # noqa: BLE001 - report anything as a failed check
-            ok, name, mem, ver = False, "", 0, f"error: {e}"
-        if ok and mem >= 7e9:
+            ok, name, mem, ver, major = False, "", 0, f"error: {e}", 0
+        # The worker's own rule (worker/asr.py gpu_usable): native bfloat16 (RTX 30 series or newer,
+        # compute capability 8) and room for the model, about 5 GB.
+        if ok and major >= 8 and mem >= 5.5 * 2**30:
             checks.append(Check("GPU", OK, f"{name}, {mem / 2**30:.0f} GB (torch {ver})"))
+        elif ok and major < 8:
+            checks.append(Check("GPU", WARN, f"{name} predates the RTX 30 series; transcription runs on the "
+                                "processor", "Fine for short recordings; long ones take a while"))
         elif ok:
-            checks.append(Check("GPU", WARN, f"{name} has {mem / 2**30:.0f} GB; 8 GB or more recommended",
-                                "Transcription will use small batches"))
+            checks.append(Check("GPU", WARN, f"{name} has {mem / 2**30:.0f} GB, too little for the model "
+                                "(about 5 GB); transcription runs on the processor",
+                                "Reinstall with ./install.sh --with-transcription=cpu to save disk space"))
         elif features.compute_profile() == features.ROCM:
             checks.append(Check("GPU", WARN, "no AMD GPU visible to ROCm; transcription will run on CPU",
                                 "Check that your user is in the render and video groups, then log in again"))

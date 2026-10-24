@@ -198,18 +198,27 @@ runtime directory; if the user switches data folders, the worker hands over thro
 `worker.wanted` file, because the GPU holds one model at a time. The worker exits after a
 configurable idle time to free GPU memory.
 
-Measured on an RTX 3080: 20 minutes of speech in 18 seconds and 32 minutes in 23 seconds,
-including model load.
+Measured on a 10 GB desktop card of the RTX 30 series: 20 minutes of speech in 18 seconds and
+32 minutes in 23 seconds, including model load.
+
+GPU memory, measured on that card with 28-second passages: the weights take 3.9 GB, and the
+model peaks at 4.4 GB with one passage per batch and 5.0 GB with eight (the default), plus
+about 0.4 GB the driver keeps. The engine halves the batch when memory runs out. With less than
+4.8 GB free when the model loads, or on a card without native bfloat16 (older than the RTX 30
+series, where emulated bfloat16 is slower than the processor), it loads on the processor
+instead, and it does the same if loading on the GPU runs out of memory. The CUDA build of torch
+runs on the processor too, so this needs no second install; the installer still picks the
+processor build for cards under 6 GB, which is 4 GB smaller.
 
 ### On the processor
 
 The same model runs on the CPU with the same planning and output. The engine there uses int8
 weights for the linear layers (dynamic quantization; the LoRA layers stay float), one thread
 per physical core, and batches of four passages when 6 GB of memory are free. Measured on a
-Ryzen 5 7600X (6 cores, AVX-512 BF16) against the GPU output on the same passages, with word
+6-core desktop processor (with AVX-512 BF16) against the GPU output on the same passages, with word
 agreement in parentheses (lower case, punctuation ignored):
 
-| Recording | GPU (RTX 3080) | float32 | bf16 | int8 | int8, batch 4 |
+| Recording | GPU | float32 | bf16 | int8 | int8, batch 4 |
 |---|---|---|---|---|---|
 | 6.4 min, own microphone | 134× | 5.0× (99.90%) | 9.8× (100%) | 13.5× (99.90%) | 17.1× (99.90%) |
 | 20.7 min, audiobook chapter | 164× | 5.4× (99.93%) | 9.8× (99.97%) | 13.9× (99.20%) | 19.1× (99.17%) |

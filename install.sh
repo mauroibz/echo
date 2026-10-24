@@ -12,8 +12,21 @@ data_home="${XDG_DATA_HOME:-$HOME/.local/share}"
 apps_dir="$data_home/applications"
 icon_dir="$data_home/icons/hicolor/scalable/apps"
 
+# The model needs about 5 GB of GPU memory (4.4 GB measured, plus the driver's share); a card
+# with less transcribes on the processor anyway, so it gets the smaller processor build.
+GPU_MIN_MIB=5800
+
+nvidia_mib() {
+    command -v nvidia-smi >/dev/null 2>&1 || return 1
+    nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null | sort -n | tail -1
+}
+
 detect_profile() {
-    if command -v nvidia-smi >/dev/null 2>&1 || [ -e /proc/driver/nvidia ]; then echo cuda
+    if command -v nvidia-smi >/dev/null 2>&1 || [ -e /proc/driver/nvidia ]; then
+        mib=$(nvidia_mib || true)
+        if [ -n "$mib" ] && [ "$mib" -lt "$GPU_MIN_MIB" ] 2>/dev/null; then echo cpu-small-gpu
+        else echo cuda
+        fi
     elif [ -e /dev/kfd ]; then echo rocm
     else echo cpu
     fi
@@ -25,7 +38,8 @@ profile=""
 detected=no
 for arg in "$@"; do
     case "$arg" in
-        --with-transcription) profile=$(detect_profile); detected=yes ;;
+        --with-transcription) profile=$(detect_profile); detected=yes
+            [ "$profile" = cpu-small-gpu ] && { profile=cpu; small_gpu=yes; } ;;
         --with-transcription=cuda|--with-transcription=cpu|--with-transcription=rocm) profile=${arg#*=} ;;
         --without-transcription) profile=base ;;
         -h|--help) sed -n '2,5p' "$0"; exit 0 ;;
@@ -74,7 +88,11 @@ if [ "$detected" = yes ]; then
     case "$profile" in
         cuda) say "Found an NVIDIA GPU: installing transcription for CUDA." ;;
         rocm) say "Found an AMD GPU: installing transcription for ROCm." ;;
-        cpu) say "No NVIDIA or AMD GPU found: transcription will run on the processor (slower)." ;;
+        cpu) if [ "${small_gpu:-}" = yes ]; then
+                 say "The NVIDIA GPU has less than 6 GB of memory, too little for the model: transcription will run on the processor (slower)."
+             else
+                 say "No NVIDIA or AMD GPU found: transcription will run on the processor (slower)."
+             fi ;;
     esac
     echo "To choose otherwise: ./install.sh --with-transcription=cuda|cpu|rocm"
 fi

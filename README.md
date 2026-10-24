@@ -27,8 +27,8 @@ voice notes.
   reached the disk, and the next start recovers the recording by itself. Finished recordings
   are lossless FLAC, kept only after Echo checks they decode to exactly what was captured.
 - **Transcribes long recordings well.** Speech is split at natural pauses into passages and
-  paragraphs with timing, punctuation and accents. An RTX 3080 transcribes an hour of audio in
-  under a minute; a 6-core desktop processor in about five.
+  paragraphs with timing, punctuation and accents. A recent graphics card transcribes an hour of
+  audio in about a minute; a recent desktop processor in five to ten.
 - **Imports anything.** Drag files or folders onto the window. WhatsApp voice notes (`.opus`,
   `.m4a`, `.amr`) are recognized and dated from their names, and duplicates are skipped.
 - **Lets you work with the text.** Click a recording to read its transcript, edit it (edits
@@ -49,12 +49,16 @@ with the [Surus Spanish adapter](https://huggingface.co/surus-ai/cohere-transcri
 - `ffmpeg`
 - [`uv`](https://docs.astral.sh/uv/), which installs Echo's own Python
 - For transcription, one of:
-  - an NVIDIA GPU with 8 GB of memory or more and its driver: an hour of audio in under a
-    minute (RTX 3080);
-  - any 64-bit processor with 8 GB of RAM: an hour of audio in about five minutes on a 6-core
-    Ryzen 5 7600X, longer on smaller machines;
+  - an NVIDIA graphics card from the RTX 30 series or newer, with 6 GB of memory or more, and
+    its driver: an hour of audio in about a minute on a recent card;
+  - any 64-bit processor with 8 GB of RAM: an hour of audio in five to ten minutes on a recent
+    6-core desktop processor, longer on laptops and older machines;
   - an AMD GPU on Linux with ROCm (supported by the installer but not yet tested on real
     hardware; please report how it goes).
+
+  No graphics card is needed. On a card with less than about 5 GB free, or one older than the
+  RTX 30 series, Echo transcribes on the processor instead, and the installer picks the smaller
+  processor build for cards under 6 GB.
 
   Plus about 5 GB of disk for the model, and 1 GB (processor) to 5 GB (GPU) for the libraries.
   Without transcription Echo still records, imports, plays and edits.
@@ -290,8 +294,10 @@ PulseAudio still owns audio, and X11 sessions missing `libxcb-cursor0`).
   audio interface).
 - **Old voice notes (`.amr`) do not import.** Fedora's `ffmpeg-free` lacks the AMR decoder;
   install `ffmpeg` from RPM Fusion. Doctor lists the missing decoders.
-- **"Not enough GPU memory".** The model needs about 5 GB free. Close other programs using the
-  GPU. Echo frees the GPU five minutes after its last transcription (configurable in Settings).
+- **Transcription is slower than expected.** With less than about 5 GB of graphics memory free
+  when transcription starts (a smaller card, or games and browsers holding it), Echo uses the
+  processor instead; `echo-app doctor` shows which one it uses. Echo frees the GPU five minutes
+  after its last transcription (configurable in Settings).
 - **A recording shows "Needs attention".** Its raw audio is safe in the recording's `takes/`
   folder. Use "Try saving again" in the transcript panel, or `echo-app finalize ID`.
 

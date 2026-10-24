@@ -87,3 +87,23 @@ def test_cpu_out_of_memory_is_recognized():
     assert asr.is_oom(RuntimeError("DefaultCPUAllocator: can't allocate memory: you tried to allocate 1 bytes; "
                                    "failed to allocate"))
     assert not asr.is_oom(ValueError("bad"))
+
+
+def test_gpu_usable_needs_bf16_and_free_memory():
+    from types import SimpleNamespace
+
+    from echo_app.worker import asr
+
+    def fake(available=True, bf16=True, free_gb=8.0):
+        cuda = SimpleNamespace(is_available=lambda: available,
+                               is_bf16_supported=lambda including_emulation=True: bf16,
+                               mem_get_info=lambda: (int(free_gb * 2**30), 10 * 2**30))
+        return SimpleNamespace(cuda=cuda)
+
+    assert asr.gpu_usable(fake()) == (True, "")
+    assert asr.gpu_usable(fake(free_gb=5.0))[0]  # a 6 GB card with the desktop on it
+    ok, why = asr.gpu_usable(fake(free_gb=3.5))
+    assert not ok and "3.5 GB" in why
+    ok, why = asr.gpu_usable(fake(bf16=False))
+    assert not ok and "RTX 30" in why
+    assert not asr.gpu_usable(fake(available=False))[0]

@@ -3,6 +3,21 @@
 Notable changes to Echo. Versions are git tags (`vX.Y.Z`); `main` may be ahead of the latest
 tag.
 
+## Unreleased
+
+### Changed
+
+- Transcription no longer needs a large graphics card. On a card with less than about 5 GB free,
+  or one older than the RTX 30 series, Echo transcribes on the processor instead of failing,
+  and the installer picks the smaller processor build for cards under 6 GB. The README states
+  the measured requirements (about 5 GB of graphics memory) instead of 8 GB.
+
+### Fixed
+
+- Stopping a recording adopted after a crash failed where nothing reaped the orphaned capture
+  process (a container's first process): its zombie counted as running.
+- Windows: saving any file failed (folder fsync), and free disk space could not be read.
+
 ## 1.0.0 - 2026-10-24
 
 ### Added
