@@ -3,24 +3,47 @@
 Plan written 2026-10-23. Target machine: Fedora 44 KDE, PipeWire 1.6.9, RTX 3080 10 GB,
 30 GB RAM, Python 3.14 + uv, ffmpeg, GStreamer, pw-record all present.
 
+## 0. Status (as built, 2026-10-23)
+
+Milestones M0 to M5 are implemented, tested and archived as OpenSpec changes under
+`openspec/changes/archive/`; the resulting capability specs live in `openspec/specs/`.
+Where the build departed from the original plan, the table below says what changed and why.
+Sections 1 to 10 have been corrected to match.
+
+| Planned | Built | Why |
+|---|---|---|
+| CLI named `echo` | `echo-app` | A command named `echo` is shadowed by the shell builtin. |
+| uv builds the project (`--no-build` for deps) | No build at all: `package = false`, `bin/echo-app` runs the source tree | Keeps "wheels only" absolute; not even our own package is built. |
+| Playback through QtMultimedia (`PySide6-Addons`) | ffmpeg piped into `pw-play` | QtMultimedia lives in the Addons wheel (hundreds of MB). ffmpeg and PipeWire are already required and decode every importable format. |
+| UI process watches capture | Detached recorder supervisor per recording (`echo-app _recorder`) | The window, the supervisor and `pw-record` can each die without losing audio. |
+| Job queue in SQLite | Marker files in each recording folder | The queue survives index loss and lives with the data. SQLite is only a rebuildable cache with full-text search. |
+| One worker per data folder | One worker per user, with a handover between folders | The GPU holds one 5 GB model; two workers ran out of memory in testing. |
+| Model card says no prompting | The decoder has a context slot, and it works | A style sentence there fixes unpunctuated passages (48 of 102 down to 1 in one chapter); known terms there fix spellings ("Zurus" to "Surus"). This is the hook for the knowledge base. |
+| librosa (pulled by the stock feature extractor) | Subclass using transformers' own Slaney mel filterbank | Identical to 4e-9; avoids librosa, numba, scipy and scikit-learn. |
+
+Measured on the target machine: 20 min of Spanish audio transcribed in 18 s and 32 min in 23 s
+(about 70x real time, including model load); window interactive in 0.2 s with 500 recordings;
+kill-and-recover against real PipeWire loses nothing (duration matches wall clock within 1 s).
+
 ## 1. Decisions
 
 | Area | Choice | Why |
 |---|---|---|
 | Language | Python 3.14, **uv-managed interpreter**, hash-locked deps | The ASR model is PyTorch/transformers; one language for everything. All deps (torch 2.14, transformers 5.20, peft, PySide6 6.12, silero-vad) resolve on 3.14 today. uv downloads its own CPython; the system Python is never used or written to. See §9. |
 | Install | `git clone` + `./install.sh` (runs `uv sync --locked --no-build`), everything under the clone and `~/.local` | One bootstrap dependency (the `uv` binary). No root, no system site-packages, reproducible on a new machine from the lockfile. See §9. |
-| UI | PySide6 (Qt 6) desktop app: `PySide6-Essentials` + `PySide6-Addons` (QtMultimedia for playback), **not** the WebEngine package | Native on KDE, built-in drag/drop, list views, text editing, no browser or JS build step. Qt ships inside the wheel, so nothing is needed from the distro beyond a working desktop. |
+| UI | PySide6 (Qt 6) desktop app: `PySide6-Essentials` only | Native on KDE, built-in drag/drop, list views, text editing, no browser or JS build step. Qt ships inside the wheel. Playback is ffmpeg piped into `pw-play` (see §0). |
 | Capture | `pw-record --raw` subprocess, detached from the UI | Audio never flows through Python; the UI can crash or freeze without touching the recording. PipeWire-native, so every source Qt/pactl sees is selectable. |
 | On-disk recording format | Raw PCM (`s16le`, 48 kHz, mono or stereo) + JSON sidecar while recording; FLAC after stop | Raw PCM has no header to corrupt: whatever bytes reached disk are playable. FLAC is lossless and ~50 % smaller. |
 | Import/decode | `ffmpeg` subprocess | Handles WhatsApp `.opus` (Ogg), `.m4a/.aac`, `.amr`, `.mp3`, `.wav`, `.flac`, `.ogg`, `.webm`, `.wma`. |
-| Library index | SQLite (`library.sqlite`) | Single file, but the folder tree is the source of truth and the index is rebuildable by rescanning. |
+| Library index | SQLite (`library.sqlite`) with FTS5 search | A cache: the folder tree is the source of truth and the index is rebuildable by rescanning. |
 | ASR | `CohereLabs/cohere-transcribe-03-2026` (2.08 B, bf16 ≈ 4.2 GB) + LoRA `surus-ai/cohere-transcribe-spanish-MegaASR` via PEFT. **Pinned to commit hashes, safetensors only, no `trust_remote_code`** | Fits the 3080 with room for batching. Adapter is togglable per job. The model class is native in transformers ≥ 5.4, so no code is executed from the HF repo. |
 | Segmentation | silero-vad → speech segments → windows ≤ 30 s | The model has no timestamps and transcribes non-speech noises (model card recommends a VAD). VAD gives us timestamps, resumability, batching, and matches the adapter's ≤ 30 s training clips. |
-| Transcription worker | Separate process (`echo-worker`) polling a SQLite job queue | UI never imports torch. Worker can exit when idle to free VRAM. |
+| Transcription worker | Separate process (`echo-app _worker`) polling marker files in recording folders | UI never imports torch. Exits when idle to free VRAM. One per user. |
 
-Things the model does **not** do (confirmed from both model cards): timestamps, diarization,
-prompt/vocabulary biasing, language auto-detect. Both repos are **gated**: you must accept the
-terms on Hugging Face for both and run `hf auth login` once.
+Things the model does **not** do: timestamps, diarization, language auto-detect. The model
+cards do not mention prompting, but the decoder's context slot works (see §0 and §7). Both
+repos are **gated**: you must accept the terms on Hugging Face for both and log in once (or
+paste a token in the app's welcome screen).
 
 ## 2. Storage layout
 
@@ -73,7 +96,7 @@ Imports are copied, not moved.
    (your current sources: PCM2902 USB codec, FHD webcam, EasyEffects source, and monitors of
    outputs for capturing system audio).
 
-## 4. Transcription pipeline (`echo-worker`)
+## 4. Transcription pipeline (`echo-app _worker`)
 
 1. Normalize: `ffmpeg -i original -ac 1 -ar 16000 -f wav normalized.wav` (honoring crop).
 2. VAD: silero-vad (CPU, fast) → speech regions. Merge regions into windows ≤ 30 s, splitting
@@ -104,14 +127,14 @@ Three-pane window:
   autosaved on idle. Buttons: Copy all, Export .txt/.md, Re-transcribe (base/adapter),
   Revert to model output. Segment timestamps shown in a gutter, toggle to hide.
 
-Also a CLI (`echo record|import|transcribe|rescan|finalize`) built first, so each core piece is
+Also a CLI (`echo-app record|import|transcribe|rescan|finalize`) built first, so each core piece is
 testable headless and scriptable.
 
 ## 6. Milestones
 
 | # | Deliverable | Scope |
 |---|---|---|
-| M0 | Skeleton | uv project with `uv.lock`, `.python-version`, `install.sh`, `echo doctor`, data dir, SQLite schema, `echo rescan`, config. Verify a clean install on a throwaway user account. |
+| M0 | Skeleton | uv project with `uv.lock`, `.python-version`, `install.sh`, `echo-app doctor`, data dir, SQLite schema, `echo-app rescan`, config. Verify a clean install on a throwaway user account. |
 | M1 | Recording engine + recovery | Steps in §3 as a library + CLI. Test: kill -9 the CLI mid-recording, restart, verify finalize produces the full audio. |
 | M2 | Import | ffmpeg probe/copy/normalize; WhatsApp `.opus/.m4a/.amr` tested; duplicate detection by hash. |
 | M3 | Worker + transcription | VAD, model load, batching, job queue, resumability. Benchmark on a long recording. |
@@ -122,7 +145,13 @@ testable headless and scriptable.
 
 ## 7. Future features and the hooks for them
 
-**Knowledge-base correction.** The model accepts no prompt, so correction is post-hoc:
+**Knowledge-base correction.** Two complementary layers. First, in-model biasing: the decoder
+context slot accepts text before the transcript. A sentence naming known people and terms
+("En esta conversación se mencionan Surus y Mauro.") placed before the style primer made the
+model spell them correctly in tests. The worker already accepts a `context` option per job and
+records it in the transcript; the knowledge base only has to build that sentence. The engine
+retries any passage whose output is implausibly short with simpler context, so a bad context
+cannot silently drop speech. Second, post-hoc correction for what biasing misses:
 - Glossary table: `terms(canonical, aliases[], kind=person|place|term, notes)`, editable in the UI.
 - Pass 1 (deterministic): fuzzy + phonetic matching (Spanish-aware keys) of transcript n-grams
   against the glossary, applied only above a confidence threshold, each replacement logged in
@@ -155,9 +184,9 @@ exact same dependency set every time.
 |---|---|---|
 | `uv` binary | `~/.local/bin/uv` (standalone installer) or `dnf install uv` (it is in Fedora repos) | the only bootstrap step |
 | CPython 3.14 | `~/.local/share/uv/python/…` downloaded by uv; `.python-version` in the repo pins it; `python-preference = "only-managed"` in `pyproject.toml` so uv never picks up `/usr/bin/python3` | uv |
-| The app and all wheels | `<clone>/.venv` | `uv sync --locked --no-build` |
-| Launchers | `~/.local/bin/echo`, `~/.local/bin/echo-worker` (symlinks into `.venv/bin`), `~/.local/share/applications/echo.desktop`, optional `~/.config/systemd/user/echo-worker.service` | `install.sh` |
-| Model weights | `~/.cache/huggingface/hub` (shared with other HF tools; token already there) | `echo models download` |
+| All dependency wheels | `<clone>/.venv` | `uv sync --locked` (with `no-build = true` in `pyproject.toml`) |
+| Launchers | `~/.local/bin/echo-app` (symlink to `bin/echo-app` in the clone), `~/.local/share/applications/echo-app.desktop`, icon in `~/.local/share/icons` | `install.sh` |
+| Model weights | `~/.cache/huggingface/hub` (shared with other HF tools; token already there) | `echo-app models download` |
 | Data | `~/.local/share/echo` | the app |
 
 Uninstall = delete the clone, the three launcher files, and optionally the data dir and HF cache.
@@ -188,12 +217,12 @@ Nothing under `/usr`, nothing in site-packages of the system interpreter.
   push cannot change what you run.
 - `use_safetensors=True` everywhere; the loader refuses pickle checkpoints.
 - No `trust_remote_code`. `CohereAsrForConditionalGeneration` is in transformers proper.
-- `HF_HUB_DISABLE_TELEMETRY=1` always; `HF_HUB_OFFLINE=1` once `echo doctor` confirms the pinned
+- `HF_HUB_DISABLE_TELEMETRY=1` always; `HF_HUB_OFFLINE=1` once `echo-app doctor` confirms the pinned
   revisions are cached, so the worker never hits the network at run time.
 - silero-vad: load the ONNX/JIT file from the pip package, not via `torch.hub` (which clones a
   git repo at run time).
 
-### 9.4 System prerequisites (distro packages, checked by `echo doctor`)
+### 9.4 System prerequisites (distro packages, checked by `echo-app doctor`)
 
 | Need | Fedora package | Note |
 |---|---|---|
@@ -202,7 +231,7 @@ Nothing under `/usr`, nothing in site-packages of the system interpreter.
 | GPU | NVIDIA driver ≥ the version the locked torch CUDA build needs | Already installed (615.x). The only hard root-level prerequisite besides the above. |
 | Desktop libs for Qt | xcb/wayland client libs | Present on any KDE/GNOME install; `doctor` runs a headless Qt probe to confirm. |
 
-`echo doctor` prints a pass/fail table for all of the above plus: Python version matches
+`echo-app doctor` prints a pass/fail table for all of the above plus: Python version matches
 `.python-version`, lock is in sync, free disk, HF token present, pinned model revisions cached,
 CUDA visible to torch (worker profile only).
 
@@ -257,7 +286,7 @@ means a stranger could install it and use it without reading this file.
 ### 10.3 Robustness you can see
 - After a crash or power loss, the next launch recovers silently and shows the recovered item
   with a small "recovered" tag. No wizard, no questions.
-- `echo doctor` is also a Help menu entry that renders the same table. Problems link to the fix.
+- `echo-app doctor` is also a Help menu entry that renders the same table. Problems link to the fix.
 - Disk and GPU memory problems are detected before they bite: refuse to start recording under
   1 GB free, and the worker reports "not enough GPU memory, close X" instead of a traceback.
 
@@ -278,6 +307,6 @@ means a stranger could install it and use it without reading this file.
 
 ### 10.6 Definition of done per milestone
 A milestone is done when: the feature works on a clean install on a second user account; the
-kill-and-recover test passes where recording is involved; `echo doctor` is green; there are no
+kill-and-recover test passes where recording is involved; `echo-app doctor` is green; there are no
 TODO strings or debug output visible in the UI; and the items in §10.1–10.5 that apply to the
 milestone are met. Milestones are re-scoped down rather than shipped partially.
