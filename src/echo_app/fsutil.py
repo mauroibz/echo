@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -16,6 +17,10 @@ def _umask() -> int:
 
 
 def fsync_dir(path: Path) -> None:
+    """Make a rename in `path` durable. Windows cannot open a folder for fsync, and NTFS journals
+    the rename itself, so there it is a no-op."""
+    if os.name == "nt":  # pragma: no cover - exercised on Windows CI
+        return
     fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
     try:
         os.fsync(fd)
@@ -78,5 +83,4 @@ def free_bytes(path: Path) -> int:
     path = Path(path)
     while not path.exists():
         path = path.parent
-    st = os.statvfs(path)
-    return st.f_bavail * st.f_frsize
+    return shutil.disk_usage(path).free  # statvfs on POSIX, GetDiskFreeSpaceEx on Windows

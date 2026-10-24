@@ -50,8 +50,9 @@ def test_copy_with_timestamps(window, lib, tmp_path):
 
 
 def test_language_menu_sets_the_recording_language(window, lib, tmp_path, monkeypatch):
-    from echo_app import transcription
+    from echo_app import features, transcription
 
+    monkeypatch.setattr(features, "transcription_installed", lambda: True)  # as on a machine with it
     rec = _transcribed(lib, tmp_path)
     window._select(rec.id)
     pump(100)

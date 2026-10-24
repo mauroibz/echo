@@ -112,7 +112,13 @@ def pid_alive(pid: int | None) -> bool:
             os.kill(pid, 0)
         except ProcessLookupError:
             return False
-    return True
+    # Someone else's zombie: an orphaned capture whose new parent never reaps (a container's first
+    # process often does not) would otherwise look alive for good.
+    try:
+        stat = Path(f"/proc/{pid}/stat").read_text()
+        return stat[stat.rindex(")") + 2:][:1] not in ("Z", "X")
+    except (OSError, ValueError):
+        return True
 
 
 def take_growing(path: Path, within: float = CAPTURE_GROWING) -> bool:
