@@ -142,8 +142,12 @@ echo-app doctor                   check the setup
 
 ## Update and uninstall
 
+Releases are tagged and listed in [CHANGELOG.md](CHANGELOG.md). To update to the latest one:
+
 ```sh
-cd ~/apps/echo && git pull && ./install.sh    # remembers whether transcription was installed
+cd ~/apps/echo
+git fetch --tags && git checkout "$(git describe --tags --abbrev=0 origin/main)"
+./install.sh              # remembers whether transcription was installed
 
 ./uninstall.sh            # removes the launcher, menu entry and environment; keeps recordings
 ./uninstall.sh --purge    # also deletes recordings, settings and logs (asks first)
@@ -165,20 +169,21 @@ Deleted recordings go to the desktop trash.
 
 ## Troubleshooting
 
-Start with Help → Check setup, or `echo-app doctor`. It checks PipeWire, ffmpeg and its
-decoders, the Python environment, disk space, the GPU, the Hugging Face login and the model
-files, and says how to fix whatever fails.
+Start with Help → Check setup, or `echo-app doctor`. It checks PipeWire and whether it owns
+the audio devices, ffmpeg and its decoders, the libraries the window needs, the Python
+environment, disk space, the GPU, the Hugging Face login and the model files, and gives the
+command for your distribution that fixes whatever fails (including Ubuntu 22.04, where
+PulseAudio still owns audio, and X11 sessions missing `libxcb-cursor0`).
 
 - **The meter does not move.** Pick another input. If Echo says no sound is arriving, check the
   cable, the mute switch and the input gain, in the system sound settings or on your audio
   interface.
 - **Old voice notes (`.amr`) do not import.** Fedora's `ffmpeg-free` lacks the AMR decoder;
-  install `ffmpeg` from RPM Fusion.
+  install `ffmpeg` from RPM Fusion. Doctor lists the missing decoders.
 - **"Not enough GPU memory".** The model needs about 5 GB free. Close other programs using the
   GPU. Echo frees the GPU five minutes after its last transcription (configurable in Settings).
 - **A recording shows "Needs attention".** Its raw audio is safe in the recording's `takes/`
   folder. Use "Try saving again" in the transcript panel, or `echo-app finalize ID`.
-- **The window does not open on an X11 session (Ubuntu).** Install `libxcb-cursor0`.
 
 Logs are in `~/.local/state/echo/`.
 

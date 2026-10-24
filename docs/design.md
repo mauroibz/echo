@@ -146,6 +146,12 @@ Two install profiles: the default has PySide6 and numpy and records, imports, pl
 `--with-transcription` adds torch, transformers, peft and silero-vad. CUDA libraries come inside
 the torch wheels, so the host needs only the NVIDIA driver.
 
+A GitHub Actions workflow (`.github/workflows/test.yml`) runs the fast suite on Ubuntu and in a
+Fedora container on every push and checks that the transcription profile still resolves from the
+lockfile. `install.sh` installs the pinned Python with `uv python install` before syncing, because
+distribution builds of uv (Fedora's) turn automatic Python downloads off. Releases are tagged
+`vX.Y.Z` and listed in `CHANGELOG.md`.
+
 `exclude-newer` in `pyproject.toml` keeps resolution at least two weeks behind the newest
 releases. Updating is deliberate: move the date, `uv lock --upgrade`, review the diff, run the
 tests.

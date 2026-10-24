@@ -28,3 +28,20 @@
 - **Releases.** `CHANGELOG.md` in Keep-a-Changelog form with an `Unreleased` section and
   `0.1.0` for the current state. Tags `vX.Y.Z`. README update text:
   `git fetch --tags && git checkout "$(git describe --tags --abbrev=0 origin/main)" && ./install.sh`.
+
+## Decisions made while implementing
+
+- **Python install step.** Fedora's packaged `uv` sets Python downloads to manual, so
+  `uv sync` alone fails with "No interpreter found for Python 3.14 in managed installations"
+  (found by running the Fedora job in a container). `install.sh` and both CI jobs now run
+  `uv python install` with the pinned version first, which works with either setting. The
+  README's `sudo dnf install uv` instruction was broken before this.
+- **`uv` hint.** Fedora and Arch package `uv`; Ubuntu and Debian do not, so their hint is the
+  official install script.
+- **Audio-nodes check when PipeWire is not running at all** (pw-dump fails): FAIL with
+  `systemctl --user --now enable pipewire wireplumber`.
+- **GPU driver fix** is per family too (`ubuntu-drivers install`, `pacman -S nvidia`,
+  RPM Fusion's `akmod-nvidia`).
+- **CI verification.** Both jobs were run locally with podman in `ubuntu:24.04` and
+  `fedora:latest`, including `./install.sh`; the workflow itself has not run on GitHub,
+  because this work stays local until it is pushed.

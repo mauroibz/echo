@@ -24,17 +24,43 @@ done
 
 say() { if [ -t 1 ]; then printf '\033[1m%s\033[0m\n' "$*"; else printf '%s\n' "$*"; fi; }
 
+# Package family from os-release (ID, then ID_LIKE), as `echo-app doctor` does.
+family=other
+if [ -r /etc/os-release ]; then
+    ids=$(. /etc/os-release; echo "${ID:-} ${ID_LIKE:-}")
+    for id in $ids; do
+        case "$id" in
+            fedora|rhel|centos) family=fedora; break ;;
+            debian|ubuntu) family=debian; break ;;
+            arch|archlinux) family=arch; break ;;
+        esac
+    done
+fi
+# pkg FEDORA_PKG DEBIAN_PKG ARCH_PKG: the install command for this distribution
+pkg() {
+    case "$family" in
+        fedora) echo "sudo dnf install $1" ;;
+        debian) echo "sudo apt install $2" ;;
+        arch) echo "sudo pacman -S $3" ;;
+        *) echo "install $2 with your package manager" ;;
+    esac
+}
+
 if ! command -v uv >/dev/null 2>&1; then
     echo "Echo needs uv to install its own Python and dependencies." >&2
-    echo "Install it with:  sudo dnf install uv" >&2
+    case "$family" in
+        fedora|arch) echo "Install it with:  $(pkg uv uv uv)" >&2 ;;
+        *) echo "Install it with:  curl -LsSf https://astral.sh/uv/install.sh | sh" >&2 ;;
+    esac
     exit 1
 fi
-for tool in pw-record ffmpeg; do
-    command -v "$tool" >/dev/null 2>&1 || echo "Warning: $tool not found. Run 'echo-app doctor' after install for details." >&2
-done
+command -v pw-record >/dev/null 2>&1 || echo "Warning: pw-record not found. Install it with: $(pkg pipewire-utils pipewire-bin pipewire)" >&2
+command -v ffmpeg >/dev/null 2>&1 || echo "Warning: ffmpeg not found. Install it with: $(pkg ffmpeg-free ffmpeg ffmpeg)" >&2
 
 say "Installing Echo ($profile profile) into $root/.venv"
 cd "$root"
+# Explicitly, because distribution builds of uv (Fedora's) turn automatic Python downloads off.
+uv python install --quiet "$(cat "$root/.python-version")"
 if [ "$profile" = full ]; then
     uv sync --locked --no-dev --extra worker
 else

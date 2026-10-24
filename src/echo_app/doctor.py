@@ -7,6 +7,8 @@ import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
+from functools import cache
+from pathlib import Path
 
 from . import features, models, paths, settings
 from .fsutil import free_bytes
@@ -33,12 +35,127 @@ def _which(cmd: str) -> str | None:
     return shutil.which(cmd)
 
 
+# ---- distributions ----------------------------------------------------------------------------
+
+FEDORA, DEBIAN, ARCH, OTHER = "fedora", "debian", "arch", "other"
+_FAMILIES = {"fedora": FEDORA, "rhel": FEDORA, "centos": FEDORA, "debian": DEBIAN, "ubuntu": DEBIAN,
+             "arch": ARCH, "archlinux": ARCH}
+_INSTALL = {FEDORA: "sudo dnf install", DEBIAN: "sudo apt install", ARCH: "sudo pacman -S"}
+
+
+def parse_os_release(text: str) -> str:
+    """The package family of an os-release file: ID first, then each ID_LIKE entry."""
+    values = {}
+    for line in text.splitlines():
+        key, sep, value = line.partition("=")
+        if sep:
+            values[key.strip()] = value.strip().strip('"').strip("'")
+    for ident in [values.get("ID", "")] + values.get("ID_LIKE", "").split():
+        if ident.lower() in _FAMILIES:
+            return _FAMILIES[ident.lower()]
+    return OTHER
+
+
+@cache
+def distro() -> str:
+    for path in ("/etc/os-release", "/usr/lib/os-release"):
+        try:
+            return parse_os_release(Path(path).read_text(encoding="utf-8", errors="replace"))
+        except OSError:
+            continue
+    return OTHER
+
+
+def pkg_cmd(packages: dict[str, str], family: str | None = None) -> str:
+    """The install command for this distribution, e.g. pkg_cmd({"fedora": "uv", "debian": ...})."""
+    family = family or distro()
+    if family in _INSTALL and packages.get(family):
+        return f"{_INSTALL[family]} {packages[family]}"
+    names = sorted({v for v in packages.values() if v})
+    return f"Install {' or '.join(names)} with your package manager"
+
+
+UV_HINT = {FEDORA: "sudo dnf install uv", ARCH: "sudo pacman -S uv",
+           DEBIAN: "curl -LsSf https://astral.sh/uv/install.sh | sh",
+           OTHER: "curl -LsSf https://astral.sh/uv/install.sh | sh"}
+PIPEWIRE_TOOLS = {FEDORA: "pipewire-utils", DEBIAN: "pipewire-bin", ARCH: "pipewire"}
+FFMPEG = {FEDORA: "ffmpeg-free", DEBIAN: "ffmpeg", ARCH: "ffmpeg"}
+XCB_CURSOR = {FEDORA: "xcb-util-cursor", DEBIAN: "libxcb-cursor0", ARCH: "xcb-util-cursor"}
+# Ubuntu 22.04 ships PipeWire but leaves audio with PulseAudio.
+PULSE_TO_PIPEWIRE = {FEDORA: "pipewire-pulseaudio wireplumber", DEBIAN: "pipewire-audio-client-libraries wireplumber",
+                     ARCH: "pipewire-pulse wireplumber"}
+
+
+def _full_ffmpeg_hint(family: str) -> str:
+    if family == FEDORA:
+        return "Install the full ffmpeg from RPM Fusion: sudo dnf install ffmpeg --allowerasing"
+    return "Install a full ffmpeg build: " + pkg_cmd(FFMPEG, family)
+
+
+# ---- checks -----------------------------------------------------------------------------------
+
 def check_pipewire() -> Check:
     missing = [c for c in ("pw-record", "pw-dump") if not _which(c)]
     if missing:
-        return Check("PipeWire tools", FAIL, f"missing: {', '.join(missing)}",
-                     "sudo dnf install pipewire-utils")
+        return Check("PipeWire tools", FAIL, f"missing: {', '.join(missing)}", pkg_cmd(PIPEWIRE_TOOLS))
     return Check("PipeWire tools", OK, "pw-record and pw-dump found")
+
+
+def _pw_dump() -> list[dict] | None:
+    """pw-dump's objects, or None when it cannot run (no PipeWire daemon at all)."""
+    import json
+
+    try:
+        r = subprocess.run(["pw-dump"], capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if r.returncode != 0:
+        return None
+    try:
+        return json.loads(r.stdout or "[]")
+    except ValueError:
+        return None
+
+
+def check_audio_nodes(dump: list[dict] | None = None, family: str | None = None) -> Check | None:
+    """PipeWire running but owning no audio devices means PulseAudio still has them."""
+    if dump is None:
+        if not _which("pw-dump"):
+            return None  # the tools check already failed
+        dump = _pw_dump()
+    family = family or distro()
+    if dump is None:
+        fix = "Start PipeWire: systemctl --user --now enable pipewire wireplumber"
+        return Check("Audio devices", FAIL, "pw-dump could not reach PipeWire", fix)
+    classes = {((o.get("info") or {}).get("props") or {}).get("media.class", "") for o in dump
+               if o.get("type") == "PipeWire:Interface:Node"}
+    if any(c.startswith(("Audio/Source", "Audio/Sink", "Audio/Duplex")) for c in classes):
+        return Check("Audio devices", OK, "PipeWire manages the audio devices")
+    fix = (f"{pkg_cmd(PULSE_TO_PIPEWIRE, family)} && systemctl --user --now enable wireplumber pipewire-pulse"
+           "; then log out and back in.")
+    if family == DEBIAN:
+        fix += " Ubuntu 22.10 and newer use PipeWire for audio by default."
+    return Check("Audio devices", FAIL,
+                 "PipeWire is installed but not running the audio session (PulseAudio still owns audio)", fix)
+
+
+def _x11_session(env=None) -> bool:
+    env = os.environ if env is None else env
+    if env.get("XDG_SESSION_TYPE") == "x11":
+        return True
+    return bool(env.get("DISPLAY")) and not env.get("WAYLAND_DISPLAY")
+
+
+def check_display(env=None, find_library=None) -> Check | None:
+    """Qt's xcb platform plugin needs libxcb-cursor on X11 since Qt 6.5; Wayland does not."""
+    if not _x11_session(env):
+        return None
+    if find_library is None:
+        from ctypes.util import find_library
+    if find_library("xcb-cursor") is None:
+        return Check("Display libraries", FAIL, "X11 session without libxcb-cursor; the window cannot open",
+                     pkg_cmd(XCB_CURSOR))
+    return Check("Display libraries", OK, "X11 libraries found")
 
 
 def ffmpeg_decoders() -> set[str]:
@@ -55,8 +172,8 @@ def ffmpeg_decoders() -> set[str]:
 def check_ffmpeg() -> list[Check]:
     missing = [c for c in ("ffmpeg", "ffprobe") if not _which(c)]
     if missing:
-        return [Check("ffmpeg", FAIL, f"missing: {', '.join(missing)}",
-                      "sudo dnf install ffmpeg-free  (or ffmpeg from RPM Fusion for AMR support)")]
+        fix = pkg_cmd(FFMPEG) + ("  (or ffmpeg from RPM Fusion for AMR support)" if distro() == FEDORA else "")
+        return [Check("ffmpeg", FAIL, f"missing: {', '.join(missing)}", fix)]
     try:
         dec = ffmpeg_decoders()
     except (OSError, subprocess.SubprocessError) as e:
@@ -65,13 +182,15 @@ def check_ffmpeg() -> list[Check]:
     req_missing = [label for d, label in REQUIRED_DECODERS.items() if d not in dec]
     if req_missing:
         checks.append(Check("Audio decoders", FAIL, "missing: " + ", ".join(req_missing),
-                            "Install a full ffmpeg build (RPM Fusion: sudo dnf install ffmpeg --allowerasing)"))
+                            _full_ffmpeg_hint(distro())))
     else:
         checks.append(Check("Audio decoders", OK, "Opus, AAC, MP3, FLAC, Vorbis, WAV"))
     opt_missing = [label for d, label in OPTIONAL_DECODERS.items() if d not in dec]
     if opt_missing:
         checks.append(Check("Optional decoders", WARN, "missing: " + ", ".join(opt_missing),
-                            "Only needed for those formats. RPM Fusion's ffmpeg includes them."))
+                            "Only needed for those formats. " + (
+                                "RPM Fusion's ffmpeg includes them." if distro() == FEDORA
+                                else "A full ffmpeg build includes them.")))
     return checks
 
 
@@ -94,8 +213,7 @@ def check_lock() -> Check:
         return Check("Dependencies", WARN, "no uv.lock next to the source", "")
     uv = _which("uv")
     if not uv:
-        return Check("Dependencies", WARN, "uv not found, cannot verify the lockfile",
-                     "sudo dnf install uv")
+        return Check("Dependencies", WARN, "uv not found, cannot verify the lockfile", UV_HINT[distro()])
     r = subprocess.run([uv, "lock", "--check", "--offline"], cwd=root, capture_output=True,
                        text=True, timeout=60)
     if r.returncode != 0:
@@ -151,8 +269,10 @@ def check_worker(gpu: bool = True) -> list[Check]:
             checks.append(Check("GPU", WARN, f"{name} has {mem / 2**30:.0f} GB; 8 GB or more recommended",
                                 "Transcription will use small batches"))
         else:
-            checks.append(Check("GPU", WARN, "no CUDA GPU visible; transcription will run on CPU (slow)",
-                                "Install the NVIDIA driver (RPM Fusion akmod-nvidia)"))
+            driver = {FEDORA: "Install the NVIDIA driver (RPM Fusion akmod-nvidia)",
+                      DEBIAN: "Install the NVIDIA driver: sudo ubuntu-drivers install",
+                      ARCH: "Install the NVIDIA driver: sudo pacman -S nvidia"}.get(distro(), "Install the NVIDIA driver")
+            checks.append(Check("GPU", WARN, "no CUDA GPU visible; transcription will run on CPU (slow)", driver))
     if not models.hf_token_present():
         checks.append(Check("Hugging Face login", FAIL if not models.all_cached() else OK,
                             "no token" if not models.all_cached() else "no token, but models are cached",
@@ -174,6 +294,7 @@ def run_all(gpu: bool = True) -> list[Check]:
     if warning:
         checks.append(Check("Settings", WARN, warning))
     checks.append(check_pipewire())
+    checks += [c for c in (check_audio_nodes(), check_display()) if c is not None]
     checks += check_ffmpeg()
     checks.append(check_python())
     checks.append(check_lock())
