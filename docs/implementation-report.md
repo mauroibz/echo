@@ -155,8 +155,8 @@ a passage that straddles a quick turn change gets one speaker.
   burst of WhatsApp notes. Checked on a copy of your library: the two recordings linked, opened,
   edited and exported as one, and the original folder was unchanged. A separate review of
   this work found that typing could land in another part while a part was transcribing, plus
-  four smaller problems; all are fixed, each with a test. Open: listening to the hand-overs
-  between parts (see that change's `tasks.md`).
+  four smaller problems; all are fixed, each with a test. You then checked playback of a real
+  set; the change is archived.
 
 ## Things to know before you use it
 

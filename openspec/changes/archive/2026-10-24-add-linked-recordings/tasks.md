@@ -25,7 +25,7 @@
 
 - [x] 4.1 Player timeline of parts: hand-over to the next part at the end, seeking across parts, speed kept across parts; tests with the fake output
 - [x] 4.2 Waveform of concatenated cached peaks with part dividers and numbers; markers shown at set time; crop handles hidden in the set view; UI tests
-- [ ] 4.3 Listen to a three-part set of real voice notes on this machine through PipeWire and check the hand-overs, seeking into the third part and follow-along (needs hardware: speakers or headphones and a person listening)
+- [x] 4.3 Listen to a three-part set of real voice notes on this machine through PipeWire and check the hand-overs, seeking into the third part and follow-along (needs hardware: speakers or headphones and a person listening)
 
 ## 5. Burst offers
 
@@ -37,13 +37,8 @@
 - [x] 6.1 README (linking, the banner, shortcuts, the set view), `docs/design.md` (set files and why not in `meta.json`, the part map), `docs/sync.md` (the `sets/` folder), Help → Keyboard shortcuts, CHANGELOG
 - [x] 6.2 Copy test on a copy of the real library: index migrates to schema 3, existing recordings untouched, a set of real voice notes created, edited, played and exported
 
-## Blocked
+## Verified by a person
 
-- **4.3** needs someone listening. Done without a person: the set player's hand-over is covered
-  by tests, and on this machine three parts (1.2, 1.0 cropped from 1.2, and 1.2 s) played through
-  real PipeWire in order, the crop respected, in 3.75 s for 3.4 s of audio (about 0.15 s per
-  hand-over). What a person must do: link three real voice notes of one conversation, select the
-  set, press Space and listen through to the end; the parts must follow each other with no click
-  and no noticeable gap beyond the pause already in the notes. Then click the waveform inside the
-  third part (playback continues from there) and play with the transcript visible (the
-  highlighted passage moves into each next part as it plays).
+- **4.3**: real voice notes were linked and played as a set on the development machine (2026-10-24); the
+  parts followed each other as they should. Before that, three parts played through PipeWire in
+  3.75 s for 3.4 s of audio, about 0.15 s per hand-over.

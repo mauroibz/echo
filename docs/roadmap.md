@@ -309,7 +309,7 @@ local summaries have no folder yet; they wait for the dictionary to be in daily 
 | 3 | `add-markdown-vault-export` | product | archived |
 | 3 | `add-windows-loopback` | adoption | blocked: needs a Windows tester |
 | 3 | `add-macos-support` | adoption | blocked: needs a Mac tester |
-| 4 | `add-linked-recordings` | product | done; listening to a set's hand-overs is open |
+| 4 | `add-linked-recordings` | product | archived |
 
 The open items are listed under "Blocked" in each change's `tasks.md`, with what a person has
 to run and look for.
