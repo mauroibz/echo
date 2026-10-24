@@ -290,25 +290,28 @@ archives a change unattended. Each item is a change folder in `openspec/changes/
 (proposal, design where decisions were needed, spec deltas, tasks). The personal adapter and
 local summaries have no folder yet; they wait for the dictionary to be in daily use.
 
-| Phase | Change | Prong |
-|---|---|---|
-| 0 | `add-ubuntu-parity` | adoption |
-| 0 | `add-compute-profiles` | adoption |
-| 1 | `add-dictionary` | AI |
-| 1 | `refactor-recorder-portability` | adoption |
-| 1 | `add-markers` | product |
-| 1 | `add-timestamps-export` | product |
-| 2 | `add-windows-support` | adoption |
-| 2 | `add-languages` | AI |
-| 2 | `add-tags-and-notes` | product |
-| 2 | `add-watched-folder` | product |
-| 2 | `add-edit-with-audio` | product |
-| 2 | `add-low-confidence-marking` | AI |
-| 3 | `add-speaker-labels` | AI |
-| 3 | `add-quick-note` | product |
-| 3 | `add-markdown-vault-export` | product |
-| 3 | `add-windows-loopback` | adoption |
-| 3 | `add-macos-support` | adoption |
+| Phase | Change | Prong | Status (2026-10-24) |
+|---|---|---|---|
+| 0 | `add-ubuntu-parity` | adoption | done; a real Ubuntu 24.04 and 22.04 pass is open |
+| 0 | `add-compute-profiles` | adoption | archived |
+| 1 | `add-dictionary` | AI | archived |
+| 1 | `refactor-recorder-portability` | adoption | archived |
+| 1 | `add-timestamps-export` | product | archived (done before markers, which reuse its margin) |
+| 1 | `add-markers` | product | archived |
+| 2 | `add-windows-support` | adoption | portable pieces and the PortAudio backend done; Windows runs open |
+| 2 | `add-languages` | AI | archived |
+| 2 | `add-tags-and-notes` | product | archived |
+| 2 | `add-watched-folder` | product | archived |
+| 2 | `add-low-confidence-marking` | AI | archived (done before edit-with-audio, which uses it) |
+| 2 | `add-edit-with-audio` | product | archived |
+| 3 | `add-speaker-labels` | AI | done; tuning on real interviews is open |
+| 3 | `add-quick-note` | product | done; pressing the portal shortcuts on KDE and GNOME is open |
+| 3 | `add-markdown-vault-export` | product | archived |
+| 3 | `add-windows-loopback` | adoption | blocked: needs a Windows tester |
+| 3 | `add-macos-support` | adoption | blocked: needs a Mac tester |
+
+The open items are listed under "Blocked" in each change's `tasks.md`, with what a person has
+to run and look for.
 
 Dependencies: `refactor-recorder-portability` before `add-windows-support` and `add-markers`
 (markers use the command file); `add-timestamps-export` before `add-edit-with-audio` and
