@@ -130,7 +130,21 @@ def test_delete_goes_to_freedesktop_trash(isolated_home, tmp_path):
     (rec.folder / "audio.flac").write_bytes(b"data")
     dest = lib.delete(rec)
     trash = isolated_home / ".local/share/Trash"
-    assert dest == trash / "files" / rec.id
+    assert dest == trash / "files" / rec.id and not rec.folder.exists()
     assert (dest / "audio.flac").read_bytes() == b"data"
     info = (trash / "info" / f"{rec.id}.trashinfo").read_text()
     assert info.startswith("[Trash Info]") and "Path=" in info
+
+
+def test_delete_falls_back_to_a_folder_without_a_trash(isolated_home, monkeypatch):
+    import send2trash
+
+    def no_trash(path):
+        raise OSError("no trash here")
+
+    monkeypatch.setattr(send2trash, "send2trash", no_trash)
+    monkeypatch.setattr("echo_app.library.sys.platform", "darwin")  # where send2trash is used
+    lib = Library(isolated_home / "data")
+    rec = lib.create("borrar", "recorded")
+    dest = lib.delete(rec)
+    assert dest == lib.data_dir / "trash" / rec.id and dest.is_dir() and not rec.folder.exists()

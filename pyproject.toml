@@ -10,6 +10,10 @@ authors = [{ name = "Mauro" }]
 dependencies = [
     "PySide6-Essentials>=6.11",
     "numpy>=2.3",
+    # Audio where PipeWire is not available (Windows, macOS, PulseAudio-only Linux).
+    "sounddevice>=0.5",
+    # The desktop trash on every OS.
+    "send2trash>=1.8",
 ]
 
 [project.optional-dependencies]
@@ -43,12 +47,19 @@ url = "https://download.pytorch.org/whl/cpu"
 explicit = true
 
 [[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true
+
+[[tool.uv.index]]
 name = "pytorch-rocm"
 url = "https://download.pytorch.org/whl/rocm7.2"
 explicit = true
 
 [tool.uv.sources]
 torch = [
+    # PyPI's torch bundles CUDA on Linux but is CPU-only on Windows.
+    { index = "pytorch-cu130", extra = "cuda", marker = "sys_platform == 'win32'" },
     { index = "pytorch-cpu", extra = "cpu" },
     { index = "pytorch-rocm", extra = "rocm", marker = "sys_platform == 'linux'" },
 ]

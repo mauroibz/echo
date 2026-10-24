@@ -55,3 +55,26 @@ reverses it and keeps recordings unless `-Purge`.
   ffmpeg at finalize when it differs from the setting.
 - Long paths and reserved names in recording titles: `export.suggested_name` already sanitizes;
   add the Windows reserved set.
+
+## Decisions made while implementing
+
+- **Trash**: Linux keeps Echo's own freedesktop code rather than `send2trash`, which reads the
+  home folder once at import (found in the tests, where it put a deleted folder into another
+  test's home). `send2trash` is used on Windows and macOS, with `<data>/trash` as the fallback.
+- **CUDA on Windows**: PyPI's torch is CPU-only on Windows, so the `cuda` extra takes torch from
+  PyTorch's `cu130` index there (explicit index, `sys_platform == 'win32'`); Linux is unchanged.
+- **Source names**: PipeWire node names stay unprefixed, as already saved in settings; PortAudio
+  sources are `pa:<host API>:<device name>` (one host API per platform: WASAPI, Core Audio,
+  ALSA), so neither backend can misread the other's saved choice.
+- **Sample rate**: instead of resampling at finalize, a device that refuses the requested rate is
+  opened at its own, and the session takes that rate when no audio exists yet; a later take at a
+  different rate is refused with a warning.
+- **Backend choice**: PipeWire when `pw-record` exists and PipeWire lists audio inputs, else
+  PortAudio; `ECHO_AUDIO_BACKEND=pipewire|portaudio` forces one. Doctor has an "Audio system"
+  line saying which and what it means.
+- **Stopping a capture process on Windows** uses CTRL_BREAK_EVENT for its process group, then
+  kill; `tests/fake_capture.py` handles SIGBREAK.
+- **Launcher**: `bin/echo-app.pyw` (pythonw for the Start Menu, python for the `echo-app.cmd`
+  shim in `%LOCALAPPDATA%\Echo\bin`), since a shortcut cannot set `PYTHONPATH`.
+- **Installer parameter** `-Compute cuda|cpu` rather than `-Profile`, which PowerShell reserves.
+- **The single-instance socket** is named after the account on Windows (there is no uid).

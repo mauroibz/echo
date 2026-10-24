@@ -17,7 +17,9 @@ BUCKETS_PER_SECOND = RATE // BUCKET
 
 
 def cache_dir() -> Path:
-    base = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache") / "echo" / "peaks"
+    from .. import paths
+
+    base = paths.cache_dir() / "peaks"
     base.mkdir(parents=True, exist_ok=True)
     return base
 
@@ -73,7 +75,9 @@ def snap(peaks: np.ndarray, t: float, radius: float = 0.3) -> float:
 
 
 def playback_cache(sha: str) -> Path:
-    d = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache") / "echo" / "playback"
+    from .. import paths
+
+    d = paths.cache_dir() / "playback"
     d.mkdir(parents=True, exist_ok=True)
     return d / f"{sha}.flac"
 

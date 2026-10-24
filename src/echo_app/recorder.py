@@ -371,6 +371,20 @@ class Supervisor:
             return False
         finally:
             logf.close()
+        actual = getattr(self.capture, "rate", None)
+        if actual and actual != self.rate:
+            if recorded_bytes(self.rec) == 0:
+                # The device records only at its own rate (WASAPI shared mode); the session follows.
+                log.info("%s: device rate %d Hz instead of %d", self.rec.id, actual, self.rate)
+                self.session["rate"] = actual
+            else:
+                log.warning("%s: device now at %d Hz, recording at %d; this take is skipped",
+                            self.rec.id, actual, self.rate)
+                self.capture.stop()
+                path.unlink(missing_ok=True)
+                self.capture = None
+                self.warning = "The input changed its sample rate; pick it again or restart the recording."
+                return False
         self.session.setdefault("takes", []).append({
             "file": path.name, "pid": self.capture.pid, "started": _now_iso(),
             "source": self.source.name if self.source else None, "ended": None, "end_reason": None})
@@ -523,7 +537,7 @@ class Supervisor:
         if last and last.get("ended") is None:
             path = self.rec.takes_dir / last["file"]
             capture = AdoptedCapture(last.get("pid"), path)
-            if capture.alive():
+            if last.get("pid") is not None and capture.alive():
                 self.capture = capture
                 now = time.monotonic()
                 self._take_started = now
@@ -873,7 +887,9 @@ def recover_one(lib: Library, rec: Recording) -> str | None:
         lock.close()
     session = load_session(rec) or {}
     last = (session.get("takes") or [None])[-1]
-    if last and last.get("ended") is None and AdoptedCapture(last.get("pid"), rec.takes_dir / last["file"]).alive():
+    # Only a capture process can outlive its supervisor; an in-process stream (PortAudio) died with it.
+    if last and last.get("ended") is None and last.get("pid") is not None \
+            and AdoptedCapture(last["pid"], rec.takes_dir / last["file"]).alive():
         _spawn_supervisor(rec, adopt=True)
         deadline = time.monotonic() + 5
         while time.monotonic() < deadline and not sess.alive():

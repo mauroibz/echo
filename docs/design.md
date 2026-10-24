@@ -225,6 +225,19 @@ Tags are stored as typed in `meta.json` and compared folded (case and accents ig
 the search. The index (schema 2) has a `tags` table and puts the notes in the full-text body;
 a schema change drops and rebuilds the index, so older installs pick both up on first start.
 
+### Audio backends
+
+All device access goes through `audio/backend.py`. PipeWire (its command-line tools) is used
+wherever it runs the audio devices; elsewhere PortAudio through `sounddevice`
+(`ECHO_AUDIO_BACKEND` forces one). With PortAudio the capture is a stream inside the supervisor
+that a writer thread appends to the take, fsynced every two seconds by the supervisor's loop as
+before; a supervisor crash loses at most those two seconds, and there is no capture process to
+adopt, so recovery finalizes. A device that records only at its own rate (Windows' shared mode)
+makes the session take that rate before any audio exists. PortAudio sources are named
+`pa:<host API>:<device name>` and offer no "Computer audio" and no listening (yet). Measured on
+this Fedora machine through PortAudio's ALSA layer: recording with pause and markers, and a
+SIGKILL of the supervisor, which recovery turned into a verified recording of the audio so far.
+
 ## Window
 
 PySide6 (`PySide6-Essentials` only). Playback is ffmpeg piped into `pw-play`, which avoids
@@ -244,6 +257,8 @@ the desktop's own text face.
 |---|---|
 | CPython 3.14 | downloaded by uv (`python-preference = "only-managed"`); the system Python is never used |
 | Packages | `<clone>/.venv`, from `uv.lock` with sha256 hashes, wheels only (`no-build = true`) |
+| `sounddevice` (base) | PortAudio audio where PipeWire does not run the sound: Windows, macOS, PulseAudio-only Linux. Its Windows and macOS wheels carry PortAudio; on Linux it uses the system's `libportaudio` and is only loaded when needed. Brings `cffi`. |
+| `send2trash` (base) | The desktop trash on Windows and macOS; Linux keeps Echo's own freedesktop code. Pure Python. |
 | Echo itself | not built or installed as a package (`package = false`); `bin/echo-app` runs the source tree |
 | Launcher, menu entry, icon | `~/.local/bin`, `~/.local/share/applications`, `~/.local/share/icons` |
 | Models | `~/.cache/huggingface/hub` |

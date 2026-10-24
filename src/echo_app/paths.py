@@ -1,9 +1,28 @@
-"""XDG locations. Every path can be overridden with ECHO_* environment variables (tests)."""
+"""Where Echo keeps things: XDG folders on Linux, the Known Folders on Windows.
+
+Every path can be overridden with ECHO_* environment variables (tests).
+
+| Folder | Linux | Windows |
+|---|---|---|
+| recordings | ~/.local/share/echo | %USERPROFILE%\\Documents\\Echo (user-visible, like the Linux one) |
+| settings | ~/.config/echo | %APPDATA%\\Echo |
+| logs, state | ~/.local/state/echo | %LOCALAPPDATA%\\Echo\\state |
+| cache | ~/.cache/echo | %LOCALAPPDATA%\\Echo\\cache |
+| locks, sockets | $XDG_RUNTIME_DIR/echo | %LOCALAPPDATA%\\Echo\\run |
+"""
 
 from __future__ import annotations
 
 import os
 from pathlib import Path
+
+
+WINDOWS = os.name == "nt"
+
+
+def _win(var: str, *parts: str) -> Path:
+    base = os.environ.get(var)
+    return (Path(base) if base else Path.home()).joinpath(*parts)
 
 
 def _xdg(var: str, fallback: str) -> Path:
@@ -16,6 +35,8 @@ def _xdg(var: str, fallback: str) -> Path:
 def config_dir() -> Path:
     if v := os.environ.get("ECHO_CONFIG_DIR"):
         return Path(v)
+    if WINDOWS:
+        return _win("APPDATA", "Echo")
     return _xdg("XDG_CONFIG_HOME", ".config") / "echo"
 
 
@@ -23,17 +44,23 @@ def state_dir() -> Path:
     """Logs and runtime state that is not user data."""
     if v := os.environ.get("ECHO_STATE_DIR"):
         return Path(v)
+    if WINDOWS:
+        return _win("LOCALAPPDATA", "Echo", "state")
     return _xdg("XDG_STATE_HOME", ".local/state") / "echo"
 
 
 def default_data_dir() -> Path:
     if v := os.environ.get("ECHO_DATA_DIR"):
         return Path(v)
+    if WINDOWS:
+        return _win("USERPROFILE", "Documents", "Echo")
     return _xdg("XDG_DATA_HOME", ".local/share") / "echo"
 
 
 def cache_dir() -> Path:
     """Rebuildable files: waveform peaks, theme images."""
+    if WINDOWS:
+        return _win("LOCALAPPDATA", "Echo", "cache")
     return _xdg("XDG_CACHE_HOME", ".cache") / "echo"
 
 
@@ -41,6 +68,8 @@ def runtime_dir() -> Path:
     """Sockets and locks. Falls back to the state dir if XDG_RUNTIME_DIR is unset."""
     if v := os.environ.get("ECHO_RUNTIME_DIR"):
         path = Path(v)
+    elif WINDOWS:
+        path = _win("LOCALAPPDATA", "Echo", "run")
     else:
         base = os.environ.get("XDG_RUNTIME_DIR")
         path = Path(base) / "echo" if base else state_dir() / "run"

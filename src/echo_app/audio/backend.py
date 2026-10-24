@@ -83,12 +83,20 @@ class ProcessCapture:
         return self.popen.poll() is None
 
     def stop(self, timeout: float = 3.0) -> None:
-        """SIGINT lets pw-record flush its buffer; escalate only if it hangs."""
-        for sig, wait in ((signal.SIGINT, timeout), (signal.SIGKILL, 2.0)):
+        """SIGINT lets pw-record flush its buffer; escalate only if it hangs. Windows has no
+        SIGINT for other processes: a console break goes to the child's own process group."""
+        if os.name == "nt":  # pragma: no cover
+            steps = ((signal.CTRL_BREAK_EVENT, timeout), (None, 2.0))
+        else:
+            steps = ((signal.SIGINT, timeout), (signal.SIGKILL, 2.0))
+        for sig, wait in steps:
             if not self.alive():
                 return
             try:
-                self.popen.send_signal(sig)
+                if sig is None:
+                    self.popen.kill()
+                else:
+                    self.popen.send_signal(sig)
             except (ProcessLookupError, OSError):
                 return
             try:
@@ -195,16 +203,37 @@ class CommandBackend(PipeWireBackend):
 _backend: Backend | None = None
 
 
+def _pipewire_owns_audio() -> bool:
+    """pw-record is installed and PipeWire runs the audio devices (not only video, as Ubuntu 22.04)."""
+    return bool(shutil.which("pw-record")) and any(s.kind == INPUT for s in pipewire.list_sources())
+
+
+def choose() -> str:
+    """"pipewire" or "portaudio": ECHO_AUDIO_BACKEND if set, else PipeWire where it runs audio."""
+    forced = os.environ.get("ECHO_AUDIO_BACKEND", "").strip().lower()
+    if forced in ("pipewire", "portaudio"):
+        return forced
+    if os.name != "nt" and _pipewire_owns_audio():
+        return "pipewire"
+    return "portaudio"
+
+
 def get() -> Backend:
     """The backend for this machine. Raises BackendMissing with the doctor's advice."""
     global _backend
     if template := os.environ.get("ECHO_CAPTURE_CMD"):
         return CommandBackend(template)
     if _backend is None:
-        if shutil.which("pw-record"):
+        which = choose()
+        if which == "pipewire":
             _backend = PipeWireBackend()
         else:
-            raise BackendMissing("PipeWire's pw-record was not found. Run `echo-app doctor` for the fix.")
+            from . import portaudio
+
+            if not portaudio.available():
+                raise BackendMissing("No audio system found: PipeWire is not running the audio devices and "
+                                     "PortAudio is not available. Run `echo-app doctor` for the fix.")
+            _backend = portaudio.PortAudioBackend()
     return _backend
 
 

@@ -192,6 +192,25 @@ echo-app rescan                   rebuild the search index from the folders
 echo-app doctor                   check the setup
 ```
 
+## Windows
+
+Windows support is new and has not been tested on a real Windows machine yet; reports are
+welcome. Recording uses the microphone ("Computer audio" is not available on Windows yet),
+and transcription runs on an NVIDIA GPU or on the processor.
+
+In PowerShell, from the cloned folder (no administrator rights needed):
+
+```powershell
+.\install.ps1 -WithTranscription        # or .\install.ps1 for recording only; -Compute cuda|cpu to choose
+```
+
+It installs `uv` and `ffmpeg` with winget if they are missing, adds Echo to the Start Menu,
+puts an `echo-app` command on your PATH and adds "Open with Echo" for audio files.
+`.\uninstall.ps1` removes all of that and keeps your recordings (`-Purge` deletes them too).
+
+Recordings live in `Documents\Echo`, settings in `%APPDATA%\Echo`, logs and caches in
+`%LOCALAPPDATA%\Echo`.
+
 ## Update and uninstall
 
 Releases are tagged and listed in [CHANGELOG.md](CHANGELOG.md). To update to the latest one:

@@ -37,10 +37,10 @@ def _which(cmd: str) -> str | None:
 
 # ---- distributions ----------------------------------------------------------------------------
 
-FEDORA, DEBIAN, ARCH, OTHER = "fedora", "debian", "arch", "other"
+FEDORA, DEBIAN, ARCH, OTHER, WINDOWS = "fedora", "debian", "arch", "other", "windows"
 _FAMILIES = {"fedora": FEDORA, "rhel": FEDORA, "centos": FEDORA, "debian": DEBIAN, "ubuntu": DEBIAN,
              "arch": ARCH, "archlinux": ARCH}
-_INSTALL = {FEDORA: "sudo dnf install", DEBIAN: "sudo apt install", ARCH: "sudo pacman -S"}
+_INSTALL = {FEDORA: "sudo dnf install", DEBIAN: "sudo apt install", ARCH: "sudo pacman -S", WINDOWS: "winget install"}
 
 
 def parse_os_release(text: str) -> str:
@@ -58,6 +58,8 @@ def parse_os_release(text: str) -> str:
 
 @cache
 def distro() -> str:
+    if os.name == "nt":
+        return WINDOWS
     for path in ("/etc/os-release", "/usr/lib/os-release"):
         try:
             return parse_os_release(Path(path).read_text(encoding="utf-8", errors="replace"))
@@ -75,11 +77,11 @@ def pkg_cmd(packages: dict[str, str], family: str | None = None) -> str:
     return f"Install {' or '.join(names)} with your package manager"
 
 
-UV_HINT = {FEDORA: "sudo dnf install uv", ARCH: "sudo pacman -S uv",
+UV_HINT = {FEDORA: "sudo dnf install uv", ARCH: "sudo pacman -S uv", WINDOWS: "winget install astral-sh.uv",
            DEBIAN: "curl -LsSf https://astral.sh/uv/install.sh | sh",
            OTHER: "curl -LsSf https://astral.sh/uv/install.sh | sh"}
 PIPEWIRE_TOOLS = {FEDORA: "pipewire-utils", DEBIAN: "pipewire-bin", ARCH: "pipewire"}
-FFMPEG = {FEDORA: "ffmpeg-free", DEBIAN: "ffmpeg", ARCH: "ffmpeg"}
+FFMPEG = {FEDORA: "ffmpeg-free", DEBIAN: "ffmpeg", ARCH: "ffmpeg", WINDOWS: "Gyan.FFmpeg"}
 XCB_CURSOR = {FEDORA: "xcb-util-cursor", DEBIAN: "libxcb-cursor0", ARCH: "xcb-util-cursor"}
 # Ubuntu 22.04 ships PipeWire but leaves audio with PulseAudio.
 PULSE_TO_PIPEWIRE = {FEDORA: "pipewire-pulseaudio wireplumber", DEBIAN: "pipewire-audio-client-libraries wireplumber",
@@ -137,6 +139,26 @@ def check_audio_nodes(dump: list[dict] | None = None, family: str | None = None)
         fix += " Ubuntu 22.10 and newer use PipeWire for audio by default."
     return Check("Audio devices", FAIL,
                  "PipeWire is installed but not running the audio session (PulseAudio still owns audio)", fix)
+
+
+def check_audio_backend() -> Check:
+    """Which audio system Echo uses, and what that means for the user."""
+    from .audio import backend
+
+    try:
+        which = backend.choose()
+        b = backend.get()
+        inputs = [s for s in b.list_sources() if s.kind == backend.INPUT]
+    except Exception as e:  # noqa: BLE001 - any failure here is the finding
+        return Check("Audio system", FAIL, f"no usable audio system: {e}", pkg_cmd(PIPEWIRE_TOOLS))
+    if not inputs:
+        return Check("Audio system", WARN, f"{which}: no inputs found", "Connect a microphone, then check again")
+    if which == "pipewire":
+        return Check("Audio system", OK, f"PipeWire, {len(inputs)} input{'s' if len(inputs) != 1 else ''}")
+    note = "" if os.name == "nt" else " (PipeWire does not run the audio here: no computer audio or listening)"
+    return Check("Audio system", WARN if note else OK,
+                 f"PortAudio, {len(inputs)} input{'s' if len(inputs) != 1 else ''}{note}",
+                 "" if not note else "Switching the session to PipeWire enables them; see the Audio devices line")
 
 
 def _x11_session(env=None) -> bool:
@@ -198,7 +220,8 @@ def check_python() -> Check:
     want = (paths.repo_root() / ".python-version")
     have = f"{sys.version_info.major}.{sys.version_info.minor}"
     pinned = want.read_text().strip() if want.exists() else have
-    managed = "/uv/python/" in sys.base_prefix or "/uv/python/" in os.path.realpath(sys.executable)
+    marker = f"{os.sep}uv{os.sep}python{os.sep}"
+    managed = marker in sys.base_prefix or marker in os.path.realpath(sys.executable)
     if not have.startswith(pinned):
         return Check("Python", FAIL, f"running {have}, project pins {pinned}", "Run ./install.sh again")
     if not managed:
@@ -297,7 +320,8 @@ def check_worker(gpu: bool = True) -> list[Check]:
         else:
             driver = {FEDORA: "Install the NVIDIA driver (RPM Fusion akmod-nvidia)",
                       DEBIAN: "Install the NVIDIA driver: sudo ubuntu-drivers install",
-                      ARCH: "Install the NVIDIA driver: sudo pacman -S nvidia"}.get(distro(), "Install the NVIDIA driver")
+                      ARCH: "Install the NVIDIA driver: sudo pacman -S nvidia",
+                      WINDOWS: "Install the NVIDIA driver from nvidia.com"}.get(distro(), "Install the NVIDIA driver")
             checks.append(Check("GPU", WARN, "no CUDA GPU visible; transcription will run on CPU (slow)", driver))
     if not models.hf_token_present():
         checks.append(Check("Hugging Face login", FAIL if not models.all_cached() else OK,
@@ -319,8 +343,10 @@ def run_all(gpu: bool = True) -> list[Check]:
     checks: list[Check] = []
     if warning:
         checks.append(Check("Settings", WARN, warning))
-    checks.append(check_pipewire())
-    checks += [c for c in (check_audio_nodes(), check_display()) if c is not None]
+    if os.name != "nt":
+        checks.append(check_pipewire())
+        checks += [c for c in (check_audio_nodes(), check_display()) if c is not None]
+    checks.append(check_audio_backend())
     checks += check_ffmpeg()
     checks.append(check_python())
     checks.append(check_lock())

@@ -20,6 +20,7 @@ import json
 import os
 import secrets
 import shutil
+import sys
 import time
 import urllib.parse
 from dataclasses import asdict, dataclass, field
@@ -275,9 +276,23 @@ class Library:
         rec.save()
         return rec
 
-    def delete(self, rec: Recording) -> Path:
-        """Move the folder to the desktop trash (or <data>/trash). Returns the new location."""
-        return move_to_trash(rec.folder, self.data_dir / "trash")
+    def delete(self, rec: Recording) -> Path | None:
+        """Move the folder to the desktop trash, or to <data>/trash where there is none.
+        Returns the new location when it is known."""
+        if os.name != "nt" and sys.platform != "darwin":
+            # Linux: the freedesktop trash, written here so the folders are resolved at call time.
+            return move_to_trash(rec.folder, self.data_dir / "trash")
+        try:
+            from send2trash import send2trash
+
+            send2trash(str(rec.folder))
+            return None
+        except Exception:  # noqa: BLE001 - no usable trash (network drive): keep it ourselves
+            dest_dir = self.data_dir / "trash"
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            dest = dest_dir / rec.folder.name
+            shutil.move(str(rec.folder), dest)
+            return dest
 
 
 def move_to_trash(path: Path, fallback_dir: Path) -> Path:

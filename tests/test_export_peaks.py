@@ -60,3 +60,13 @@ def test_peaks_cached_and_snap_finds_pause(rec, monkeypatch, tmp_path):
     assert 2.0 <= peaks.snap(p, 1.85) <= 2.2
     # In the middle of loud audio with no pause nearby, the point stays close.
     assert abs(peaks.snap(p, 0.8) - 0.8) <= 0.3
+
+
+def test_suggested_names_are_safe_on_windows(tmp_path):
+    from echo_app.export import suggested_name
+    from echo_app.library import Library
+
+    lib = Library(tmp_path / "data")
+    for title, expected in (("CON", "_CON.txt"), ("nul.backup", "_nul.backup.txt"), ("Notas...", "Notas.txt"),
+                            ("a/b: c?", "a_b_ c_.txt"), ("Lpt3 ", "_Lpt3.txt")):
+        assert suggested_name(lib.create(title, "imported"), ".txt") == expected, title

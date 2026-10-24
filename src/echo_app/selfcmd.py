@@ -8,9 +8,18 @@ import sys
 from . import paths
 
 
+def interpreter() -> str:
+    """On Windows the windowless pythonw.exe, so background processes never open a console."""
+    if os.name == "nt":
+        w = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
+        if os.path.exists(w):
+            return w
+    return sys.executable
+
+
 def command(*args: str) -> list[str]:
     # -P: never put the current directory on sys.path.
-    return [sys.executable, "-P", "-m", "echo_app", *args]
+    return [interpreter(), "-P", "-m", "echo_app", *args]
 
 
 def env() -> dict[str, str]:

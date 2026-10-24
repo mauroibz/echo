@@ -15,6 +15,9 @@ from echo_app.library import NEEDS_FINALIZE, READY, RECORDING, Library
 
 FAKE = Path(__file__).with_name("fake_capture.py")
 RATE = 16000  # keeps tests light; the engine is rate-agnostic
+KILL = getattr(signal, "SIGKILL", signal.SIGTERM)
+# These tests send POSIX signals (SIGKILL, SIGSTOP, the old SIGUSR controls) to the processes.
+posix_only = pytest.mark.skipif(os.name == "nt", reason="POSIX signals")
 
 
 @pytest.fixture
@@ -27,10 +30,10 @@ def lib(tmp_path, monkeypatch):
     for rec in lib.all():
         s = recorder.Session(rec)
         if s.alive():
-            os.kill(s.supervisor_pid, signal.SIGKILL)
+            os.kill(s.supervisor_pid, KILL)
         for t in (recorder.load_session(rec) or {}).get("takes", []):
             try:
-                os.kill(t["pid"], signal.SIGKILL)
+                os.kill(t["pid"], KILL)
             except (ProcessLookupError, TypeError):
                 pass
 
@@ -146,6 +149,7 @@ def test_refuses_to_start_on_low_disk(lib, monkeypatch):
     assert lib.all() == []
 
 
+@posix_only
 def test_supervisor_killed_capture_adopted(lib):
     s = recorder.start(lib, rate=RATE)
     time.sleep(1.5)
@@ -165,6 +169,7 @@ def test_supervisor_killed_capture_adopted(lib):
     assert len(recorder.load_session(s.rec) or {}) == 0  # takes dir removed with session
 
 
+@posix_only
 def test_everything_killed_then_recovered(lib):
     s = recorder.start(lib, rate=RATE)
     time.sleep(2.0)
@@ -230,6 +235,7 @@ def test_commands_are_files_and_none_is_lost(lib):
     assert s.stop(wait=20) == "ready"
 
 
+@posix_only
 def test_signals_still_control_the_supervisor(lib):
     s = recorder.start(lib, rate=RATE)
     os.kill(s.supervisor_pid, signal.SIGUSR1)
@@ -254,6 +260,7 @@ def test_liveness_needs_the_token_and_a_fresh_heartbeat(lib):
     s.stop(wait=20)
 
 
+@posix_only
 def test_hung_supervisor_is_left_alone(lib, monkeypatch):
     s = recorder.start(lib, rate=RATE)
     pid = s.supervisor_pid
@@ -273,6 +280,7 @@ def test_hung_supervisor_is_left_alone(lib, monkeypatch):
     assert s.stop(wait=20) == "ready"
 
 
+@posix_only
 def test_recording_from_the_previous_version_is_still_controlled(lib):
     """A session without a token (started before the upgrade) is recognized by its heartbeat
     and stopped with a signal."""
@@ -324,6 +332,7 @@ def test_markers_follow_captured_audio_across_pauses(lib):
     assert ats == sorted(ats) and m.duration > ats[-1]
 
 
+@posix_only
 def test_markers_survive_a_crash(lib):
     s = recorder.start(lib, rate=RATE)
     time.sleep(1.0)

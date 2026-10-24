@@ -16,8 +16,15 @@ TEXT_FORMATS = {".txt": "Text", ".md": "Markdown", ".srt": "SubRip subtitles", "
                 ".json": "JSON with passage times"}
 
 
+# Names Windows refuses for files whatever the extension.
+_RESERVED = {"con", "prn", "aux", "nul", *(f"com{i}" for i in range(1, 10)), *(f"lpt{i}" for i in range(1, 10))}
+
+
 def suggested_name(rec: Recording, ext: str) -> str:
-    safe = "".join(c if c.isalnum() or c in " -_.,()" else "_" for c in rec.meta.title).strip() or rec.id
+    safe = "".join(c if c.isalnum() or c in " -_.,()" else "_" for c in rec.meta.title).strip()
+    safe = safe.rstrip(". ")[:120] or rec.id  # Windows drops trailing dots and spaces
+    if safe.split(".")[0].lower() in _RESERVED:
+        safe = f"_{safe}"
     return f"{safe}{ext}"
 
 

@@ -19,7 +19,10 @@ log = logging.getLogger(__name__)
 
 
 def server_name() -> str:
-    return f"echo-app-{os.getuid()}"
+    import getpass
+
+    # Per user: the uid on POSIX, the account name on Windows (named pipes are machine-wide).
+    return f"echo-app-{os.getuid() if hasattr(os, 'getuid') else getpass.getuser()}"
 
 
 def forward_to_running(files: list[str]) -> bool:

@@ -40,6 +40,9 @@ tag.
   `echo-app tag` and `echo-app list --tag`.
 - Watched folders: new audio files in chosen folders are imported automatically, in the window
   or with `echo-app import --watch`.
+- Windows support, not yet tested on a real machine: `install.ps1` and `uninstall.ps1`, a
+  PortAudio audio backend (also used on Linux where PipeWire does not run the sound), Windows
+  folders, and CUDA or CPU transcription.
 
 ### Fixed
 

@@ -31,6 +31,8 @@ def on_int(*_):
 
 
 signal.signal(signal.SIGINT, on_int)
+if hasattr(signal, "SIGBREAK"):  # Windows: the recorder stops a capture with a console break
+    signal.signal(signal.SIGBREAK, on_int)
 chunk_frames = bps // 2 // 20  # 50 ms chunks (mono assumption is fine for tests)
 counter = 0
 start = time.monotonic()
