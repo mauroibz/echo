@@ -129,6 +129,9 @@ Model versions are pinned, and only weights and configuration are downloaded, ne
   times), find with Ctrl+F, export with Ctrl+E. View → Passage times (Ctrl+T) shows when each
   passage starts. While playing, the current passage is highlighted, in edited text too.
   Subtitles and timed exports use your edited text, placed on the passages it came from.
+- **Check what matters.** Passages Echo is unsure of are shaded, with the reason on hover
+  ("very few words for 12 s of speech", "the model was unsure of it"); the status line and the
+  list count them. Editing a passage clears its mark.
 - **Other languages.** Spanish is the default. The transcript's menu (⋯ → Language) sets a
   recording's language and transcribes it again; Settings → Transcription language changes the
   default. The model handles Arabic, Chinese, Dutch, English, French, German, Greek, Italian,

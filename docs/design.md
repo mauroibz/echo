@@ -127,7 +127,18 @@ mayúsculas, tildes y signos de puntuación."). In one 102-passage test chapter 
 passages transcribed without punctuation from 48 to 1. Naming people and terms there also fixes
 their spelling. If a passage comes back implausibly short (under 0.4 words per second), it is
 retried with the style sentence only, then with no context, so context can never silently drop
-speech.
+speech. The same happens when the model was very unsure of a passage (mean token log-probability
+below -0.5; ordinary passages measured -0.01 to -0.17): with the dictionary's sentence in the
+context, one 8-second passage came back as a confident-sounding fragment ("Debido a que no se
+puede", -1.17) that had enough words to pass the first check, and the retry recovered the
+sentence. The more confident text is kept.
+
+Each passage in `transcript.json` (version 2) carries `flags` and its `logprob`: `retried`
+(the kept text came from a retry), `short` (still short after the retries) and `low` (more than
+1.5 standard deviations below the recording's mean log-probability, computed when the job ends;
+fixed thresholds do not carry over between microphones). Asking `generate` for the scores cost
+1.3% of GPU time on a 20-minute recording. The editor shades a flagged passage while its text is
+still the model's, using the same alignment as the margin, so editing it clears the mark.
 
 ### Dictionary
 

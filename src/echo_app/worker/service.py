@@ -26,6 +26,8 @@ log = logging.getLogger(__name__)
 SAMPLE_RATE = 16000
 PARTIAL = "transcript.partial.json"
 POLL = 2.0
+LOW_SD = 1.5  # a passage this many standard deviations below the recording's mean log-probability is "low"
+LOW_MIN_PASSAGES = 5  # fewer passages give no meaningful spread
 
 
 class EngineLike(Protocol):
@@ -100,6 +102,20 @@ def quietest_fn(audio: np.ndarray):
         return lo + float(np.argmin(rms)) * frame / SAMPLE_RATE
 
     return quietest
+
+
+def mark_low(segments: list[dict]) -> None:
+    """Flag passages the model was unusually unsure of, relative to the rest of this recording:
+    fixed thresholds do not carry over between microphones and speakers."""
+    lps = [s["logprob"] for s in segments if s.get("logprob") is not None and s.get("text")]
+    if len(lps) < LOW_MIN_PASSAGES:
+        return
+    mean = sum(lps) / len(lps)
+    sd = (sum((x - mean) ** 2 for x in lps) / len(lps)) ** 0.5
+    for s in segments:
+        lp = s.get("logprob")
+        if lp is not None and s.get("text") and sd > 0 and lp < mean - LOW_SD * sd and "low" not in s["flags"]:
+            s["flags"].append("low")
 
 
 class Worker:
@@ -219,7 +235,7 @@ class Worker:
             partial["results"] = {}
             atomic_write_json(rec.path(PARTIAL), partial)
         passages = planning.plan(partial["regions"], quietest_fn(audio))
-        results: dict[str, str] = partial.setdefault("results", {})
+        results: dict[str, dict | str] = partial.setdefault("results", {})
         todo = [i for i in range(len(passages)) if str(i) not in results]
         # Longest first keeps batches uniform in length.
         todo.sort(key=lambda i: passages[i].duration, reverse=True)
@@ -232,9 +248,13 @@ class Worker:
             self._check(rec, requested_at)
             batch = todo[pos:pos + max(1, self.engine.batch_size)]
             clips = [audio[int(passages[i].start * SAMPLE_RATE):int(passages[i].end * SAMPLE_RATE)] for i in batch]
-            texts = self.engine.transcribe(clips, adapter=adapter, context=context, language=language)
-            for i, text in zip(batch, texts):
-                results[str(i)] = text
+            if hasattr(self.engine, "transcribe_flagged"):
+                out = self.engine.transcribe_flagged(clips, adapter=adapter, context=context, language=language)
+            else:
+                out = [(t, [], None) for t in self.engine.transcribe(clips, adapter=adapter, context=context,
+                                                                     language=language)]
+            for i, (text, flags, logprob) in zip(batch, out):
+                results[str(i)] = {"text": text, "flags": flags, "logprob": logprob}
             atomic_write_json(rec.path(PARTIAL), partial)
             pos += len(batch)
             seconds = sum(passages[i].duration for i in batch)
@@ -244,11 +264,18 @@ class Worker:
             eta = (speech_total - done_s) / rate if rate > 0 else None
             self._progress(rec, "transcribing", done_s, speech_total, eta, started)
         self._check(rec, requested_at)
-        segments = [{"start": round(p.start + offset, 2), "end": round(p.end + offset, 2),
-                     "text": results.get(str(i), ""), "paragraph": p.paragraph}
-                    for i, p in enumerate(passages)]
+        segments = []
+        for i, p in enumerate(passages):
+            r = results.get(str(i), "")
+            r = r if isinstance(r, dict) else {"text": r}  # partial files from before the flags
+            seg = {"start": round(p.start + offset, 2), "end": round(p.end + offset, 2), "text": r.get("text", ""),
+                   "paragraph": p.paragraph, "flags": list(r.get("flags") or [])}
+            if r.get("logprob") is not None:
+                seg["logprob"] = r["logprob"]
+            segments.append(seg)
+        mark_low(segments)
         transcript = {
-            "version": 1, "language": language,
+            "version": 2, "language": language,
             "created": datetime.now().astimezone().isoformat(timespec="seconds"),
             "model": {k: info.get(k) for k in ("base", "adapter", "adapter_enabled")},
             "device": info.get("device"), "audio_sha256": rec.meta.sha256,

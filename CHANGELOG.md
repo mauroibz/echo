@@ -28,6 +28,10 @@ tag.
   moved, edited and removed, and Alt+arrows jump between them.
 - Transcription in 13 more languages besides Spanish (the transcript's menu, Settings, or
   `echo-app transcribe --language`); the Spanish adapter is used for Spanish only.
+- Passages to check: Echo shades passages that came back short, needed a retry or that the
+  model was unsure of, says why on hover and counts them. Passages the model was very unsure of
+  are now retried, which recovers sentences a context sentence occasionally turned into a
+  fragment.
 
 ### Fixed
 

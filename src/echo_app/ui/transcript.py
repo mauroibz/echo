@@ -57,6 +57,14 @@ def _estimate(duration: float | None) -> str:
     return f", in about {round(est)} minute{'s' if round(est) != 1 else ''}"
 
 
+def flag_reason(flag: str, seg: dict) -> str:
+    """Why a passage is marked, in words."""
+    seconds = max(0, round(float(seg.get("end", 0)) - float(seg.get("start", 0))))
+    return {"short": f"very few words for {seconds} s of speech",
+            "retried": "transcribed a second time because the first try came back too short",
+            "low": "the model was unsure of it"}.get(flag, flag)
+
+
 def _html(text: str) -> str:
     return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
@@ -176,6 +184,7 @@ class Editor(QPlainTextEdit):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.menu_hook = None  # callable(menu, position) adding actions for the clicked spot
+        self.tooltip_hook = None  # callable(position) -> tooltip text for that spot, or None
         self.margin = TimestampMargin(self)
         self.margin.hide()
         self.updateRequest.connect(lambda _r, _dy: self.margin.update())
@@ -206,6 +215,19 @@ class Editor(QPlainTextEdit):
             self.ctrl_clicked.emit(self.cursorForPosition(e.position().toPoint()).position())
             return
         super().mousePressEvent(e)
+
+    def event(self, e):
+        if e.type() == e.Type.ToolTip and self.tooltip_hook:
+            from PySide6.QtWidgets import QToolTip
+
+            pos = self.viewport().mapFromGlobal(e.globalPos())
+            tip = self.tooltip_hook(self.cursorForPosition(pos).position())
+            if tip:
+                QToolTip.showText(e.globalPos(), tip, self)
+            else:
+                QToolTip.hideText()
+            return True
+        return super().event(e)
 
     def contextMenuEvent(self, e):
         menu = self.createStandardContextMenu(e.pos())
@@ -311,6 +333,7 @@ class TranscriptPanel(QWidget):
         # While typing, passage positions follow the text a moment later (alignment of the edit).
         self._realign = QTimer(self, singleShot=True, interval=400, timeout=self._align_now)
         self._segments: list[dict] = []
+        self._flagged: list[tuple[int, int, dict]] = []
         self.show_timestamps = settings.load()[0].show_timestamps
         self._build()
         self.set_recording(None)
@@ -414,6 +437,7 @@ class TranscriptPanel(QWidget):
         cl.addStretch(1)
         pl.addWidget(column, 1)
         self.editor.menu_hook = self._menu_hook
+        self.editor.tooltip_hook = self._tooltip
 
         # One dictionary suggestion at a time, offered after the save that produced it.
         self.chip = QFrame()
@@ -585,12 +609,10 @@ class TranscriptPanel(QWidget):
     def _load_spans(self, rec: Recording):
         self._spans, self._corrections = [], []
         self._segments = shown_segments(rec)
+        self._align_now()
         if rec.is_edited():
-            self._align_now()
             return
         segs = self._segments
-        self._spans = segment_spans(segs)
-        self._update_margin()
         c = rec.corrected()
         if c:
             offsets = segment_offsets(segs)
@@ -617,6 +639,7 @@ class TranscriptPanel(QWidget):
         installed = features.transcription_installed()
         self.act_retx.setEnabled(installed)
         self.act_retx_base.setEnabled(installed and transcription.language_of(rec) == "es")
+        self._update_flag_count()
 
     def _update_notice(self, rec: Recording, st: str):
         n = self.notice
@@ -681,12 +704,44 @@ class TranscriptPanel(QWidget):
         self._realign.start()
 
     def _align_now(self):
-        """Passage spans of the editor's current text, aligned to the model's passages."""
+        """Passage spans of the editor's current text, aligned to the model's passages, and the
+        flagged passages whose text is still what the model wrote (editing one clears its mark)."""
         segs = self._segments
         text = self.editor.toPlainText()
-        self._spans = [(a, b, float(segs[k].get("start", 0.0))) for a, b, k in align.align(segs, text) if b > a] \
-            if segs else []
+        passages = [(a, b, k) for a, b, k in align.align(segs, text) if b > a] if segs else []
+        self._spans = [(a, b, float(segs[k].get("start", 0.0))) for a, b, k in passages]
+        self._flagged = [(a, b, segs[k]) for a, b, k in passages
+                         if segs[k].get("flags") and text[a:b].strip() == (segs[k].get("text") or "").strip()]
         self._update_margin()
+        self._apply_selections()
+        if self.rec is not None:
+            self._update_flag_count()
+
+    def _update_flag_count(self):
+        n = len(self._flagged)
+        base = self.status.text().split(" · ⚑")[0]
+        self.status.setText(base + (f" · ⚑ {n} passage{'s' if n != 1 else ''} to check" if n else ""))
+
+    def _flag_at(self, pos: int):
+        return next((seg for a, b, seg in self._flagged if a <= pos <= b), None)
+
+    def _tooltip(self, pos: int) -> str | None:
+        seg = self._flag_at(pos)
+        if seg is None:
+            return "Corrected by the dictionary. Right-click to undo." if self._correction_at(pos) else None
+        return "Check this passage: " + "; ".join(flag_reason(f, seg) for f in seg.get("flags", [])) + "."
+
+    def next_flagged(self) -> float | None:
+        """Move to the next passage to check after the cursor (wrapping); returns its start time."""
+        if not self._flagged:
+            return None
+        cur = self.editor.textCursor().position()
+        a, _b, seg = next(((a, b, sg) for a, b, sg in self._flagged if a > cur), self._flagged[0])
+        c = self.editor.textCursor()
+        c.setPosition(a)
+        self.editor.setTextCursor(c)
+        self.editor.ensureCursorVisible()
+        return float(seg.get("start", 0.0))
 
     def _update_margin(self):
         stamps = [(a, t) for a, _b, t in self._spans] if self.show_timestamps else None
@@ -1039,6 +1094,16 @@ class TranscriptPanel(QWidget):
     def _apply_selections(self):
         sels = []
         doc_end = self.editor.document().characterCount() - 1
+        for a, b, _seg in getattr(self, "_flagged", []):
+            s = QTextEdit.ExtraSelection()
+            fmt = QTextCharFormat()
+            fmt.setBackground(theme.color("amber", 0.16 if not theme.current().dark else 0.22))
+            s.format = fmt
+            cur = QTextCursor(self.editor.document())
+            cur.setPosition(min(a, doc_end))
+            cur.setPosition(min(b, doc_end), QTextCursor.MoveMode.KeepAnchor)
+            s.cursor = cur
+            sels.append(s)
         for a, b, _e in self._corrections:
             s = QTextEdit.ExtraSelection()
             fmt = QTextCharFormat()

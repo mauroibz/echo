@@ -63,8 +63,10 @@ def status_of(rec: Recording) -> Status:
     if t == T_FAILED:
         return Status("Transcription failed", K_ERROR, None, m.recovered)
     if t == T_DONE:
-        return Status("Edited" if rec.is_edited() else "Transcribed", K_EDITED if rec.is_edited() else K_DONE,
-                      None, m.recovered)
+        if rec.is_edited():
+            return Status("Edited", K_EDITED, None, m.recovered)
+        n = sum(1 for s in (rec.transcript() or {}).get("segments", []) if s.get("flags"))
+        return Status(f"Transcribed · ⚑ {n}" if n else "Transcribed", K_DONE, None, m.recovered)
     return Status("", K_NONE, None, m.recovered)
 
 

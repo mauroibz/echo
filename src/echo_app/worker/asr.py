@@ -46,6 +46,13 @@ def word_count(text: str, language: str = LANGUAGE) -> int:
     return len(text.split())
 
 
+# A passage whose mean token log-probability falls below this is retried like a short one.
+# Measured 2026-10-24: ordinary passages ranged from -0.01 to -0.17 on an audiobook and on a
+# desk microphone; a passage the dictionary's context sentence turned into a hallucinated
+# fragment ("Debido a que no se puede" for a sentence of eight seconds) scored -1.17.
+RETRY_BELOW_LOGPROB = -0.5
+
+
 def min_words(seconds: float) -> int:
     """Fewest words a passage of speech this long should produce (very conservative)."""
     return 1 if seconds < 2.5 else int(seconds * 0.4)
@@ -201,6 +208,7 @@ class Engine:
         self._vad = None
         self.device = "cpu"
         self.batch_size = 8
+        self.with_scores = True  # mean token log-probability per passage, for low-confidence marking
 
     # ---- loading ----
     def load(self) -> None:
@@ -281,15 +289,24 @@ class Engine:
     # ---- recognition ----
     def transcribe(self, clips: list[np.ndarray], adapter: bool = True, context: str | None = None,
                    language: str = LANGUAGE) -> list[str]:
-        """Transcribe int16 16 kHz clips (each at most ~30 s) in `language`.
+        """Transcribe int16 16 kHz clips (each at most ~30 s) in `language`."""
+        return [text for text, _flags, _lp in self.transcribe_flagged(clips, adapter, context, language)]
+
+    def transcribe_flagged(self, clips: list[np.ndarray], adapter: bool = True, context: str | None = None,
+                           language: str = LANGUAGE) -> list[tuple[str, list[str], float | None]]:
+        """(text, flags, mean token log-probability) per clip.
 
         A passage whose text is implausibly short for its length is retried with simpler
         context, keeping the fullest result, so a context quirk can never silently drop speech.
-        The Spanish adapter is only ever applied to Spanish.
+        Flags say what the user should check: "retried" when the kept text came from such a retry,
+        "short" when even the retries stayed short. The Spanish adapter is only applied to Spanish.
         """
         adapter = adapter and language == "es"
         words = lambda t: word_count(t, language)  # noqa: E731
-        texts = self._transcribe_batch(clips, adapter, context, language=language)
+        results = self._transcribe_batch(clips, adapter, context, language=language)
+        texts = [t for t, _lp in results]
+        logprobs = [lp for _t, lp in results]
+        flags: list[list[str]] = [[] for _ in clips]
         short = [i for i, (c, t) in enumerate(zip(clips, texts)) if words(t) < min_words(len(c) / SAMPLE_RATE)]
         for fallback in ((None, False), (None, True)) if short else ():
             extra, bare = fallback
@@ -297,18 +314,41 @@ class Engine:
                 break
             retry = self._transcribe_batch([clips[i] for i in short], adapter, extra, bare=bare, language=language)
             still = []
-            for i, t in zip(short, retry):
+            for i, (t, lp) in zip(short, retry):
                 if words(t) > words(texts[i]):
                     log.info("passage retried with %s context: %d -> %d words", "no" if bare else "style-only",
                              words(texts[i]), words(t))
-                    texts[i] = t
+                    texts[i], logprobs[i] = t, lp
+                    if "retried" not in flags[i]:
+                        flags[i].append("retried")
                 if words(texts[i]) < min_words(len(clips[i]) / SAMPLE_RATE):
                     still.append(i)
             short = still
-        return texts
+        for i in short:
+            flags[i].append("short")
+        # A passage the model was very unsure of may be a fragment the context sentence caused,
+        # with enough words to pass the check above: it gets the same retries, and the more
+        # confident text is kept.
+        unsure = [i for i, lp in enumerate(logprobs) if lp is not None and lp < RETRY_BELOW_LOGPROB]
+        for extra, bare in ((None, False), (None, True)) if unsure else ():
+            if not unsure:
+                break
+            retry = self._transcribe_batch([clips[i] for i in unsure], adapter, extra, bare=bare, language=language)
+            still = []
+            for i, (t, lp) in zip(unsure, retry):
+                if lp is not None and lp > logprobs[i] and words(t) >= words(texts[i]):
+                    log.info("unsure passage retried with %s context: %.2f -> %.2f", "no" if bare else "style-only",
+                             logprobs[i], lp)
+                    texts[i], logprobs[i] = t, lp
+                    if "retried" not in flags[i]:
+                        flags[i].append("retried")
+                if logprobs[i] < RETRY_BELOW_LOGPROB:
+                    still.append(i)
+            unsure = still
+        return list(zip(texts, flags, logprobs))
 
     def _transcribe_batch(self, clips: list[np.ndarray], adapter: bool, context: str | None,
-                          bare: bool = False, language: str = LANGUAGE) -> list[str]:
+                          bare: bool = False, language: str = LANGUAGE) -> list[tuple[str, float | None]]:
         """Halves the batch on GPU out-of-memory."""
         import torch
 
@@ -330,7 +370,7 @@ class Engine:
                     + self._transcribe_batch(clips[mid:], adapter, context, bare, language))
 
     def _run(self, clips: list[np.ndarray], adapter: bool, context: str | None, bare: bool = False,
-             language: str = LANGUAGE) -> list[str]:
+             language: str = LANGUAGE) -> list[tuple[str, float | None]]:
         import contextlib
 
         import torch
@@ -359,10 +399,21 @@ class Engine:
             model, guard = self._peft, contextlib.nullcontext()
         else:
             model, guard = self._peft, self._peft.disable_adapter()
+        scores = self.with_scores
         with torch.inference_mode(), guard:
-            out = model.generate(**inputs, max_new_tokens=max_new)
-        texts = self._processor.decode(out[:, prompt_len:], skip_special_tokens=True)
-        return [t.strip() for t in texts]
+            out = model.generate(**inputs, max_new_tokens=max_new, output_scores=scores,
+                                 return_dict_in_generate=scores)
+            if not scores:
+                texts = self._processor.decode(out[:, prompt_len:], skip_special_tokens=True)
+                return [(t.strip(), None) for t in texts]
+            # The log-probability of each chosen token, averaged over the passage's real tokens.
+            steps = model.compute_transition_scores(out.sequences, out.scores, normalize_logits=True)
+        gen = out.sequences[:, -steps.shape[1]:]
+        special = torch.tensor(self._processor.tokenizer.all_special_ids, device=gen.device)
+        real = ~torch.isin(gen, special)
+        mean = (steps.float() * real).sum(dim=1) / real.sum(dim=1).clamp(min=1)
+        texts = self._processor.decode(out.sequences[:, prompt_len:], skip_special_tokens=True)
+        return [(t.strip(), round(float(m), 4)) for t, m in zip(texts, mean.cpu())]
 
     def model_info(self, adapter: bool, language: str = LANGUAGE) -> dict:
         adapter = adapter and language == "es"
