@@ -3,7 +3,7 @@
 Notable changes to Echo. Versions are git tags (`vX.Y.Z`); `main` may be ahead of the latest
 tag.
 
-## Unreleased
+## 1.0.1 - 2026-10-24
 
 ### Changed
 
