@@ -186,7 +186,7 @@ def import_file(lib: Library, src: Path, hashes: dict[str, Recording] | None = N
 def _fmt(sec: float | None) -> str:
     if not sec:
         return "unknown length"
-    sec = int(round(sec))
+    sec = int(sec)  # truncate like every other duration display
     m, s = divmod(sec, 60)
     h, m = divmod(m, 60)
     return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
