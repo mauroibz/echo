@@ -29,7 +29,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from . import selfcmd
+from . import features, selfcmd
 from .audio import ffmpeg, pipewire
 from .fsutil import atomic_write_json, free_bytes, fsync_dir, fsync_path, read_json
 from .library import NEEDS_FINALIZE, READY, RECORDING, Library, Recording
@@ -528,6 +528,7 @@ class Supervisor:
                     self.state = S_PAUSED
                     paused_at = now
                     self._save_session()
+                    self._status()
             if "resume" in self._flags:
                 self._flags.discard("resume")
                 if self.state == S_PAUSED:
@@ -537,6 +538,7 @@ class Supervisor:
                     paused_at = None
                     if not self._start_take():
                         self._next_retry = now + 2.0
+                    self._status()
             if self.state == S_RECORDING:
                 self._check_capture(now)
                 if now - last_fsync >= FSYNC_EVERY and self.capture:
@@ -601,6 +603,11 @@ def finalize(rec: Recording, recovered: bool = False) -> str:
     shutil.rmtree(rec.takes_dir, ignore_errors=True)
     fsync_dir(rec.folder)
     log.info("%s: finalized %.1f s", rec.id, frames / rate)
+    try:
+        if features.auto_transcribe() and rec.transcript_status() == "none":
+            rec.request_transcription()
+    except OSError:
+        log.exception("could not queue transcription for %s", rec.id)
     return "ready"
 
 

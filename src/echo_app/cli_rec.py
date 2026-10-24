@@ -167,6 +167,33 @@ def cmd_finalize(args) -> int:
     return 0 if outcome != "failed" else 1
 
 
+def cmd_import(args) -> int:
+    from pathlib import Path
+
+    from . import importer
+
+    _, lib = _lib()
+    importer.clean_staging(lib)
+
+    def progress(i, n, path):
+        if path.name and sys.stdout.isatty():
+            print(f"\r  [{i + 1}/{n}] {path.name[:60]:<60}", end="", flush=True)
+
+    results = importer.import_paths(lib, [Path(p) for p in args.paths], progress=progress,
+                                    auto_transcribe=None if not args.no_transcribe else False)
+    if sys.stdout.isatty():
+        print("\r" + " " * 72 + "\r", end="")
+    if not results:
+        print("No audio files found.", file=sys.stderr)
+        return 1
+    marks = {importer.IMPORTED: "+", importer.DUPLICATE: "=", importer.REJECTED: "!"}
+    for r in results:
+        print(f"{marks[r.status]} {r.source.name}: {r.message}")
+    n = sum(r.status == importer.IMPORTED for r in results)
+    print(f"{n} imported, {len(results) - n} skipped.")
+    return 0 if n else 1
+
+
 def cmd_supervisor(args) -> int:
     from . import recorder
 
@@ -192,6 +219,10 @@ def register(sub) -> None:
     s = sub.add_parser("finalize", help="retry saving a recording whose raw audio was kept")
     s.add_argument("id")
     s.set_defaults(func=cmd_finalize)
+    s = sub.add_parser("import", help="import audio files or folders")
+    s.add_argument("paths", nargs="+")
+    s.add_argument("--no-transcribe", action="store_true", help="do not queue transcription")
+    s.set_defaults(func=cmd_import)
     s = sub.add_parser("_recorder")  # internal: the supervisor process
     s.add_argument("id")
     s.add_argument("--data-dir", required=True)

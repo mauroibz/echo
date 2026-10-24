@@ -20,6 +20,7 @@ class Settings:
     sample_rate: int = 48000
     channels: int = 1
     use_adapter: bool = True  # Spanish robustness LoRA on top of the base model
+    auto_transcribe: bool = True  # queue transcription when a recording or import finishes
     worker_idle_minutes: int = 5
 
     @property
@@ -33,6 +34,7 @@ _COMMENTS = {
     "sample_rate": "Recording sample rate in Hz",
     "channels": "1 = mono, 2 = stereo",
     "use_adapter": "Use the Spanish robustness adapter when transcribing",
+    "auto_transcribe": "Transcribe new recordings and imports automatically",
     "worker_idle_minutes": "Minutes before the idle transcription worker exits and frees GPU memory",
 }
 

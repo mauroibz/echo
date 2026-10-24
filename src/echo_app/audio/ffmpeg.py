@@ -31,7 +31,8 @@ def probe(path: Path) -> Probe:
          "-select_streams", "a", str(path)],
         capture_output=True, text=True, timeout=60)
     if r.returncode != 0:
-        raise FFmpegError(r.stderr.strip().splitlines()[-1] if r.stderr.strip() else "ffprobe failed")
+        msg = r.stderr.strip().splitlines()[-1] if r.stderr.strip() else "ffprobe failed"
+        raise FFmpegError(msg.replace(f"{path}: ", "").strip())
     d = json.loads(r.stdout or "{}")
     streams = d.get("streams") or []
     if not streams:

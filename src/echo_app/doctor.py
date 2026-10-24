@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import importlib.util
 import os
 import shutil
 import subprocess
@@ -10,7 +9,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import models, paths, settings
+from . import features, models, paths, settings
 from .fsutil import free_bytes
 
 OK, WARN, FAIL = "ok", "warn", "fail"
@@ -129,7 +128,7 @@ def check_data_dir(cfg: settings.Settings) -> list[Check]:
 
 
 def worker_installed() -> bool:
-    return all(importlib.util.find_spec(m) is not None for m in ("torch", "transformers", "peft", "silero_vad"))
+    return features.transcription_installed()
 
 
 def check_worker(gpu: bool = True) -> list[Check]:
