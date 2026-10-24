@@ -13,13 +13,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Local transcription. Pulls torch with bundled CUDA libraries (~3.5 GB).
-worker = [
-    "torch>=2.10",
-    "transformers>=5.12",
-    "peft>=0.19",
-    "silero-vad>=6.2",
-]
+# Local transcription, one extra per compute profile; they differ only in where torch comes
+# from. cuda: NVIDIA GPUs, torch from PyPI with bundled CUDA libraries (~3.5 GB). cpu: any
+# processor, torch's CPU-only wheels (~200 MB). rocm: AMD GPUs on Linux.
+cuda = ["torch>=2.10", "transformers>=5.12", "peft>=0.19", "silero-vad>=6.2"]
+cpu = ["torch>=2.10", "transformers>=5.12", "peft>=0.19", "silero-vad>=6.2"]
+rocm = ["torch>=2.10", "transformers>=5.12", "peft>=0.19", "silero-vad>=6.2",
+        "triton-rocm; sys_platform == 'linux'"]
 
 [dependency-groups]
 dev = ["pytest>=8"]
@@ -35,6 +35,25 @@ python-preference = "only-managed"
 exclude-newer = "2026-10-09T00:00:00Z"
 # Wheels only: no third-party build scripts run at install time.
 no-build = true
+conflicts = [[{ extra = "cuda" }, { extra = "cpu" }, { extra = "rocm" }]]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-rocm"
+url = "https://download.pytorch.org/whl/rocm7.2"
+explicit = true
+
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cpu", extra = "cpu" },
+    { index = "pytorch-rocm", extra = "rocm", marker = "sys_platform == 'linux'" },
+]
+# The ROCm build of torch needs ROCm's triton, which only that index has.
+triton-rocm = [{ index = "pytorch-rocm", extra = "rocm", marker = "sys_platform == 'linux'" }]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

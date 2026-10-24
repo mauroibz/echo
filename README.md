@@ -14,8 +14,8 @@
 
 Echo is a desktop app for Linux. It records from any microphone, or from whatever the computer
 is playing, imports audio from anywhere (WhatsApp voice notes included), and transcribes
-Spanish speech on your NVIDIA GPU. Nothing is uploaded: after a one-time model download it
-works offline.
+Spanish speech on your own computer, on an NVIDIA or AMD graphics card or on the processor.
+Nothing is uploaded: after a one-time model download it works offline.
 
 It is made for long, unscripted speech: thinking out loud, interviews, meetings, hours of
 voice notes.
@@ -27,8 +27,8 @@ voice notes.
   reached the disk, and the next start recovers the recording by itself. Finished recordings
   are lossless FLAC, kept only after Echo checks they decode to exactly what was captured.
 - **Transcribes long recordings well.** Speech is split at natural pauses into passages and
-  paragraphs with timing, punctuation and accents. An RTX 3080 transcribes about an hour of
-  audio per minute.
+  paragraphs with timing, punctuation and accents. An RTX 3080 transcribes an hour of audio in
+  under a minute; a 6-core desktop processor in about five.
 - **Imports anything.** Drag files or folders onto the window. WhatsApp voice notes (`.opus`,
   `.m4a`, `.amr`) are recognized and dated from their names, and duplicates are skipped.
 - **Lets you work with the text.** Click a recording to read its transcript, edit it (edits
@@ -47,9 +47,16 @@ with the [Surus Spanish adapter](https://huggingface.co/surus-ai/cohere-transcri
 - Linux with PipeWire (the default on current Fedora, Ubuntu, Debian and Arch desktops)
 - `ffmpeg`
 - [`uv`](https://docs.astral.sh/uv/), which installs Echo's own Python
-- For transcription: an NVIDIA GPU with 8 GB of memory or more, its driver, and about 8 GB of
-  disk for the libraries and the model. Without a GPU Echo still records, imports, plays and
-  edits.
+- For transcription, one of:
+  - an NVIDIA GPU with 8 GB of memory or more and its driver: an hour of audio in under a
+    minute (RTX 3080);
+  - any 64-bit processor with 8 GB of RAM: an hour of audio in about five minutes on a 6-core
+    Ryzen 5 7600X, longer on smaller machines;
+  - an AMD GPU on Linux with ROCm (supported by the installer but not yet tested on real
+    hardware; please report how it goes).
+
+  Plus about 5 GB of disk for the model, and 1 GB (processor) to 5 GB (GPU) for the libraries.
+  Without transcription Echo still records, imports, plays and edits.
 
 Install the system packages:
 
@@ -72,6 +79,11 @@ git clone https://github.com/mauroibz/echo.git ~/apps/echo
 cd ~/apps/echo
 ./install.sh --with-transcription     # or ./install.sh for recording only
 ```
+
+`--with-transcription` picks the build for your hardware (NVIDIA, AMD or the processor) and
+says which. To choose yourself: `--with-transcription=cuda`, `=rocm` or `=cpu`. Echo tells you
+how long transcription takes on your computer once it has done a first job; Help → Check
+setup shows it.
 
 Echo then appears in your application menu. From a terminal, run `echo-app`.
 
@@ -190,7 +202,7 @@ Logs are in `~/.local/state/echo/`.
 ## Development
 
 ```sh
-uv sync --locked --extra worker     # full environment including test tools
+uv sync --locked --extra cuda       # full environment including test tools (or cpu, rocm)
 uv run --no-sync pytest             # fast suite, no GPU or microphone needed
 ECHO_PIPEWIRE_TESTS=1 uv run --no-sync pytest tests/test_pipewire_integration.py   # records the default input
 ECHO_MODEL_TESTS=1 uv run --no-sync pytest tests/test_model_smoke.py               # needs the GPU and model

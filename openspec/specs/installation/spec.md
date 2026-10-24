@@ -31,13 +31,21 @@ with the project definition.
 - **THEN** the installer stops with an error naming the lockfile and does not install
 
 ### Requirement: Install profiles
-The installer SHALL offer a base profile (recording, library, editor) and a full profile that
-adds local transcription. The base profile SHALL NOT install GPU or machine-learning packages.
+The installer SHALL offer a base profile (record, import, play, edit) and three mutually
+exclusive transcription profiles: `cuda` for NVIDIA GPUs, `cpu` for any x86-64 or arm64
+processor, and `rocm` for AMD GPUs on Linux. `--with-transcription` without a value SHALL pick
+the profile matching the detected hardware and say so. All profiles SHALL come from the single
+hash-locked `uv.lock` as prebuilt wheels. The profile SHALL be remembered for updates, and
+`doctor` SHALL report it and whether the hardware matches.
 
-#### Scenario: Base profile
-- **WHEN** the installer runs without the transcription option
-- **THEN** recording and the library work, and transcription actions explain that the
-  transcription components are not installed
+#### Scenario: Laptop without a GPU
+- **WHEN** the user runs `./install.sh --with-transcription` on a machine with no NVIDIA or AMD GPU
+- **THEN** the `cpu` profile is installed, about 200 MB of torch is downloaded, and the
+  installer says transcription will run on the processor
+
+#### Scenario: Wrong profile for the hardware
+- **WHEN** the `cuda` profile is installed and no NVIDIA driver is present
+- **THEN** doctor warns and suggests `./install.sh --with-transcription=cpu`
 
 ### Requirement: Uninstall
 The uninstaller SHALL remove launchers and desktop entries it created and SHALL leave the

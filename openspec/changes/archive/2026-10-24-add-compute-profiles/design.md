@@ -74,3 +74,35 @@ or the profile's expected range before the first job.
 - ROCm wheel availability for CPython 3.14 lags CUDA; if the pinned torch has no ROCm 3.14
   wheel the `rocm` extra waits for the next torch release, with the others shipped.
 - int8 may hurt the adapter more than the base model; the agreement check covers it.
+
+## Decisions made while implementing
+
+- **Profile detection** reads torch's version tag through `importlib.metadata` (`+cpu`,
+  `+rocm7.2`, none for PyPI's CUDA build) instead of `.install-profile`, because the package is
+  what actually runs even after a manual `uv sync`. `.install-profile` is still written and read
+  by the installer; `full` is read as `cuda`.
+- **ROCm index** is `rocm7.2`, the build PyTorch publishes for torch 2.14 on CPython 3.14.
+  torch 2.14's ROCm wheel depends on `triton-rocm`, which only that index has, so it is listed
+  in the `rocm` extra with an index source (uv requires a source restricted to an extra to be
+  named in that extra). Without it the resolver backtracked through every older torch.
+- **Verification of 1.1**: `uv export --extra cuda` is identical to the old `--extra worker`
+  export (60 packages). The `cpu` profile was installed by `./install.sh
+  --with-transcription=cpu` in an `ubuntu:24.04` container: torch `2.14.1+cpu`, a 1.2 GB
+  environment instead of 5.6 GB, profile read back as `cpu`, doctor warning about the NVIDIA
+  GPU it could see. `rocm` resolves; it was not installed (no AMD GPU here).
+- **Measurement (2.1, 2.2)** on a 6-core Ryzen 5 7600X rather than an 8-core machine (the
+  one available), with the user's own 6.4-minute recording and LibriVox audiobook chapters
+  (Galdós, "Miau", public domain) for 20.7 and 62.3 minutes; numbers in `docs/design.md`.
+  Thread count: physical cores (6) beat 11 threads for float32, 5.4× against 4.6×.
+- **Chosen CPU configuration**: int8 dynamic quantization of every `nn.Linear` except the LoRA
+  layers (PEFT reads `lora_A.weight.dtype`, which a quantized layer no longer has), batch 4.
+  It is the fastest configuration over the 99% bar on all three recordings (99.02% at worst).
+  bf16 also passes, at 99.96% or better and about half the speed; it is documented as the
+  alternative but not used, since the spec asks for the fastest passing configuration.
+- **Batch size** by `MemAvailable`: 4 from 6 GB free, 2 from 3 GB, else 1. A `MemoryError` or
+  an allocator failure halves the batch like a GPU out-of-memory, and at batch 1 fails with a
+  CPU-worded message.
+- **Speed file**: the last ten jobs per key (`cuda`, `rocm`, or `cpu` whenever the model ran on
+  the processor), model load and speech detection included; resumed jobs are not recorded.
+  The estimate before any job is 1 minute per hour (GPU) and 5 (CPU), from the measurement.
+- **2.4**: no AMD GPU was available; the README says the `rocm` profile is untested.

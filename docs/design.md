@@ -119,6 +119,32 @@ configurable idle time to free GPU memory.
 Measured on an RTX 3080: 20 minutes of speech in 18 seconds and 32 minutes in 23 seconds,
 including model load.
 
+### On the processor
+
+The same model runs on the CPU with the same planning and output. The engine there uses int8
+weights for the linear layers (dynamic quantization; the LoRA layers stay float), one thread
+per physical core, and batches of four passages when 6 GB of memory are free. Measured on a
+Ryzen 5 7600X (6 cores, AVX-512 BF16) against the GPU output on the same passages, with word
+agreement in parentheses (lower case, punctuation ignored):
+
+| Recording | GPU (RTX 3080) | float32 | bf16 | int8 | int8, batch 4 |
+|---|---|---|---|---|---|
+| 6.4 min, own microphone | 134× | 5.0× (99.90%) | 9.8× (100%) | 13.5× (99.90%) | 17.1× (99.90%) |
+| 20.7 min, audiobook chapter | 164× | 5.4× (99.93%) | 9.8× (99.97%) | 13.9× (99.20%) | 19.1× (99.17%) |
+| 62.3 min, four chapters | 176× | 5.3× (99.84%) | 9.5× (99.96%) | 13.3× (99.06%) | 16.8× (99.02%) |
+
+Speeds are seconds of audio per second of recognition; speech detection adds about 25 s per
+hour of audio on either device, and loading the model 3 s (GPU) or 9 s (CPU, quantizing). With
+11 threads instead of 6, float32 was slower (4.6× against 5.4×): hyperthreads share the vector
+units. So an hour of audio takes about 50 seconds on the GPU and four to five minutes on this
+processor.
+
+The rule was to keep the fastest configuration that agrees with the GPU on at least 99% of
+words on all three recordings; int8 with batches of four is it. Most of its differences are
+punctuation, and in several places it kept words the GPU run dropped. bf16 agrees more closely
+(99.96% or better) at half the speed and needs a CPU with native bf16 (AVX-512 BF16 or AMX);
+it is the choice if the remaining int8 differences turn out to matter in daily use.
+
 ## Window
 
 PySide6 (`PySide6-Essentials` only). Playback is ffmpeg piped into `pw-play`, which avoids
@@ -142,9 +168,17 @@ the desktop's own text face.
 | Launcher, menu entry, icon | `~/.local/bin`, `~/.local/share/applications`, `~/.local/share/icons` |
 | Models | `~/.cache/huggingface/hub` |
 
-Two install profiles: the default has PySide6 and numpy and records, imports, plays and edits;
-`--with-transcription` adds torch, transformers, peft and silero-vad. CUDA libraries come inside
-the torch wheels, so the host needs only the NVIDIA driver.
+The default install has PySide6 and numpy and records, imports, plays and edits.
+`--with-transcription` adds torch, transformers, peft and silero-vad in one of three compute
+profiles, uv extras that differ only in where torch comes from: `cuda` (PyPI's torch, with the
+CUDA libraries inside the wheels, so the host needs only the NVIDIA driver; about 5 GB),
+`cpu` (PyTorch's CPU-only wheels; about 1 GB) and `rocm` (PyTorch's ROCm wheels, Linux only).
+The extras conflict with each other and the PyTorch indexes are `explicit`, so one hash-locked
+`uv.lock` covers all three and nothing else is ever resolved from those indexes. The installer
+picks the profile from the hardware (`nvidia-smi` or `/proc/driver/nvidia`, then `/dev/kfd`);
+the profile in use is read back from torch's version tag (`+cpu`, `+rocm7.2`). Each finished
+job records its speed in `~/.local/state/echo/speed.json`, from which the window, the model
+dialog and doctor say how long transcription takes on this computer.
 
 A GitHub Actions workflow (`.github/workflows/test.yml`) runs the fast suite on Ubuntu and in a
 Fedora container on every push and checks that the transcription profile still resolves from the

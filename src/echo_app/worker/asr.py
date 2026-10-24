@@ -47,11 +47,78 @@ class NotEnoughMemory(RuntimeError):
 
 OOM_MESSAGE = ("Not enough GPU memory for the transcription model (it needs about 5 GB free). "
                "Close other programs that use the GPU and try again.")
+CPU_OOM_MESSAGE = ("Not enough memory for the transcription model (it needs about 6 GB free). "
+                   "Close other programs and try again.")
 
 
 def is_oom(e: BaseException) -> bool:
-    """CUDA out-of-memory arrives as OutOfMemoryError or as a generic AcceleratorError."""
-    return e.__class__.__name__ == "OutOfMemoryError" or "out of memory" in str(e).lower()
+    """CUDA out-of-memory arrives as OutOfMemoryError or as a generic AcceleratorError; on the
+    processor it is MemoryError, or a RuntimeError from the allocator."""
+    if isinstance(e, MemoryError):
+        return True
+    msg = str(e).lower()
+    return e.__class__.__name__ == "OutOfMemoryError" or "out of memory" in msg or "failed to allocate" in msg
+
+
+def physical_cores() -> int:
+    """Physical cores: hyperthread siblings share the vector units, so more threads than cores
+    is slower (5.4x against 4.6x real time with 6 against 11 threads on a 6-core Ryzen)."""
+    cores = set()
+    try:
+        with open("/proc/cpuinfo") as f:
+            phys = core = None
+            for line in f:
+                key, _, value = line.partition(":")
+                key = key.strip()
+                if key == "physical id":
+                    phys = value.strip()
+                elif key == "core id":
+                    core = value.strip()
+                elif not key and core is not None:
+                    cores.add((phys, core))
+                    phys = core = None
+            if core is not None:
+                cores.add((phys, core))
+    except OSError:
+        pass
+    if cores:
+        return len(cores)
+    logical = os.cpu_count() or 2
+    return max(1, logical // 2 if logical >= 4 else logical)
+
+
+def available_memory() -> int | None:
+    try:
+        with open("/proc/meminfo") as f:
+            for line in f:
+                if line.startswith("MemAvailable:"):
+                    return int(line.split()[1]) * 1024
+    except (OSError, ValueError):
+        pass
+    return None
+
+
+def cpu_batch_size(available: int | None) -> int:
+    """Passages per batch on the processor: 4 is fastest (17x against 13.5x real time at 1);
+    each extra passage needs roughly 0.5 GB of activations at the 28-second passage limit."""
+    if available is None:
+        return 2
+    if available >= 6_000_000_000:
+        return 4
+    return 2 if available >= 3_000_000_000 else 1
+
+
+def quantize_for_cpu(peft_model) -> None:
+    """int8 weights for the linear layers, computed per batch (dynamic quantization).
+
+    The LoRA adapter's own small layers stay in float: PEFT reads their weight dtype, and they
+    are a negligible part of the work.
+    """
+    import torch
+
+    spec = {name: torch.ao.quantization.default_dynamic_qconfig for name, m in peft_model.named_modules()
+            if isinstance(m, torch.nn.Linear) and "lora_" not in name}
+    torch.ao.quantization.quantize_dynamic(peft_model, spec, dtype=torch.qint8, inplace=True)
 
 
 def _quiet_libraries() -> None:
@@ -151,16 +218,18 @@ class Engine:
             from peft import PeftModel
 
             peft = PeftModel.from_pretrained(model, models.snapshot_dir(models.ADAPTER)).eval()
+            if not cuda:
+                quantize_for_cpu(peft)
         except Exception as e:
             if is_oom(e):
                 self._release()
-                raise NotEnoughMemory(OOM_MESSAGE) from e
+                raise NotEnoughMemory(OOM_MESSAGE if cuda else CPU_OOM_MESSAGE) from e
             raise
         self._model, self._peft = model, peft
         if not cuda:
-            torch.set_num_threads(max(1, (os.cpu_count() or 2) - 1))
-            self.batch_size = 1
-        log.info("model loaded on %s", self.device)
+            torch.set_num_threads(physical_cores())
+            self.batch_size = cpu_batch_size(available_memory())
+        log.info("model loaded on %s (batch %d, %d threads)", self.device, self.batch_size, torch.get_num_threads())
 
     def _release(self) -> None:
         import gc
@@ -231,12 +300,14 @@ class Engine:
         except Exception as e:
             if not is_oom(e):
                 raise
-            torch.cuda.empty_cache()
+            if self.device != "cpu":
+                torch.cuda.empty_cache()
             if len(clips) == 1:
-                raise NotEnoughMemory(OOM_MESSAGE) from e
+                raise NotEnoughMemory(OOM_MESSAGE if self.device != "cpu" else CPU_OOM_MESSAGE) from e
             mid = len(clips) // 2
             self.batch_size = max(1, mid)
-            log.warning("GPU out of memory; batch size now %d", self.batch_size)
+            log.warning("out of %smemory; batch size now %d", "GPU " if self.device != "cpu" else "",
+                        self.batch_size)
             return (self._transcribe_batch(clips[:mid], adapter, context, bare)
                     + self._transcribe_batch(clips[mid:], adapter, context, bare))
 

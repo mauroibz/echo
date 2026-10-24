@@ -248,11 +248,34 @@ def worker_installed() -> bool:
     return features.transcription_installed()
 
 
+def check_profile(profile: str | None = None, hardware: str | None = None) -> Check:
+    """The installed compute profile against the hardware install.sh would pick."""
+    profile = profile or features.compute_profile()
+    hardware = hardware or features.detected_hardware()
+    from . import transcription
+
+    detail = f"{profile}: runs on the {features.PROFILE_LABELS[profile]}"
+    if profile == hardware:
+        speed = transcription.speed_text()
+        return Check("Compute profile", OK, detail + (f". {speed}" if speed else ""))
+    if profile in (features.CUDA, features.ROCM) and hardware == features.CPU:
+        gpu = "NVIDIA driver" if profile == features.CUDA else "AMD GPU (/dev/kfd)"
+        return Check("Compute profile", WARN, f"{detail}, but no {gpu} was found",
+                     "./install.sh --with-transcription=cpu  (a much smaller download that runs well on the processor)")
+    return Check("Compute profile", WARN, f"{detail}, but this computer has an {features.PROFILE_LABELS[hardware]}",
+                 f"./install.sh --with-transcription={hardware}")
+
+
 def check_worker(gpu: bool = True) -> list[Check]:
     if not worker_installed():
         return [Check("Transcription", WARN, "transcription components not installed",
                       "./install.sh --with-transcription")]
-    checks = [Check("Transcription", OK, "torch, transformers, peft, silero-vad installed")]
+    checks = [Check("Transcription", OK, "torch, transformers, peft, silero-vad installed"), check_profile()]
+    if features.compute_profile() == features.CPU:
+        cores = os.cpu_count() or 1
+        checks.append(Check("Processor", OK if cores >= 4 else WARN, f"{cores} threads",
+                            "" if cores >= 4 else "Transcription on fewer than 4 threads is slow"))
+        gpu = False
     if gpu:
         code = ("import torch,json;ok=torch.cuda.is_available();"
                 "print(json.dumps([ok, torch.cuda.get_device_name(0) if ok else '', "
@@ -268,6 +291,9 @@ def check_worker(gpu: bool = True) -> list[Check]:
         elif ok:
             checks.append(Check("GPU", WARN, f"{name} has {mem / 2**30:.0f} GB; 8 GB or more recommended",
                                 "Transcription will use small batches"))
+        elif features.compute_profile() == features.ROCM:
+            checks.append(Check("GPU", WARN, "no AMD GPU visible to ROCm; transcription will run on CPU",
+                                "Check that your user is in the render and video groups, then log in again"))
         else:
             driver = {FEDORA: "Install the NVIDIA driver (RPM Fusion akmod-nvidia)",
                       DEBIAN: "Install the NVIDIA driver: sudo ubuntu-drivers install",

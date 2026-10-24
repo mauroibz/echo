@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, 
                                QGridLayout, QHBoxLayout, QLabel, QLineEdit, QProgressBar, QPushButton,
                                QSpinBox, QVBoxLayout, QWidget)
 
-from .. import APP_NAME, __version__, doctor, features, models, selfcmd, settings
+from .. import APP_NAME, __version__, doctor, features, models, selfcmd, settings, transcription
 from . import theme
 from .common import icon, run_task
 
@@ -118,7 +118,8 @@ class ModelDownload(QWidget):
             self.info.setText("Transcription is not installed on this computer. To add it, run in the Echo folder:\n"
                               "./install.sh --with-transcription")
         elif cached:
-            self.info.setText("The transcription model is downloaded and ready.")
+            speed = transcription.speed_text()
+            self.info.setText("The transcription model is downloaded and ready." + (f" {speed}" if speed else ""))
             self.status.setText("")
         elif not has_token:
             self.info.setText(
@@ -129,8 +130,9 @@ class ModelDownload(QWidget):
                 "huggingface.co/settings/tokens</a> and paste it here.")
             self.info.setTextFormat(Qt.TextFormat.RichText)
         else:
+            speed = transcription.speed_text()
             self.info.setText("Download the transcription model once (about 4.3 GB). After that, everything runs on "
-                              "this computer and nothing is sent anywhere.")
+                              "this computer and nothing is sent anywhere." + (f" {speed}" if speed else ""))
 
     def _save_token(self):
         tok = self.token.text().strip()

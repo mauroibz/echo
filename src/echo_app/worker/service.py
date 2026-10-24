@@ -263,6 +263,11 @@ class Worker:
             rec.path(REQUESTED).unlink(missing_ok=True)
         for name in (PROGRESS, PARTIAL, ERROR):
             rec.path(name).unlink(missing_ok=True)
+        if not partial.get("resumed"):  # a resumed job's time would overstate the speed
+            from .. import transcription
+
+            transcription.record_speed(transcription.speed_key(info.get("device", "cpu")), total_s,
+                                       time.time() - started)
         log.info("%s: transcribed %.0f s of audio in %.0f s", rec.id, total_s, time.time() - started)
 
     @staticmethod
@@ -271,6 +276,7 @@ class Worker:
             p = read_json(rec.path(PARTIAL))
             if p.get("key") == key:
                 log.info("%s: resuming with %d passages done", rec.id, len(p.get("results", {})))
+                p["resumed"] = True
                 return p
         except (FileNotFoundError, json.JSONDecodeError):
             pass

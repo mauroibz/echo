@@ -3,14 +3,22 @@
 from __future__ import annotations
 
 import fcntl
+import json
 import os
 import subprocess
-
-import json
+import time
 from pathlib import Path
 
 from . import features, paths, selfcmd, settings
+from .fsutil import atomic_write_json, read_json
 from .library import Library, Recording
+
+SPEED_JOBS = 10  # the speed estimate averages this many recent jobs
+# Before the first job on a machine: minutes of work per hour of audio, measured on the
+# reference machines in docs/design.md (an RTX 3080; a 6-core Ryzen 5 7600X for the CPU).
+EXPECTED_MIN_PER_HOUR = {features.CUDA: 1.0, features.CPU: 5.0}
+
+
 
 
 def lock_path() -> Path:
@@ -95,3 +103,57 @@ def resume_pending(lib: Library) -> int:
     if n:
         ensure_worker(lib)
     return n
+
+
+# ---- measured speed ----------------------------------------------------------------------------
+
+def speed_path() -> Path:
+    return paths.state_dir() / "speed.json"
+
+
+def speed_key(device: str, profile: str | None = None) -> str:
+    """"cpu" whenever the model ran on the processor (also a GPU profile without a GPU)."""
+    return features.CPU if device == "cpu" else (profile or features.compute_profile())
+
+
+def record_speed(key: str, audio_s: float, elapsed_s: float) -> None:
+    """Called by the worker after each job: seconds of audio and of work, model load included."""
+    if audio_s <= 0 or elapsed_s <= 0:
+        return
+    try:
+        data = read_json(speed_path())
+    except (OSError, ValueError):
+        data = {}
+    jobs = (data.get(key) or {}).get("jobs", [])[-(SPEED_JOBS - 1):]
+    jobs.append([round(audio_s, 1), round(elapsed_s, 1), round(time.time())])
+    data[key] = {"jobs": jobs}
+    try:
+        atomic_write_json(speed_path(), data, mkdir=True)
+    except OSError:
+        pass
+
+
+def minutes_per_hour(key: str | None = None) -> tuple[float | None, bool]:
+    """(minutes of work per hour of audio, measured on this computer?) for the installed profile."""
+    if key is None:
+        profile = features.compute_profile()
+        on_cpu = profile == features.CPU or features.detected_hardware() == features.CPU
+        key = features.CPU if on_cpu else profile
+    try:
+        jobs = (read_json(speed_path()).get(key) or {}).get("jobs", [])
+    except (OSError, ValueError, AttributeError):
+        jobs = []
+    audio = sum(j[0] for j in jobs)
+    work = sum(j[1] for j in jobs)
+    if audio >= 60:
+        return work / audio * 60, True
+    return EXPECTED_MIN_PER_HOUR.get(key), False
+
+
+def speed_text() -> str:
+    """"About 6 minutes per hour of audio on this computer", or "" when nothing is known."""
+    minutes, measured = minutes_per_hour()
+    if minutes is None:
+        return ""
+    amount = "less than a minute" if minutes < 1.5 else f"about {round(minutes)} minutes"
+    return f"Transcription takes {amount} per hour of audio {'on this computer' if measured else 'on a typical computer'}."

@@ -1,4 +1,4 @@
-# The fast suite on Ubuntu and Fedora, and a resolution check of every install profile.
+# The fast suite on Ubuntu and Fedora, and a resolution check of every transcription profile.
 # No GPU, microphone or model is needed; the hardware suites stay opt-in (see README).
 name: test
 
@@ -23,8 +23,11 @@ jobs:
           uv sync --locked --no-install-project
       - name: Lockfile in sync
         run: uv lock --check
-      - name: Transcription profile resolves
-        run: uv sync --locked --no-install-project --extra worker --dry-run
+      - name: Transcription profiles resolve
+        run: |
+          for profile in cuda cpu rocm; do
+            uv sync --locked --no-install-project --extra "$profile" --dry-run
+          done
       - name: Tests
         run: uv run --no-sync pytest -q
         env:
@@ -46,8 +49,11 @@ jobs:
           uv sync --locked --no-install-project
       - name: Lockfile in sync
         run: uv lock --check
-      - name: Transcription profile resolves
-        run: uv sync --locked --no-install-project --extra worker --dry-run
+      - name: Transcription profiles resolve
+        run: |
+          for profile in cuda cpu rocm; do
+            uv sync --locked --no-install-project --extra "$profile" --dry-run
+          done
       - name: Tests
         run: uv run --no-sync pytest -q
         env:

@@ -1,6 +1,8 @@
 #!/bin/sh
 # Echo installer. Installs into this clone (.venv) and your home directory only.
-# Usage: ./install.sh [--with-transcription | --without-transcription]
+# Usage: ./install.sh [--with-transcription[=cuda|cpu|rocm] | --without-transcription]
+#   --with-transcription alone picks the profile from the hardware: cuda for an NVIDIA GPU,
+#   rocm for an AMD GPU, cpu otherwise.
 set -eu
 
 root=$(cd "$(dirname "$0")" && pwd)
@@ -10,17 +12,28 @@ data_home="${XDG_DATA_HOME:-$HOME/.local/share}"
 apps_dir="$data_home/applications"
 icon_dir="$data_home/icons/hicolor/scalable/apps"
 
+detect_profile() {
+    if command -v nvidia-smi >/dev/null 2>&1 || [ -e /proc/driver/nvidia ]; then echo cuda
+    elif [ -e /dev/kfd ]; then echo rocm
+    else echo cpu
+    fi
+}
+
 profile=""
 [ -f "$profile_file" ] && profile=$(cat "$profile_file")
+[ "$profile" = full ] && profile=cuda  # installs from before the compute profiles
+detected=no
 for arg in "$@"; do
     case "$arg" in
-        --with-transcription) profile=full ;;
+        --with-transcription) profile=$(detect_profile); detected=yes ;;
+        --with-transcription=cuda|--with-transcription=cpu|--with-transcription=rocm) profile=${arg#*=} ;;
         --without-transcription) profile=base ;;
-        -h|--help) sed -n '2,3p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,5p' "$0"; exit 0 ;;
         *) echo "Unknown option: $arg" >&2; exit 2 ;;
     esac
 done
 [ -n "$profile" ] || profile=base
+case "$profile" in base|cuda|cpu|rocm) ;; *) echo "Unknown profile in $profile_file: $profile" >&2; exit 2 ;; esac
 
 say() { if [ -t 1 ]; then printf '\033[1m%s\033[0m\n' "$*"; else printf '%s\n' "$*"; fi; }
 
@@ -57,14 +70,22 @@ fi
 command -v pw-record >/dev/null 2>&1 || echo "Warning: pw-record not found. Install it with: $(pkg pipewire-utils pipewire-bin pipewire)" >&2
 command -v ffmpeg >/dev/null 2>&1 || echo "Warning: ffmpeg not found. Install it with: $(pkg ffmpeg-free ffmpeg ffmpeg)" >&2
 
+if [ "$detected" = yes ]; then
+    case "$profile" in
+        cuda) say "Found an NVIDIA GPU: installing transcription for CUDA." ;;
+        rocm) say "Found an AMD GPU: installing transcription for ROCm." ;;
+        cpu) say "No NVIDIA or AMD GPU found: transcription will run on the processor (slower)." ;;
+    esac
+    echo "To choose otherwise: ./install.sh --with-transcription=cuda|cpu|rocm"
+fi
 say "Installing Echo ($profile profile) into $root/.venv"
 cd "$root"
 # Explicitly, because distribution builds of uv (Fedora's) turn automatic Python downloads off.
 uv python install --quiet "$(cat "$root/.python-version")"
-if [ "$profile" = full ]; then
-    uv sync --locked --no-dev --extra worker
-else
+if [ "$profile" = base ]; then
     uv sync --locked --no-dev
+else
+    uv sync --locked --no-dev --extra "$profile"
 fi
 echo "$profile" > "$profile_file"
 

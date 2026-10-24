@@ -29,8 +29,9 @@ QT_QPA_PLATFORM=offscreen uv run --no-sync pytest -q   # 100 passed, 4 skipped, 
 ```
 
 The fast suite needs no GPU, microphone, PipeWire or model. Tests under `ECHO_PIPEWIRE_TESTS`
-and `ECHO_MODEL_TESTS` need real hardware and are skipped otherwise. The `worker` extra
-(torch, 3.5 GB) is not needed for the suite; `tests/test_worker.py` uses a stub engine.
+and `ECHO_MODEL_TESTS` need real hardware and are skipped otherwise. The transcription extras
+(`cuda`, `cpu`, `rocm`: torch and friends) are not needed for the suite; `tests/test_worker.py`
+uses a stub engine.
 
 ## How to work a change
 

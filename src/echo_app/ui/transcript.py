@@ -45,6 +45,17 @@ def segment_spans(segments: list[dict]) -> list[tuple[int, int, float]]:
     return spans
 
 
+def _estimate(duration: float | None) -> str:
+    """", in about 4 minutes" from the measured speed, for recordings long enough to wait for."""
+    minutes, _measured = transcription.minutes_per_hour()
+    if not duration or minutes is None:
+        return ""
+    est = duration / 3600 * minutes
+    if est < 1:
+        return ""
+    return f", in about {round(est)} minute{'s' if round(est) != 1 else ''}"
+
+
 class Editor(QPlainTextEdit):
     ctrl_clicked = Signal(int)  # character position
     MAX_TEXT_WIDTH_CHARS = 90
@@ -355,7 +366,8 @@ class TranscriptPanel(QWidget):
                                       actions=[("Download model…", "download", self.download_requested.emit, True)])
             else:
                 dur = f" ({fmt_duration(rec.meta.duration)})" if rec.meta.duration else ""
-                self.state.show_state("Not transcribed yet", f"Transcribe this recording{dur} on this computer.",
+                self.state.show_state("Not transcribed yet",
+                                      f"Transcribe this recording{dur} on this computer{_estimate(rec.meta.duration)}.",
                                       actions=[("Transcribe", "transcribe", lambda: self.request(None), True)])
 
     def _show_editor(self, rec: Recording, st: str):
