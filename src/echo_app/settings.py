@@ -27,6 +27,10 @@ class Settings:
     language: str = "es"  # default transcription language
     edit_autopause: bool = True  # typing pauses a playing passage, which plays again a second later
     watch_dirs: list[str] = field(default_factory=list)  # folders whose new audio files are imported
+    export_dir: str = ""  # Markdown folder (a vault) the library was last exported to
+    export_sync: bool = False  # rewrite a recording's note there whenever it changes
+    export_timestamps: bool = False  # paragraph times in exported notes
+    export_audio: str = "link"  # link, copy or none
 
     @property
     def data_path(self) -> Path:
@@ -46,6 +50,10 @@ _COMMENTS = {
     "language": "Default transcription language (es, en, pt, fr, it, de, ...)",
     "edit_autopause": "While a passage plays for editing, typing pauses it and it plays again after",
     "watch_dirs": "Folders whose new audio files are imported automatically (not their subfolders)",
+    "export_dir": "Folder of Markdown notes the library is exported to",
+    "export_sync": "Keep the exported notes up to date as recordings change (writes outside Echo's folder)",
+    "export_timestamps": "Start exported paragraphs with their time",
+    "export_audio": "Audio in exported notes: link (to Echo's file), copy, or none",
 }
 
 

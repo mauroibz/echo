@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
-from PySide6.QtCore import QAbstractListModel, QModelIndex, QRect, QRectF, QSize, Qt
+from PySide6.QtCore import QAbstractListModel, QModelIndex, QRect, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter
 from PySide6.QtWidgets import QStyle, QStyledItemDelegate, QStyleOptionViewItem
 
@@ -78,6 +78,8 @@ def status_of(rec: Recording) -> Status:
 
 
 class LibraryModel(QAbstractListModel):
+    recordings_changed = Signal(list)  # ids whose folders changed (not the first load)
+
     def __init__(self, library: Library, parent=None):
         super().__init__(parent)
         self.library = library
@@ -86,6 +88,7 @@ class LibraryModel(QAbstractListModel):
         self._status: dict[str, Status] = {}
         self._rows: list[str] = []
         self._filter: set[str] | None = None
+        self._loaded = False
 
     # ---- Qt model API ----
     def rowCount(self, parent=None) -> int:
@@ -200,6 +203,9 @@ class LibraryModel(QAbstractListModel):
         for rid, rec in self._all.items():
             if rid in changed_ids or rec.meta.state == RECORDING:
                 self._status[rid] = status_of(rec)
+        if changed_ids and self._loaded:
+            self.recordings_changed.emit(changed_ids)
+        self._loaded = True
         if changed_ids or removed or set(self._rows) - set(self._all):
             self._rebuild_rows()
         else:

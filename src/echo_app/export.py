@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 from datetime import datetime
@@ -143,3 +144,137 @@ def export_transcript(rec: Recording, dest: Path) -> Path:
         fmt = ".txt"
     dest.write_text(render_transcript(rec, fmt), encoding="utf-8")
     return dest
+
+
+# ---- Markdown notes and folder export ----------------------------------------------------------
+
+AUDIO_COPY, AUDIO_LINK, AUDIO_NONE = "copy", "link", "none"
+LEDGER = ".echo-export.json"
+
+
+def _people(rec: Recording, text: str) -> list[str]:
+    """Dictionary people named in the text, and named speakers once there are any."""
+    from . import dictionary
+
+    folded = dictionary.fold(text)
+    names = [e.name for e in dictionary.current().entries
+             if e.kind == dictionary.PEOPLE and any(dictionary.fold(s) in folded for s in e.spellings())]
+    speakers = getattr(rec.meta, "speakers", None) or {}
+    for name in speakers.values():
+        if name and name not in names:
+            names.append(name)
+    return names
+
+
+def to_markdown(rec: Recording, timestamps: bool = False, audio_link: str | None = None) -> str:
+    """A note for a Markdown vault: title, date, length and tags, people, a link to the audio,
+    and the text, with a heading at each marker and optionally each paragraph's time."""
+    try:
+        when = datetime.fromisoformat(rec.meta.created).strftime("%Y-%m-%d %H:%M")
+    except ValueError:
+        when = rec.meta.created
+    text = rec.text().strip()
+    head = [f"# {rec.meta.title}", ""]
+    line = f"_{when}_"
+    if rec.meta.duration:
+        line += f" · {stamp(rec.meta.duration)}"
+    if rec.meta.tags:
+        line += " · " + " ".join("#" + t.replace(" ", "-") for t in rec.meta.tags)
+    head.append(line)
+    people = _people(rec, text)
+    if people:
+        head.append(f"People: {', '.join(people)}")
+    if audio_link:
+        head.append(f"Audio: [{Path(audio_link).name}](<{audio_link}>)")
+    if rec.meta.notes:
+        head += ["", f"> {rec.meta.notes}"]
+    body = _markdown_body(rec, text, timestamps)
+    return "\n".join(head) + "\n\n" + body.strip() + "\n"
+
+
+def _markdown_body(rec: Recording, text: str, timestamps: bool) -> str:
+    items = cues(rec) if rec.transcript() else []
+    if not items:
+        return text
+    paragraphs: list[tuple[float, list[str]]] = []
+    for start, _end, piece, para in items:
+        if para or not paragraphs:
+            paragraphs.append((start, [piece]))
+        else:
+            paragraphs[-1][1].append(piece)
+    # Each marker heads the paragraph it falls in; text before the first marker gets "Inicio".
+    headings: dict[int, list[str]] = {}
+    for m in sorted(rec.meta.markers, key=lambda m: m["at"]):
+        k = max((i for i, (start, _p) in enumerate(paragraphs) if start <= m["at"] + 0.01), default=0)
+        headings.setdefault(k, []).append(f"## {stamp(m['at'])} {m.get('note') or ''}".rstrip())
+    out = []
+    if headings and min(headings) > 0:
+        out.append("## 0:00 Inicio")
+    for i, (start, pieces) in enumerate(paragraphs):
+        out += headings.get(i, [])
+        para = " ".join(pieces)
+        out.append(f"[{stamp(start)}] {para}" if timestamps else para)
+    return "\n\n".join(out)
+
+
+def note_name(rec: Recording) -> str:
+    """"2026-10-24 Charla con Ana.md"."""
+    return f"{rec.meta.created[:10]} {suggested_name(rec, '.md')}"
+
+
+def _sha(data: bytes) -> str:
+    import hashlib
+
+    return hashlib.sha256(data).hexdigest()
+
+
+def export_folder(recs, dest: Path, timestamps: bool = False, audio: str = AUDIO_LINK) -> dict[str, int]:
+    """One Markdown note per recording in `dest`, skipping notes that are up to date.
+
+    A ledger in the folder maps recording ids to the note's file and content hash, so renamed
+    recordings replace their old note and only changed notes are rewritten. Returns counts of
+    "written", "unchanged" and "removed" (old names of renamed recordings).
+    """
+    dest = Path(dest)
+    dest.mkdir(parents=True, exist_ok=True)
+    try:
+        ledger = json.loads((dest / LEDGER).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        ledger = {}
+    taken = {v.get("file") for k, v in ledger.items()}
+    counts = {"written": 0, "unchanged": 0, "removed": 0}
+    for rec in recs:
+        if not rec.text().strip() and not rec.meta.notes:
+            continue  # nothing to read yet
+        entry = ledger.get(rec.id, {})
+        name = entry.get("file") if entry.get("file") == note_name(rec) else note_name(rec)
+        if name != entry.get("file"):
+            base, n = name[:-3], 2
+            while name in taken and name != entry.get("file"):
+                name, n = f"{base} {n}.md", n + 1
+        link = None
+        src = rec.audio_path
+        if audio != AUDIO_NONE and src is not None and src.exists():
+            if audio == AUDIO_COPY:
+                audio_dest = dest / "audio" / f"{rec.id}{src.suffix.lower()}"
+                if not audio_dest.exists() or audio_dest.stat().st_size != src.stat().st_size:
+                    audio_dest.parent.mkdir(exist_ok=True)
+                    shutil.copyfile(src, audio_dest)
+                link = f"audio/{audio_dest.name}"
+            else:
+                link = Path(os.path.relpath(src, dest)).as_posix()
+        note = to_markdown(rec, timestamps, link).encode("utf-8")
+        sha = _sha(note)
+        old = entry.get("file")
+        if old and old != name and (dest / old).exists():
+            (dest / old).unlink()
+            counts["removed"] += 1
+        if entry.get("sha") == sha and old == name and (dest / name).exists():
+            counts["unchanged"] += 1
+            continue
+        (dest / name).write_bytes(note)
+        ledger[rec.id] = {"file": name, "sha": sha}
+        taken.add(name)
+        counts["written"] += 1
+    (dest / LEDGER).write_text(json.dumps(ledger, ensure_ascii=False, indent=1, sort_keys=True), encoding="utf-8")
+    return counts

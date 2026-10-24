@@ -160,6 +160,9 @@ Model versions are pinned, and only weights and configuration are downloaded, ne
   used tags show as chips above the list; click one to filter, click again to clear. A long
   library is grouped by month, and each transcribed recording shows its word count, speaking
   rate and share of silence.
+- **Notes in a vault.** File → Export library to folder… writes one Markdown note per
+  recording (title, date, tags, people, markers as headings, the text, a link to the audio) into
+  any folder, such as an Obsidian vault, and can keep it up to date while Echo runs.
 - **Close the window while recording** and the recording continues, with a tray icon to stop
   it.
 - **Appearance.** Light by default; Settings → Appearance switches to dark or follows the
@@ -185,6 +188,7 @@ echo-app cancel ID
 echo-app list [QUERY] [--tag T]   list or search recordings (#word in QUERY is a tag)
 echo-app tag ID [+TAG ...] [-TAG ...]   show, add or remove tags
 echo-app export ID [--format txt|md|srt|vtt|json] [--out PATH]
+echo-app export --all FOLDER [--audio link|copy|none] [--timestamps]   Markdown notes for a vault
 echo-app models download | status
 echo-app recover                  repair recordings interrupted by a crash
 echo-app finalize ID              retry saving a recording whose raw audio was kept
@@ -238,7 +242,8 @@ git fetch --tags && git checkout "$(git describe --tags --abbrev=0 origin/main)"
 A recording folder holds `audio.flac` (or the imported file, unchanged), `meta.json`,
 `transcript.json` (model output with passage times), `transcript.corrected.json` when the
 dictionary fixed something in it, and `transcript.edited.txt` once you edit.
-Deleted recordings go to the desktop trash.
+Deleted recordings go to the desktop trash. Backing up or syncing the data folder, and using it
+on two computers, is described in [docs/sync.md](docs/sync.md).
 
 ## Troubleshooting
 

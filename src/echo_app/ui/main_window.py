@@ -11,12 +11,13 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QFileDialog, QFr
                                QMainWindow, QMenu, QMessageBox, QSplitter, QStatusBar, QSystemTrayIcon, QVBoxLayout,
                                QWidget)
 
-from .. import APP_NAME, export, features, importer, recorder, transcription
+from .. import APP_NAME, export, features, importer, recorder, settings, transcription
 from ..index import Index
 from ..library import READY, RECORDING, T_QUEUED, T_RUNNING, Library, Recording
 from . import theme
 from .common import RECORD_RED, UiState, app_icon, dot_icon, fmt_duration, icon, run_task
-from .dialogs import AboutDialog, DoctorDialog, ModelDialog, SettingsDialog, ShortcutsDialog, WelcomeDialog
+from .dialogs import (AboutDialog, DoctorDialog, ExportLibraryDialog, ModelDialog, SettingsDialog, ShortcutsDialog,
+                      WelcomeDialog)
 from .library_view import LibraryModel, RowDelegate
 from .player import PlayerPanel
 from .recorder_panel import RecorderPanel
@@ -81,6 +82,9 @@ class MainWindow(QMainWindow):
         self.model.refresh()
         self._select_initial()
         self._attach_active()
+        self._sync_ids: set[str] = set()
+        self._sync_timer = QTimer(self, singleShot=True, interval=2000, timeout=self._sync_notes)
+        self.model.recordings_changed.connect(self._notes_changed)
         self.watcher = FolderWatcher(self.library, self)
         self.watcher.imported.connect(self._watched_import)
         QTimer.singleShot(0, self._startup_tasks)
@@ -214,6 +218,7 @@ class MainWindow(QMainWindow):
         self._act(f, "&Import audio…", self.import_dialog, "Ctrl+O", "import")
         self.a_export_text = self._act(f, "&Export transcript…", self.transcript.export_text, "Ctrl+E", "export")
         self.a_export_audio = self._act(f, "Export &audio…", self.export_audio, None, "export")
+        self._act(f, "Export &library to folder…", self.export_library, None, "export")
         self.a_folder = self._act(f, "Show in &folder", self.show_in_folder, None, "folder")
         f.addSeparator()
         self._act(f, "&Settings…", self.show_settings, "Ctrl+,", "settings")
@@ -696,6 +701,38 @@ class MainWindow(QMainWindow):
 
         run_task(export.export_audio, rec, Path(path), on_done=done,
                  on_error=lambda m: self.show_message(f"Export failed: {m}"))
+
+    def export_library(self):
+        rec = self.current()
+        dlg = ExportLibraryDialog(rec is not None, self)
+        if not dlg.exec():
+            return
+        cfg, _ = settings.load()
+        recs = [rec] if dlg.which.currentData() == "selected" and rec else \
+            [r for r in self.library.all() if r.meta.state == READY]
+        dest = Path(cfg.export_dir)
+
+        def done(counts):
+            self.show_message(f"Exported to {dest}: {counts['written']} written, {counts['unchanged']} up to date.")
+
+        run_task(export.export_folder, recs, dest, cfg.export_timestamps, cfg.export_audio, on_done=done,
+                 on_error=lambda m: self.show_message(f"Export failed: {m}"))
+
+    def _notes_changed(self, ids: list):
+        """With sync on, a changed recording's note is rewritten a moment later."""
+        cfg, _ = settings.load()
+        if cfg.export_sync and cfg.export_dir:
+            self._sync_ids.update(ids)
+            self._sync_timer.start()
+
+    def _sync_notes(self):
+        cfg, _ = settings.load()
+        recs = [r for r in (self.library.get(i) for i in self._sync_ids) if r is not None and r.meta.state == READY]
+        self._sync_ids.clear()
+        if not (cfg.export_sync and cfg.export_dir and recs):
+            return
+        run_task(export.export_folder, recs, Path(cfg.export_dir), cfg.export_timestamps, cfg.export_audio,
+                 on_error=lambda m: self.show_message(f"Keeping the notes folder up to date failed: {m}"))
 
     def _watched_import(self, res):
         from .. import watch

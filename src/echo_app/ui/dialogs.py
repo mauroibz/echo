@@ -464,6 +464,71 @@ class WatchedFoldersPage(QWidget):
         return [self.list.item(i).text() for i in range(self.list.count())]
 
 
+class ExportLibraryDialog(FittedDialog):
+    """Markdown notes for a vault: where, what, and whether to keep them up to date."""
+
+    def __init__(self, has_selection: bool, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Export library to folder")
+        self.setFixedWidth(560)
+        cfg, _ = settings.load()
+        lay = QVBoxLayout(self)
+        lay.addWidget(_heading("Export as Markdown notes"))
+        lay.addWidget(_dim("One note per recording, with its title, date, tags, the people named in it, markers as "
+                           "headings and a link to the audio, for Obsidian or any folder of Markdown files. Notes "
+                           "already up to date are left alone."))
+        form = QFormLayout()
+        row = QHBoxLayout()
+        self.folder = QLineEdit(cfg.export_dir or str(Path.home() / "Notes" / "Echo"))
+        row.addWidget(self.folder, 1)
+        browse = QPushButton(icon("folder"), "Choose…")
+        browse.clicked.connect(self._browse)
+        row.addWidget(browse)
+        w = QWidget()
+        row.setContentsMargins(0, 0, 0, 0)
+        w.setLayout(row)
+        form.addRow("Folder", w)
+        self.which = QComboBox()
+        self.which.addItem("All recordings", "all")
+        if has_selection:
+            self.which.addItem("The selected recording", "selected")
+        form.addRow("Export", self.which)
+        self.audio = QComboBox()
+        for label, value in (("Link to Echo's file", "link"), ("Copy next to the notes", "copy"), ("None", "none")):
+            self.audio.addItem(label, value)
+        self.audio.setCurrentIndex(max(0, self.audio.findData(cfg.export_audio)))
+        form.addRow("Audio", self.audio)
+        self.times = QCheckBox("Start each paragraph with its time")
+        self.times.setChecked(cfg.export_timestamps)
+        form.addRow("", self.times)
+        self.sync = QCheckBox("Keep this folder up to date while Echo runs")
+        self.sync.setChecked(cfg.export_sync)
+        self.sync.setToolTip("Echo rewrites a recording's note a moment after it changes. It writes outside its own "
+                             "folder only here.")
+        form.addRow("", self.sync)
+        lay.addLayout(form)
+        bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel)
+        ok = bb.addButton("Export", QDialogButtonBox.ButtonRole.AcceptRole)
+        theme.set_role(ok, primary=True)
+        bb.accepted.connect(self.accept)
+        bb.rejected.connect(self.reject)
+        lay.addWidget(bb)
+
+    def _browse(self):
+        d = QFileDialog.getExistingDirectory(self, "Export to", self.folder.text())
+        if d:
+            self.folder.setText(d)
+
+    def accept(self):
+        cfg, _ = settings.load()
+        cfg.export_dir = str(Path(self.folder.text()).expanduser())
+        cfg.export_audio = self.audio.currentData()
+        cfg.export_timestamps = self.times.isChecked()
+        cfg.export_sync = self.sync.isChecked()
+        settings.save(cfg)
+        super().accept()
+
+
 class SettingsDialog(QDialog):
     def __init__(self, recording_active: bool, parent=None):
         super().__init__(parent)

@@ -73,10 +73,20 @@ def _cmd_tag(args) -> int:
 
 def _cmd_export(args) -> int:
     from . import export
-    from .library import Library
+    from .library import READY, Library
     from .settings import load
 
     cfg, _ = load()
+    if args.all:
+        lib = Library(cfg.data_path)
+        recs = [r for r in lib.all() if r.meta.state == READY]
+        counts = export.export_folder(recs, Path(args.all).expanduser(), timestamps=args.timestamps,
+                                      audio=args.audio)
+        print(f"{counts['written']} written, {counts['unchanged']} up to date in {args.all}")
+        return 0
+    if not args.id:
+        print("Give a recording id, or --all FOLDER.", file=sys.stderr)
+        return 2
     rec = Library(cfg.data_path).get(args.id)
     if rec is None:
         print(f"No recording {args.id}", file=sys.stderr)
@@ -138,8 +148,13 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("changes", nargs=argparse.REMAINDER, metavar="+TAG|-TAG")
     s.set_defaults(func=_cmd_tag)
 
-    s = sub.add_parser("export", help="write a transcript as text, Markdown, subtitles or JSON")
-    s.add_argument("id")
+    s = sub.add_parser("export", help="write a transcript as text, Markdown, subtitles or JSON, "
+                                      "or every recording as Markdown notes into a folder")
+    s.add_argument("id", nargs="?")
+    s.add_argument("--all", metavar="FOLDER", help="one Markdown note per recording into FOLDER (a vault)")
+    s.add_argument("--audio", choices=["link", "copy", "none"], default="link",
+                   help="with --all: link to Echo's audio file, copy it next to the notes, or neither")
+    s.add_argument("--timestamps", action="store_true", help="with --all: start paragraphs with their time")
     s.add_argument("--format", choices=["txt", "md", "srt", "vtt", "json"],
                    help="default: from the --out suffix, else txt")
     s.add_argument("--out", metavar="PATH", help="file to write; default: standard output")

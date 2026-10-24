@@ -43,6 +43,9 @@ tag.
 - Windows support, not yet tested on a real machine: `install.ps1` and `uninstall.ps1`, a
   PortAudio audio backend (also used on Linux where PipeWire does not run the sound), Windows
   folders, and CUDA or CPU transcription.
+- Markdown notes for a vault: File → Export library to folder… and `echo-app export --all`, with
+  markers as headings and an option to keep the folder up to date; `docs/sync.md` on backing up
+  and syncing the data folder.
 
 ### Fixed
 
