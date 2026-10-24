@@ -128,6 +128,38 @@ def cmd_resume(args) -> int:
     return 0
 
 
+def cmd_mark(args) -> int:
+    from . import recorder
+
+    _, lib = _lib()
+    s = _active_or_fail(lib)
+    if not s:
+        return 1
+    try:
+        s.mark(args.note or "")
+    except recorder.RecorderError as e:
+        print(e, file=sys.stderr)
+        return 1
+    print(f"Marked at {_fmt(s.status().get('elapsed', 0))}" + (f": {args.note}" if args.note else ""))
+    return 0
+
+
+def cmd_markers(args) -> int:
+    _, lib = _lib()
+    rec = lib.get(args.id)
+    if rec is None:
+        print(f"No recording {args.id}", file=sys.stderr)
+        return 1
+    from . import recorder
+
+    markers = rec.meta.markers or recorder.Session(rec).markers()
+    for m in markers:
+        print(f"{_fmt(m['at'])}  {m.get('note', '')}".rstrip())
+    if not markers:
+        print("No markers.")
+    return 0
+
+
 def cmd_status(args) -> int:
     _, lib = _lib()
     from . import recorder
@@ -218,6 +250,12 @@ def register(sub) -> None:
                           ("status", cmd_status, "show the active recording")):
         s = sub.add_parser(name, help=hlp)
         s.set_defaults(func=fn)
+    s = sub.add_parser("mark", help="add a marker to the active recording at the current time")
+    s.add_argument("--note", help="a short note for the marker")
+    s.set_defaults(func=cmd_mark)
+    s = sub.add_parser("markers", help="list a recording's markers")
+    s.add_argument("id")
+    s.set_defaults(func=cmd_markers)
     s = sub.add_parser("recover", help="repair recordings interrupted by a crash")
     s.set_defaults(func=cmd_recover)
     s = sub.add_parser("finalize", help="retry saving a recording whose raw audio was kept")

@@ -90,42 +90,87 @@ def shown_segments(rec: Recording) -> list[dict]:
 
 
 class TimestampMargin(QWidget):
-    """Passage start times in the editor's left margin, on the first line of each passage."""
+    """The editor's left margin: passage start times, and a dot where a marker falls."""
+
+    DOT = 14  # width of the marker column
 
     def __init__(self, editor: "Editor"):
         super().__init__(editor)
         self.editor = editor
         self.stamps: list[tuple[int, float]] = []  # character position, seconds
+        self.marks: list[tuple[int, dict]] = []  # character position of the passage, marker
         self.setFont(theme.display_font(0.82, QFont.Weight.DemiBold, tabular=True))
+        self.setMouseTracking(True)
 
     def width_needed(self) -> int:
-        longest = max((export.stamp(t) for _p, t in self.stamps), key=len, default="0:00")
-        return self.fontMetrics().horizontalAdvance(longest) + 18
+        w = self.DOT if self.marks else 0
+        if self.stamps:
+            longest = max((export.stamp(t) for _p, t in self.stamps), key=len, default="0:00")
+            w += self.fontMetrics().horizontalAdvance(longest) + 14
+        return w + 4
+
+    def _rect_of(self, pos: int):
+        doc = self.editor.document()
+        cur = QTextCursor(doc)
+        cur.setPosition(min(pos, doc.characterCount() - 1))
+        return self.editor.cursorRect(cur)
+
+    def _dots(self):
+        """(rect, marker) for each marker dot on screen."""
+        out = []
+        for pos, m in self.marks:
+            r = self._rect_of(pos)
+            if -r.height() < r.top() < self.height():
+                out.append((QRect(2, r.top() + (r.height() - 9) // 2, 9, 9), m))
+        return out
 
     def paintEvent(self, _):
         p = QPainter(self)
-        p.setPen(QColor(theme.current().muted))
-        doc = self.editor.document()
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        t = theme.current()
+        p.setPen(QColor(t.muted))
         line = self.editor.fontMetrics().height()
         last_y = None
+        left = self.DOT if self.marks else 0
         for pos, sec in self.stamps:
-            cur = QTextCursor(doc)
-            cur.setPosition(min(pos, doc.characterCount() - 1))
-            r = self.editor.cursorRect(cur)
+            r = self._rect_of(pos)
             if r.bottom() < 0:
                 continue
             if r.top() > self.height():
                 break
             if last_y is not None and r.top() < last_y + line * 0.8:
                 continue  # two passages start on one line: the first one's time is enough
-            p.drawText(QRect(0, r.top(), self.width() - 10, r.height()),
+            p.drawText(QRect(left, r.top(), self.width() - left - 10, r.height()),
                        Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, export.stamp(sec))
             last_y = r.top()
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor(t.coral_deep))
+        for rect, _m in self._dots():
+            p.drawEllipse(rect)
         p.end()
+
+    def _dot_at(self, pt):
+        return next((m for rect, m in self._dots() if rect.adjusted(-3, -3, 3, 3).contains(pt)), None)
+
+    def mouseMoveEvent(self, e):
+        m = self._dot_at(e.position().toPoint())
+        self.setCursor(Qt.CursorShape.PointingHandCursor if m else Qt.CursorShape.ArrowCursor)
+        if m:
+            from PySide6.QtWidgets import QToolTip
+
+            QToolTip.showText(e.globalPosition().toPoint(),
+                              f"Marker at {export.stamp(m['at'])}" + (f": {m['note']}" if m.get("note") else "")
+                              + "\nClick to play from here", self)
+
+    def mousePressEvent(self, e):
+        m = self._dot_at(e.position().toPoint())
+        if m:
+            self.editor.marker_clicked.emit(float(m["at"]))
 
 
 class Editor(QPlainTextEdit):
     ctrl_clicked = Signal(int)  # character position
+    marker_clicked = Signal(float)  # seconds
     MAX_TEXT_WIDTH_CHARS = 90
 
     def __init__(self, parent=None):
@@ -135,13 +180,14 @@ class Editor(QPlainTextEdit):
         self.margin.hide()
         self.updateRequest.connect(lambda _r, _dy: self.margin.update())
 
-    def set_stamps(self, stamps: list[tuple[int, float]] | None):
-        """Show passage times (character position, seconds), or hide the margin with None."""
-        if stamps is None:
+    def set_stamps(self, stamps: list[tuple[int, float]] | None, marks: list[tuple[int, dict]] = ()):
+        """Show passage times (character position, seconds) and marker dots; nothing hides the margin."""
+        self.margin.stamps = stamps or []
+        self.margin.marks = list(marks)
+        if not self.margin.stamps and not self.margin.marks:
             self.margin.hide()
             self.setViewportMargins(0, 0, 0, 0)
             return
-        self.margin.stamps = stamps
         self.setViewportMargins(self.margin.width_needed(), 0, 0, 0)
         self._place_margin()
         self.margin.show()
@@ -246,6 +292,7 @@ class TranscriptPanel(QWidget):
     download_requested = Signal()
     changed = Signal(str)  # recording id whose files changed
     timestamps_toggled = Signal(bool)
+    marker_clicked = Signal(float)
 
     def __init__(self, library: Library, parent=None):
         super().__init__(parent)
@@ -354,6 +401,7 @@ class TranscriptPanel(QWidget):
         self.editor.document().setDocumentMargin(14)
         self.editor.textChanged.connect(self._on_text_changed)
         self.editor.ctrl_clicked.connect(self._on_ctrl_click)
+        self.editor.marker_clicked.connect(self.marker_clicked.emit)
         # Centered reading column on wide windows, on a full-width text background.
         column = QWidget()
         cl = QHBoxLayout(column)
@@ -637,10 +685,29 @@ class TranscriptPanel(QWidget):
         self._update_margin()
 
     def _update_margin(self):
-        if self.show_timestamps and self._spans:
-            self.editor.set_stamps([(a, t) for a, _b, t in self._spans])
-        else:
-            self.editor.set_stamps(None)
+        stamps = [(a, t) for a, _b, t in self._spans] if self.show_timestamps else None
+        self.editor.set_stamps(stamps, self._marker_anchors())
+
+    def _marker_anchors(self) -> list[tuple[int, dict]]:
+        """Each marker at the start of the passage it falls in (or the next one)."""
+        if self.rec is None or not self._spans:
+            return []
+        out = []
+        for m in self.rec.meta.markers:
+            at = float(m["at"])
+            pos = self._spans[0][0]
+            for a, _b, start in self._spans:
+                if start <= at + 0.05:
+                    pos = a
+                else:
+                    break
+            out.append((pos, m))
+        return out
+
+    def reload_markers(self):
+        if self.rec is not None:
+            self.rec = self.library.get(self.rec.id) or self.rec
+            self._update_margin()
 
     def set_show_timestamps(self, on: bool):
         self.show_timestamps = on

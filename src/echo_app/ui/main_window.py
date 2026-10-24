@@ -151,6 +151,8 @@ class MainWindow(QMainWindow):
         self.transcript.download_requested.connect(self.show_model_dialog)
         self.transcript.changed.connect(self.model.reload)
         self.player.position_changed.connect(self.transcript.follow)
+        self.player.markers_changed.connect(lambda _rid: self.transcript.reload_markers())
+        self.transcript.marker_clicked.connect(self._seek_and_play)
 
         for card in (self.player, self.transcript):
             card.setObjectName("card")
@@ -232,8 +234,14 @@ class MainWindow(QMainWindow):
         self.a_record = self._act(r, "&Record", self.recorder_panel.toggle_record, "Ctrl+R")
         self.a_record.setIcon(dot_icon(RECORD_RED))
         self.a_pause = self._act(r, "&Pause / resume", self.recorder_panel.toggle_pause, "Ctrl+Shift+R", "pause")
+        # A plain letter: text fields keep it for typing, so it only marks outside them.
+        self.a_mark = self._act(r, "Add &marker", self.recorder_panel.add_marker, "M", "bookmark")
         r.addSeparator()
         self._act(r, "Play / pause", self.player.toggle_play, "Ctrl+Space", "play")
+        self.a_mark_here = self._act(r, "Marker at the playhead", self.player.add_marker_at_playhead, "Ctrl+M",
+                                     "bookmark")
+        self._act(r, "Next marker", lambda: self.player.jump_marker(1), "Alt+Right", "skip-forward")
+        self._act(r, "Previous marker", lambda: self.player.jump_marker(-1), "Alt+Left", "skip-back")
         r.addSeparator()
         self.a_transcribe = self._act(r, "&Transcribe", lambda: self.transcript.request(None), None, "transcribe")
         self.a_cancel = self._act(r, "&Cancel transcription", self.transcript.cancel, None, "cancel")
@@ -253,6 +261,7 @@ class MainWindow(QMainWindow):
         self.tray.setToolTip(APP_NAME)
         menu = QMenu()
         menu.addAction("Show Echo", self.show_window)
+        self.tray_mark = menu.addAction("Add marker", self._tray_mark)
         self.tray_stop = menu.addAction("Stop recording", self.recorder_panel.stop)
         menu.addSeparator()
         menu.addAction("Quit Echo", self.quit)
@@ -409,7 +418,9 @@ class MainWindow(QMainWindow):
             self.tray.setVisible(not self.isVisible())
             self.a_record.setText("&Record")
         self.tray_stop.setEnabled(sess is not None)
+        self.tray_mark.setEnabled(sess is not None)
         self.a_pause.setEnabled(sess is not None)
+        self.a_mark.setEnabled(sess is not None)
 
     def _update_worker_label(self):
         if not features.transcription_installed():
@@ -649,6 +660,18 @@ class MainWindow(QMainWindow):
 
         run_task(export.export_audio, rec, Path(path), on_done=done,
                  on_error=lambda m: self.show_message(f"Export failed: {m}"))
+
+    def _tray_mark(self):
+        """From the tray the window may be hidden: mark without opening the note field."""
+        sess = self.recorder_panel.session
+        if sess is None:
+            return
+        try:
+            sess.mark()
+        except recorder.RecorderError as e:
+            self.show_message(str(e))
+            return
+        self.tray.showMessage(APP_NAME, "Marker added.", QSystemTrayIcon.MessageIcon.Information, 2000)
 
     def _crop_saved(self, rid: str):
         rec = self.library.get(rid)

@@ -304,7 +304,18 @@ class Supervisor:
                 self._command(word, arg)
 
     def _command(self, word: str, arg: str) -> None:
-        log.warning("%s: unknown command %r", self.rec.id, word)
+        if word == "mark":
+            # The position in the captured audio: bytes so far, so pauses and gaps are honored.
+            self.session.setdefault("markers", []).append({"at": round(self.elapsed(), 2), "note": arg.strip()})
+            self._save_session()
+            log.info("%s: marker at %.1f s", self.rec.id, self.elapsed())
+        elif word == "note":
+            markers = self.session.get("markers") or []
+            if markers:
+                markers[-1]["note"] = arg.strip()
+                self._save_session()
+        else:
+            log.warning("%s: unknown command %r", self.rec.id, word)
 
     # ---- persistence ----
     def _save_session(self):
@@ -645,7 +656,9 @@ def finalize(rec: Recording, recovered: bool = False) -> str:
                    channels=channels)
         return "failed"
     events = session.get("events", [])
-    rec.update(state=READY, audio=final.name, sha256=ffmpeg.sha256_file(final),
+    markers = sorted({(m["at"], m.get("note", "")): m for m in [*rec.meta.markers, *session.get("markers", [])]}
+                     .values(), key=lambda m: m["at"])
+    rec.update(state=READY, audio=final.name, sha256=ffmpeg.sha256_file(final), markers=markers,
                duration=round(frames / rate, 3), sample_rate=rate, channels=channels,
                recovered=recovered or rec.meta.recovered, gaps=events, error=None)
     shutil.rmtree(rec.takes_dir, ignore_errors=True)
@@ -717,10 +730,23 @@ class Session:
             raise RecorderError("The recorder for this recording is not running.")
         if self.legacy and os.name != "nt":
             sig = {"pause": "SIGUSR1", "resume": "SIGUSR2", "stop": "SIGTERM"}.get(word)
-            if sig:
-                os.kill(self.supervisor_pid, getattr(signal, sig))
+            if sig is None:
+                raise RecorderError("This recording was started by an earlier version of Echo, which cannot "
+                                    "add markers. Markers work in your next recording.")
+            os.kill(self.supervisor_pid, getattr(signal, sig))
             return
         send_command(self.rec, word)
+
+    def mark(self, note: str = "") -> None:
+        """A marker at the current position of the captured audio."""
+        self.command(f"mark {' '.join(note.split())}".rstrip())
+
+    def note(self, text: str) -> None:
+        """Attach a note to the latest marker."""
+        self.command(f"note {' '.join(text.split())}")
+
+    def markers(self) -> list[dict[str, Any]]:
+        return list(self.info().get("markers") or [])
 
     def pause(self) -> None:
         self.command("pause")

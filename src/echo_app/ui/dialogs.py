@@ -597,6 +597,10 @@ class DoctorDialog(FittedDialog):
 SHORTCUTS = [
     ("Record / stop", "Ctrl+R"),
     ("Pause / resume recording", "Ctrl+Shift+R"),
+    ("Add a marker while recording", "M (or the tray menu)"),
+    ("Marker at the playhead", "Ctrl+M"),
+    ("Next / previous marker", "Alt+→ / Alt+←"),
+    ("Move or remove a marker", "Drag it; right-click it (waveform)"),
     ("Play / pause", "Space (outside the editor), Ctrl+Space anywhere"),
     ("Seek 5 s / 1 s", "← → / Shift+← → (waveform focused)"),
     ("Set crop start / end at playhead", "[ and ] (waveform focused)"),

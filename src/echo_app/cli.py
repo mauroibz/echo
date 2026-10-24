@@ -36,11 +36,15 @@ def _cmd_list(args) -> int:
     from .settings import load
 
     cfg, _ = load()
-    idx = Index(Library(cfg.data_path))
+    lib = Library(cfg.data_path)
+    idx = Index(lib)
     idx.sync()
     rows = idx.list(args.query or "")
     for r in rows:
-        print(f"{r['id']}  {_fmt_dur(r['duration']):>8}  {r['transcript_status']:<8}  {r['title']}")
+        rec = lib.get(r["id"])
+        n = len(rec.meta.markers) if rec else 0
+        marks = f"  [{n} marker{'s' if n != 1 else ''}]" if n else ""
+        print(f"{r['id']}  {_fmt_dur(r['duration']):>8}  {r['transcript_status']:<8}  {r['title']}{marks}")
     if not rows:
         print("No recordings." if not args.query else "No matches.")
     return 0

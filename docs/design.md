@@ -44,7 +44,7 @@ POSIX, `msvcrt.locking` on Windows. Every action in the window is also a CLI com
 ~/.local/share/echo/
   library.sqlite                  index with FTS5 search (rebuildable cache)
   recordings/<id>/                id = creation time + 4 hex digits
-    meta.json                     title, source, created, duration, sha256, crop, gaps
+    meta.json                     title, source, created, duration, sha256, crop, gaps, markers
     takes/take-NNN.raw            raw PCM, only while recording or awaiting finalize
     session.json, status.json     supervisor state and heartbeat, only while recording
     audio.<ext>                   recorded FLAC, or the imported file byte for byte
@@ -68,13 +68,16 @@ to the desktop trash.
 2. The supervisor fsyncs the take every 2 seconds and writes `status.json` on each state change
    and twice a second, also while it finalizes. Pause, resume and stop are command files; each
    resume starts a new take.
-3. If capture dies, the supervisor restarts it into a new take with backoff and records the gap.
+3. A marker is a `mark` command; the supervisor stores the position in the captured audio
+   (bytes so far across takes, so pauses and gaps are excluded) in `session.json`, and
+   finalize, also after a crash, copies the markers into `meta.json`.
+4. If capture dies, the supervisor restarts it into a new take with backoff and records the gap.
    After repeated failures on the chosen input it falls back to the default input and says so.
    It warns when the take stops growing and refuses to start with less than 1 GB free.
-4. On stop, the takes are encoded to FLAC. The FLAC is kept only if it decodes to exactly the
+5. On stop, the takes are encoded to FLAC. The FLAC is kept only if it decodes to exactly the
    captured PCM (sha256 of the decoded samples); then the takes are deleted. Any failure leaves
    the takes in place and the recording marked "needs attention".
-5. On startup the window and `echo-app recover` look for interrupted recordings: a live
+6. On startup the window and `echo-app recover` look for interrupted recordings: a live
    supervisor is reattached, a `pw-record` still writing its take without a supervisor is
    adopted (its process exists and the take was written within 3 seconds), and if everything is
    dead the takes are finalized.

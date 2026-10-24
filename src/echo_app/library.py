@@ -76,6 +76,7 @@ class Meta:
     gaps: list[dict[str, Any]] = field(default_factory=list)  # capture interruptions
     error: str | None = None
     context_line: str = ""  # "who is speaking, what about": context for this recording's transcription
+    markers: list[dict[str, Any]] = field(default_factory=list)  # [{"at": seconds of audio, "note": str}]
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "Meta":
@@ -198,6 +199,12 @@ class Recording:
 
     def effective_span(self) -> tuple[float, float | None]:
         return (self.meta.crop_start or 0.0, self.meta.crop_end)
+
+    def set_markers(self, markers: list[dict[str, Any]]) -> None:
+        """Save markers sorted by time, each {"at": seconds, "note": text}."""
+        clean = [{"at": round(max(0.0, float(m["at"])), 2), "note": str(m.get("note") or "").strip()}
+                 for m in markers]
+        self.update(markers=sorted(clean, key=lambda m: m["at"]))
 
 
 class Library:

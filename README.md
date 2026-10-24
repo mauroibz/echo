@@ -117,6 +117,10 @@ Model versions are pinned, and only weights and configuration are downloaded, ne
 - **Record.** Pick the input at the top left and speak; the meter and the waves should move.
   Press Record (Ctrl+R), pause with Ctrl+Shift+R, press Stop to save. "Computer audio: …"
   records what the computer plays, for example a call.
+- **Mark the moments that matter.** While recording, press M (or use the tray menu) to drop a
+  marker; type a short note if you like, without stopping. Markers show on the waveform and
+  beside the transcript; Alt+→ and Alt+← jump between them, Ctrl+M adds one at the playhead,
+  and you can drag, edit or remove them on the waveform.
 - **Import.** Drop audio files or folders on the window, use File → Import (Ctrl+O), or open a
   file with Echo from your file manager.
 - **Transcribe.** New recordings and imports are transcribed automatically; progress and time
@@ -150,6 +154,8 @@ Every core action also works from a terminal:
 echo-app                          open the window (files given are imported)
 echo-app record [--wait] [--source NODE] [--title T]
 echo-app pause | resume | stop | status
+echo-app mark [--note TEXT]       add a marker to the active recording
+echo-app markers ID               list a recording's markers
 echo-app sources                  list inputs (* marks the default)
 echo-app import PATH...           import files or folders
 echo-app transcribe ID... | --all [--wait] [--no-adapter] [--context TEXT]

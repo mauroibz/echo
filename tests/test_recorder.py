@@ -297,3 +297,59 @@ def test_recording_from_the_previous_version_is_still_controlled(lib):
         s.stop()
     assert [x for x in sent if x] == [signal.SIGTERM]  # kill(pid, 0) are liveness checks
     assert wait_for(lambda: s.rec.reload().meta.state == READY, 20)
+
+
+def test_markers_follow_captured_audio_across_pauses(lib):
+    s = recorder.start(lib, rate=RATE)
+    time.sleep(1.0)
+    s.mark()
+    s.pause()
+    assert wait_for(lambda: s.status()["state"] == recorder.S_PAUSED)
+    time.sleep(1.5)  # paused time is not audio: the next marker must not include it
+    s.resume()
+    assert wait_for(lambda: s.status()["state"] == recorder.S_RECORDING)
+    time.sleep(0.5)
+    s.mark("decisión sobre el precio")
+    s.mark()
+    s.note("la segunda nota")
+    assert wait_for(lambda: len(s.markers()) == 3)
+    assert s.markers()[2]["note"] == "la segunda nota"
+    time.sleep(0.3)
+    assert s.stop(wait=20) == "ready"
+    m = s.rec.reload().meta
+    ats = [mk["at"] for mk in m.markers]
+    assert [mk["note"] for mk in m.markers] == ["", "decisión sobre el precio", "la segunda nota"]
+    assert 0.8 < ats[0] < 1.3
+    assert 1.3 < ats[1] < 2.0, ats  # about 1.0 + 0.5 s of audio, not 3 s of wall time
+    assert ats == sorted(ats) and m.duration > ats[-1]
+
+
+def test_markers_survive_a_crash(lib):
+    s = recorder.start(lib, rate=RATE)
+    time.sleep(1.0)
+    s.mark("antes del corte")
+    assert wait_for(lambda: s.markers())
+    info = recorder.load_session(s.rec)
+    os.kill(info["supervisor_pid"], signal.SIGKILL)
+    os.kill(info["takes"][-1]["pid"], signal.SIGKILL)
+    assert wait_for(lambda: not s.alive() and not recorder.pid_alive(info["takes"][-1]["pid"]))
+    assert dict(recorder.recover_all(lib))[s.rec.id] == "finalized"
+    assert [mk["note"] for mk in s.rec.reload().meta.markers] == ["antes del corte"]
+
+
+def test_cli_mark_and_markers(lib, capsys):
+    from echo_app import cli, settings
+
+    settings.save(settings.Settings(data_dir=str(lib.data_dir), sample_rate=RATE))
+    assert cli.main(["mark"]) == 1  # not recording
+    s = recorder.start(lib, rate=RATE)
+    time.sleep(0.6)
+    assert cli.main(["mark", "--note", "aquí"]) == 0
+    assert wait_for(lambda: s.markers())
+    time.sleep(0.3)
+    s.stop(wait=20)
+    capsys.readouterr()
+    assert cli.main(["markers", s.rec.id]) == 0
+    assert "aquí" in capsys.readouterr().out
+    assert cli.main(["list"]) == 0
+    assert "[1 marker]" in capsys.readouterr().out

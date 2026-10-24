@@ -7,8 +7,8 @@ import logging
 import numpy as np
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QKeyEvent, QLinearGradient, QMouseEvent, QPainter, QPen
-from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QLabel, QLineEdit, QSizePolicy, QToolButton, QVBoxLayout,
-                               QWidget)
+from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMenu, QSizePolicy,
+                               QToolButton, QToolTip, QVBoxLayout, QWidget)
 
 from ..audio import peaks as peaks_mod
 from ..audio.playback import Playback
@@ -27,6 +27,7 @@ NUDGE_COARSE = 1.0
 class WaveformView(QWidget):
     seek_requested = Signal(float)
     crop_changed = Signal(object, object)  # start, end (None = unset)
+    markers_edited = Signal(list)  # the user's markers after a move, removal, note or addition
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -36,24 +37,28 @@ class WaveformView(QWidget):
         self.setMouseTracking(True)
         self.setAccessibleName("Waveform")
         self.setToolTip("Click to seek. Drag the edges to crop; hold Shift to place freely.\n"
-                        "[ and ] set the crop at the playhead; Ctrl+arrows nudge it.")
+                        "[ and ] set the crop at the playhead; Ctrl+arrows nudge it.\n"
+                        "Markers: drag to move, right-click to edit or remove, Ctrl+double-click to add.")
         self.peaks: np.ndarray | None = None
         self.duration = 0.0
         self.position = 0.0
         self.crop_start: float | None = None
         self.crop_end: float | None = None
-        self.markers: list[float] = []
+        self.gaps: list[float] = []  # capture interruptions
+        self.markers: list[dict] = []  # the user's markers: {"at", "note"}
         self.placeholder = ""
-        self._drag: str | None = None  # "start" | "end" | "seek"
+        self._drag: str | None = None  # "start" | "end" | "seek" | "marker"
+        self._drag_marker = -1
         self._last_handle = "start"
         self._cache_key = None
         self._columns = None
 
     # ---- data ----
-    def set_recording(self, duration: float, crop_start, crop_end, markers=()):
+    def set_recording(self, duration: float, crop_start, crop_end, gaps=(), markers=()):
         self.duration = max(0.0, duration or 0.0)
         self.crop_start, self.crop_end = crop_start, crop_end
-        self.markers = list(markers)
+        self.gaps = list(gaps)
+        self.markers = [dict(m) for m in markers]
         self.position = crop_start or 0.0
         self.update()
 
@@ -152,12 +157,24 @@ class WaveformView(QWidget):
         if self.crop_end is not None and self.crop_end < self.duration:
             xe = self._x(self.crop_end)
             p.fillRect(QRectF(xe, 0, rect.width() - xe, rect.height()), shade)
-        # Interruption markers
+        # Capture interruptions: small amber notches
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QColor(t.amber))
-        for tm in self.markers:
+        for tm in self.gaps:
             x = self._x(tm)
             p.drawPolygon([QPointF(x - 4, 0), QPointF(x + 4, 0), QPointF(x, 6)])
+        # The user's markers: a coral flag with a hairline through the wave
+        coral = QColor(t.coral_deep)
+        line = QColor(coral)
+        line.setAlpha(150)
+        for m in self.markers:
+            x = self._x(m["at"])
+            p.setPen(QPen(line, 1))
+            p.drawLine(QPointF(x, 9), QPointF(x, rect.height()))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(coral)
+            p.drawPolygon([QPointF(x - 5.5, 0), QPointF(x + 5.5, 0), QPointF(x + 5.5, 7), QPointF(x, 11),
+                           QPointF(x - 5.5, 7)])
         # Crop handles (always drawn subtly at the edges so they are discoverable)
         for which, tm in (("start", self._start()), ("end", self._end())):
             x = self._x(tm)
@@ -191,8 +208,27 @@ class WaveformView(QWidget):
                 return which
         return None
 
+    def _marker_at(self, x: float, y: float | None = None) -> int:
+        """Index of the user's marker under x (the flag at the top is easiest to grab), or -1."""
+        if self.duration <= 0:
+            return -1
+        reach = 7 if y is None or y < 14 else 4
+        best, dist = -1, reach + 1
+        for i, m in enumerate(self.markers):
+            d = abs(self._x(m["at"]) - x)
+            if d <= reach and d < dist:
+                best, dist = i, d
+        return best
+
     def mouseMoveEvent(self, e: QMouseEvent):
         x = e.position().x()
+        if self._drag == "marker":
+            t = self._t(x)
+            if not (e.modifiers() & Qt.KeyboardModifier.ShiftModifier) and self.peaks is not None:
+                t = peaks_mod.snap(self.peaks, t)
+            self.markers[self._drag_marker]["at"] = round(t, 2)
+            self.update()
+            return
         if self._drag in ("start", "end"):
             t = self._t(x)
             if not (e.modifiers() & Qt.KeyboardModifier.ShiftModifier) and self.peaks is not None:
@@ -205,10 +241,20 @@ class WaveformView(QWidget):
         elif self._drag == "seek":
             self.seek_requested.emit(self._t(x))
         else:
+            k = self._marker_at(x, e.position().y())
+            if k >= 0:
+                self.setCursor(Qt.CursorShape.OpenHandCursor)
+                note = self.markers[k].get("note") or "Marker"
+                QToolTip.showText(e.globalPosition().toPoint(), f"{fmt_duration(self.markers[k]['at'])}  {note}", self)
+                return
             self.setCursor(Qt.CursorShape.SizeHorCursor if self._handle_at(x) else Qt.CursorShape.PointingHandCursor)
 
     def mousePressEvent(self, e: QMouseEvent):
         if e.button() != Qt.MouseButton.LeftButton or self.duration <= 0:
+            return
+        k = self._marker_at(e.position().x(), e.position().y())
+        if k >= 0 and not self._handle_at(e.position().x()):
+            self._drag, self._drag_marker = "marker", k
             return
         h = self._handle_at(e.position().x())
         if h:
@@ -221,7 +267,42 @@ class WaveformView(QWidget):
     def mouseReleaseEvent(self, e: QMouseEvent):
         if self._drag in ("start", "end"):
             self.crop_changed.emit(self.crop_start, self.crop_end)
+        elif self._drag == "marker":
+            self.markers.sort(key=lambda m: m["at"])
+            self.markers_edited.emit(self.markers)
         self._drag = None
+
+    def mouseDoubleClickEvent(self, e: QMouseEvent):
+        if e.modifiers() & Qt.KeyboardModifier.ControlModifier and self.duration > 0:
+            self.add_marker(self._t(e.position().x()))
+        else:
+            super().mouseDoubleClickEvent(e)
+
+    def add_marker(self, t: float):
+        self.markers.append({"at": round(max(0.0, min(self.duration, t)), 2), "note": ""})
+        self.markers.sort(key=lambda m: m["at"])
+        self.update()
+        self.markers_edited.emit(self.markers)
+
+    def contextMenuEvent(self, e):
+        k = self._marker_at(e.pos().x(), e.pos().y())
+        if k < 0:
+            return
+        m = QMenu(self)
+        m.addAction(icon("rename"), "Edit note…", lambda: self._edit_note(k))
+        m.addAction(icon("delete"), "Remove marker", lambda: self.remove_marker(k))
+        m.exec(e.globalPos())
+
+    def _edit_note(self, k: int):
+        text, ok = QInputDialog.getText(self, "Marker note", "Note:", text=self.markers[k].get("note", ""))
+        if ok:
+            self.markers[k]["note"] = text.strip()
+            self.markers_edited.emit(self.markers)
+
+    def remove_marker(self, k: int):
+        del self.markers[k]
+        self.update()
+        self.markers_edited.emit(self.markers)
 
     def keyPressEvent(self, e: QKeyEvent):
         key, mods = e.key(), e.modifiers()
@@ -260,6 +341,7 @@ class WaveformView(QWidget):
 
 class PlayerPanel(QWidget):
     renamed = Signal(str, str)  # recording id, new title
+    markers_changed = Signal(str)  # recording id
     crop_saved = Signal(str)
     export_requested = Signal()
     position_changed = Signal(float)
@@ -305,6 +387,7 @@ class PlayerPanel(QWidget):
         self.wave = WaveformView()
         self.wave.seek_requested.connect(self.seek)
         self.wave.crop_changed.connect(self._crop_changed)
+        self.wave.markers_edited.connect(self._markers_edited)
         lay.addWidget(self.wave, 1)
         row = QHBoxLayout()
         row.setSpacing(6)
@@ -385,6 +468,8 @@ class PlayerPanel(QWidget):
         self.subtitle.setText("  ·  ".join(bits))
         if same and self._loaded_sha == rec.meta.sha256 and playable:
             self.wave.crop_start, self.wave.crop_end = rec.meta.crop_start, rec.meta.crop_end
+            if self.wave._drag != "marker":
+                self.wave.markers = [dict(m) for m in rec.meta.markers]
             self._update_crop_label()
             self.wave.update()
             return
@@ -404,9 +489,10 @@ class PlayerPanel(QWidget):
         self.player.load(rec.audio_path, rec.meta.duration or 0)
         if rec.meta.crop_start:
             self.player.seek(rec.meta.crop_start)
-        markers = [g["at"] for g in interruptions if "at" in g]
+        gaps = [g["at"] for g in interruptions if "at" in g]
         self.wave.placeholder = "Drawing waveform…"
-        self.wave.set_recording(rec.meta.duration or 0, rec.meta.crop_start, rec.meta.crop_end, markers)
+        self.wave.set_recording(rec.meta.duration or 0, rec.meta.crop_start, rec.meta.crop_end, gaps,
+                                rec.meta.markers)
         self.wave.set_peaks(None)
         rid, path, key = rec.id, rec.audio_path, rec.meta.sha256
         run_task(peaks_mod.compute, path, key, on_done=lambda pk: self._peaks_ready(rid, pk),
@@ -448,6 +534,33 @@ class PlayerPanel(QWidget):
                         crop_end=round(end, 2) if end is not None else None)
         self._update_crop_label()
         self.crop_saved.emit(self.rec.id)
+
+    def _markers_edited(self, markers: list):
+        if self.rec is None:
+            return
+        self.rec.set_markers(markers)
+        self.markers_changed.emit(self.rec.id)
+
+    def add_marker_at_playhead(self):
+        if self.rec is None or not self.wave.isEnabled():
+            return
+        at = self.player.position()
+        self.wave.add_marker(at)
+        self.message.emit(f"Marker at {fmt_duration(at)}. Right-click it on the waveform to add a note.")
+
+    def jump_marker(self, direction: int):
+        """Seek to the next (1) or previous (-1) marker, and keep playing if playing."""
+        if self.rec is None or not self.rec.meta.markers:
+            return
+        pos = self.player.position()
+        ats = [m["at"] for m in self.rec.meta.markers]
+        if direction > 0:
+            target = next((a for a in ats if a > pos + 0.25), None)
+        else:
+            # Pressed again right after a jump, it goes one further back, as in a music player.
+            target = next((a for a in reversed(ats) if a < pos - 1.5), None)
+        if target is not None:
+            self.seek(target)
 
     def clear_crop(self):
         self.wave.crop_start = self.wave.crop_end = None

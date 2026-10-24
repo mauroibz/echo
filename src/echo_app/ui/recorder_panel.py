@@ -6,8 +6,8 @@ import logging
 import time
 
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QLinearGradient, QPainter
-from PySide6.QtWidgets import (QComboBox, QGraphicsDropShadowEffect, QHBoxLayout, QLabel, QSizePolicy,
+from PySide6.QtGui import QColor, QFont, QKeySequence, QLinearGradient, QPainter, QShortcut
+from PySide6.QtWidgets import (QComboBox, QGraphicsDropShadowEffect, QHBoxLayout, QLabel, QLineEdit, QSizePolicy,
                                QStyledItemDelegate, QToolButton, QVBoxLayout, QWidget)
 
 from .. import recorder, settings
@@ -24,6 +24,7 @@ WAVE_HEIGHT = 64
 # Exact digital silence: a connected microphone with its gain up never produces it.
 SILENT_DB = levels.SILENCE_DB + 1
 SILENT_AFTER_S = 4.0
+NOTE_IDLE_MS = 10_000  # the marker note field closes after this long without typing
 SILENT_HINT = ("No sound from this input for {s} seconds. Check that the microphone is connected, "
                "not muted and its gain is up, or pick another input.")
 
@@ -209,6 +210,21 @@ class RecorderPanel(QWidget):
         theme.set_role(self.warning, warn=True)
         self.warning.hide()
         lay.addWidget(self.warning)
+
+        # After a marker: an optional note, typed without stopping the recording.
+        self.note = QLineEdit()
+        self.note.setObjectName("markernote")
+        self.note.setPlaceholderText("Note for this marker (Enter to save, Esc to skip)")
+        self.note.setAccessibleName("Marker note")
+        self.note.addAction(icon("bookmark", "on_deep"), QLineEdit.ActionPosition.LeadingPosition)
+        self.note.returnPressed.connect(self._save_note)
+        self.note.textEdited.connect(lambda _t: self._note_timer.start())
+        self.note.hide()
+        lay.addWidget(self.note)
+        self._note_timer = QTimer(self, singleShot=True, interval=NOTE_IDLE_MS, timeout=self._close_note)
+        esc = QShortcut(QKeySequence(Qt.Key.Key_Escape), self.note, activated=self._close_note,
+                        context=Qt.ShortcutContext.WidgetShortcut)
+        self._note_esc = esc
         self._update_buttons()
 
     # ---- waves ----
@@ -326,6 +342,8 @@ class RecorderPanel(QWidget):
     def attach(self, sess: recorder.Session | None):
         was = self.session is not None
         self.session = sess
+        if sess is None:
+            self._close_note()
         if sess is not None and self._monitor:
             self._monitor.stop()
             self._monitor = None
@@ -381,6 +399,38 @@ class RecorderPanel(QWidget):
         self.attach(None)
         self.stopped.emit(rid)
         self.message.emit("Saving the recording…")
+
+    def add_marker(self):
+        """Mark the current moment of the recording, then offer a note field."""
+        sess = self.session
+        if sess is None:
+            return
+        try:
+            sess.mark()
+        except recorder.RecorderError as e:
+            self.message.emit(str(e))
+            return
+        self.message.emit(f"Marker at {fmt_duration(sess.status().get('elapsed', 0))}.")
+        self.note.clear()
+        self.note.show()
+        self.note.setFocus()
+        self._note_timer.start()
+
+    def _save_note(self):
+        text = self.note.text().strip()
+        if text and self.session is not None:
+            try:
+                self.session.note(text)
+            except recorder.RecorderError as e:
+                self.message.emit(str(e))
+        self._close_note()
+
+    def _close_note(self):
+        self._note_timer.stop()
+        if self.note.isVisible():
+            self.note.hide()
+            self.note.clear()
+            self.window().setFocus()
 
     def toggle_pause(self):
         sess = self.session

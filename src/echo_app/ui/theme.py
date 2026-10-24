@@ -362,6 +362,7 @@ QScrollBar::add-page, QScrollBar::sub-page {{ background: transparent; }}
 QWidget#card {{ background: {t.surface}; border: 1px solid {t.line}; border-radius: 16px; }}
 QFrame#notice {{ background: {t.accent_soft}; border: none; border-radius: 10px; }}
 QFrame#chip {{ background: {t.raised}; border: 1px solid {t.accent}; border-radius: 17px; }}
+QLineEdit#markernote {{ background: {glass}; color: {t.on_deep}; border: 1px solid {t.foam}; border-radius: 10px; padding: 6px 8px; }}
 QPlainTextEdit#editor {{ background: {t.surface}; color: {t.ink}; border: none;
     selection-background-color: {t.accent_soft}; selection-color: {t.ink}; }}
 QLineEdit#title {{ background: transparent; border: 1px solid transparent; color: {t.ink}; padding: 2px 4px; }}

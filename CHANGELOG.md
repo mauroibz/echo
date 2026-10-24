@@ -23,6 +23,9 @@ tag.
 - Passage times: a margin with each passage's start time (Ctrl+T), "Copy with timestamps", and
   export to SRT and VTT subtitles and JSON, from the edited text too; `echo-app export`.
   Follow-along and Ctrl+click now work on edited transcripts.
+- Markers: press M while recording (or use the tray, or `echo-app mark --note`) to mark a
+  moment, with an optional note. They show on the waveform and beside the transcript, can be
+  moved, edited and removed, and Alt+arrows jump between them.
 
 ### Fixed
 

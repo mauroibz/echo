@@ -39,3 +39,24 @@ command file. The recording list and the window both learn about a recording's s
   `add-timestamps-export`; if that change is not archived yet, draw the dot in the editor's
   left viewport margin directly and let the later change merge the two.
 - **CLI.** `echo-app list` shows the marker count; `echo-app markers ID` prints them.
+
+## Decisions made while implementing
+
+- **`note` command** replaces the latest marker's note; `mark` may carry a note directly
+  (`echo-app mark --note`). A recording started by the previous version cannot take markers;
+  the error says so.
+- **Finalize merges** the session's markers with any already in `meta.json` (de-duplicated by
+  time and note), so a recording finalized twice keeps them once.
+- **The M key** is a menu action with a single-letter shortcut, enabled only while recording;
+  text fields keep the letter for typing. From the tray the marker is added without the note
+  field, since the window may be hidden.
+- **Waveform**: capture interruptions stay the small amber notches; markers are coral flags
+  with a hairline, grabbed by the flag (7 px) or the line (4 px). Right-click offers "Edit
+  note…" and "Remove marker"; Ctrl+double-click adds one; dragging snaps to pauses unless Shift.
+- **Previous marker** skips the one just jumped to when pressed within 1.5 s after it, as a
+  music player's previous-track does.
+- **Margin**: markers are coral dots in a 14 px column left of the passage times; the column is
+  there whenever the recording has markers, with or without times. Clicking a dot plays from
+  the marker.
+- **Real recording check (1.1)**: through real PipeWire from the computer's output, a marker at
+  0:03, a 2-second pause, and one after 2 more seconds were stored at 0:03 and 0:05.
