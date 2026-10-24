@@ -2,10 +2,10 @@
 
 ## 1. Sets on disk
 
-- [ ] 1.1 `sets.py`: read, create, extend, reorder, remove a member, dissolve; one set per recording with "newest file wins" on conflicting claims; atomic writes; tests including a missing member coming back and two files claiming one recording
-- [ ] 1.2 Index schema 3 with a `sets` table rebuilt from the files; `rescan` removes set files with no present members; migration test on a schema 2 index
-- [ ] 1.3 Auto title for sets (first part's first sentence until renamed), set by the worker path that sets recording auto titles; tests
-- [ ] 1.4 CLI: `echo-app link`, `unlink`, sets in `list`, set ids in `export`; tests
+- [x] 1.1 `sets.py`: read, create, extend, reorder, remove a member, dissolve; one set per recording with "newest file wins" on conflicting claims; atomic writes; tests including a missing member coming back and two files claiming one recording
+- [x] 1.2 Index schema 3 with a `sets` table rebuilt from the files; `rescan` removes set files with no present members; migration test on a schema 2 index
+- [x] 1.3 Auto title for sets (first part's first sentence until renamed), set by the worker path that sets recording auto titles; tests
+- [x] 1.4 CLI: `echo-app link`, `unlink`, sets in `list`, set ids in `export`; tests
 
 ## 2. The list
 

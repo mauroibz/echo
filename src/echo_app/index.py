@@ -6,11 +6,12 @@ Everything here is derived from the recording folders. Deleting the file loses n
 
 from __future__ import annotations
 
+import json
 import sqlite3
 
 from .library import Library, Recording, fold_tag
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS recordings (
@@ -29,6 +30,12 @@ CREATE VIRTUAL TABLE IF NOT EXISTS search USING fts5(
 );
 CREATE TABLE IF NOT EXISTS tags (id TEXT NOT NULL, tag TEXT NOT NULL, tag_folded TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS tags_folded ON tags (tag_folded);
+CREATE TABLE IF NOT EXISTS sets (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    members TEXT NOT NULL,  -- JSON list of the present members, in order
+    newest TEXT NOT NULL  -- the newest member's created: where the set sits in the list
+);
 """
 
 
@@ -45,7 +52,7 @@ class Index:
         version = db.execute("PRAGMA user_version").fetchone()[0]
         if version != SCHEMA_VERSION:
             db.executescript("DROP TABLE IF EXISTS recordings; DROP TABLE IF EXISTS search; "
-                             "DROP TABLE IF EXISTS tags;")
+                             "DROP TABLE IF EXISTS tags; DROP TABLE IF EXISTS sets;")
             db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
         db.executescript(_SCHEMA)
         return db
@@ -96,13 +103,34 @@ class Index:
         for rid in set(known) - seen:
             self.remove(rid)
             changed += 1
+        self._sync_sets()
         return changed
+
+    def _sync_sets(self) -> None:
+        """Set files are a handful of small files: read them all each time."""
+        from . import sets
+
+        created = {r["id"]: r["created"] for r in self.db.execute("SELECT id, created FROM recordings")}
+        rows = []
+        for s in sets.load_all(self.library):
+            members = [m for m in s.members if m in created]
+            if len(members) >= 2:
+                rows.append((s.id, s.title, json.dumps(members), max(created[m] for m in members)))
+        with self.db:
+            self.db.execute("DELETE FROM sets")
+            self.db.executemany("INSERT INTO sets VALUES (?,?,?,?)", rows)
+
+    def sets(self) -> list[dict]:
+        """Sets with two or more present members: {"id", "title", "members", "newest"}."""
+        return [{"id": r["id"], "title": r["title"], "members": json.loads(r["members"]), "newest": r["newest"]}
+                for r in self.db.execute("SELECT * FROM sets ORDER BY newest DESC")]
 
     def rebuild(self) -> int:
         with self.db:
             self.db.execute("DELETE FROM recordings")
             self.db.execute("DELETE FROM search")
             self.db.execute("DELETE FROM tags")
+            self.db.execute("DELETE FROM sets")
         return self.sync()
 
     def list(self, query: str = "", tags=()) -> list[sqlite3.Row]:

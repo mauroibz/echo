@@ -298,6 +298,14 @@ class Worker:
             if title and rec.meta.title_auto:
                 rec.update(title=title)
         try:
+            from .. import sets
+            from ..library import Library
+
+            library = Library(rec.folder.parent.parent)
+            sets.refresh_title(library, sets.set_of(library, rec.id))  # a set titled by its first part
+        except Exception:  # noqa: BLE001 - a set file problem must not fail the transcription
+            log.exception("%s: set title not updated", rec.id)
+        try:
             from .. import dictionary
 
             dictionary.apply(rec)  # known aliases fixed in the copy the user sees

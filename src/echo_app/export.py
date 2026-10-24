@@ -182,6 +182,105 @@ def render_transcript(rec: Recording, fmt: str) -> str:
     return text + "\n"
 
 
+# ---- linked sets ---------------------------------------------------------------------------------
+# A set exports as one transcript: a heading per part and times on the set's timeline (the parts'
+# cropped spans laid end to end), so subtitles of the set follow its continuous playback.
+
+def _when(created: str) -> str:
+    try:
+        return datetime.fromisoformat(created).strftime("%Y-%m-%d %H:%M")
+    except ValueError:
+        return created
+
+
+def part_heading(rec: Recording) -> str:
+    """"Nota 2 · 2026-10-23 14:04 · 1:58"."""
+    bits = [rec.meta.title, _when(rec.meta.created)]
+    if rec.meta.duration:
+        from .sets import span
+
+        bits.append(stamp(span(rec)[1]))
+    return " · ".join(bits)
+
+
+def set_cues(parts) -> list[tuple[float, float, str, bool, str | None, int]]:
+    """Every part's passages on the set timeline: (start, end, text, paragraph, speaker name, part)."""
+    from .sets import timeline
+
+    out = []
+    for k, p in enumerate(timeline(parts)):
+        if not p.rec.transcript():
+            continue
+        for a, b, text, para, who in cues(p.rec):
+            out.append((p.to_set(a), p.to_set(b), text, para, speaker_name(p.rec, who), k))
+    return out
+
+
+def _set_text(parts, timestamps: bool = False, markdown: bool = False) -> str:
+    from .sets import timeline
+
+    blocks = []
+    for p in timeline(parts):
+        rec = p.rec
+        head = f"## {rec.meta.title}\n\n_{part_heading(rec).split(' · ', 1)[1]}_" if markdown else part_heading(rec)
+        if timestamps and rec.transcript():
+            lines, last = [], None
+            for a, _b, text, para, who in cues(rec):
+                name = speaker_name(rec, who)
+                if (para or name != last) and lines:
+                    lines.append("")
+                lines.append(f"[{stamp(p.to_set(a))}] {f'{name}: ' if name and name != last else ''}{text}")
+                last = name
+            body = "\n".join(lines)
+        else:
+            body = (with_speakers(rec) if has_speakers(rec) else rec.text()).strip()
+        blocks.append(f"{head}\n\n{body}" if body else head)
+    return "\n\n".join(blocks) + "\n"
+
+
+def set_with_timestamps(parts) -> str:
+    return _set_text(parts, timestamps=True)
+
+
+def render_set(title: str, parts, fmt: str, set_id: str = "") -> str:
+    """A linked set in one of TEXT_FORMATS."""
+    if fmt == ".md":
+        span_text = ""
+        if parts:
+            span_text = f"_{_when(parts[0].meta.created)} – {_when(parts[-1].meta.created)}_\n\n"
+        return f"# {title}\n\n{span_text}{_set_text(parts, markdown=True)}"
+    if fmt in (".srt", ".vtt"):
+        items = [(a, b, text, para, name) for a, b, text, para, name, _k in set_cues(parts)]
+        names = {n: n for *_x, n in items if n}
+        return to_srt(items, names) if fmt == ".srt" else to_vtt(items, names)
+    if fmt == ".json":
+        from .sets import timeline
+
+        tl = timeline(parts)
+        segs = []
+        for a, b, text, para, name, k in set_cues(parts):
+            seg = {"start": round(a, 2), "end": round(b, 2), "text": text, "paragraph": para, "part": k}
+            if name:
+                seg["speaker"] = name
+            segs.append(seg)
+        data = {"id": set_id, "title": title,
+                "parts": [{"id": p.rec.id, "title": p.rec.meta.title, "created": p.rec.meta.created,
+                           "offset": round(p.offset, 2), "length": round(p.length, 2),
+                           "edited": p.rec.is_edited()} for p in tl],
+                "segments": segs}
+        return json.dumps(data, ensure_ascii=False, indent=2) + "\n"
+    return _set_text(parts)
+
+
+def export_set(title: str, parts, dest: Path, set_id: str = "") -> Path:
+    dest = Path(dest)
+    fmt = dest.suffix.lower()
+    if fmt not in TEXT_FORMATS:
+        dest, fmt = dest.with_suffix(".txt"), ".txt"
+    dest.write_text(render_set(title, parts, fmt, set_id), encoding="utf-8")
+    return dest
+
+
 def export_transcript(rec: Recording, dest: Path) -> Path:
     dest = Path(dest)
     fmt = dest.suffix.lower()
