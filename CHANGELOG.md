@@ -38,6 +38,8 @@ tag.
 - Tags and notes on recordings, tag chips that filter the list, `#tag` in the search, month
   headings in long lists, and word count, speaking rate and silence share per recording;
   `echo-app tag` and `echo-app list --tag`.
+- Watched folders: new audio files in chosen folders are imported automatically, in the window
+  or with `echo-app import --watch`.
 
 ### Fixed
 

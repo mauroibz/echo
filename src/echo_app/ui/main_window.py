@@ -21,6 +21,7 @@ from .library_view import LibraryModel, RowDelegate
 from .player import PlayerPanel
 from .recorder_panel import RecorderPanel
 from .tags import TagBar
+from .watch import FolderWatcher
 from .transcript import TranscriptPanel
 
 log = logging.getLogger(__name__)
@@ -80,6 +81,8 @@ class MainWindow(QMainWindow):
         self.model.refresh()
         self._select_initial()
         self._attach_active()
+        self.watcher = FolderWatcher(self.library, self)
+        self.watcher.imported.connect(self._watched_import)
         QTimer.singleShot(0, self._startup_tasks)
 
     # ---- construction ----
@@ -343,6 +346,7 @@ class MainWindow(QMainWindow):
                 idx.close()
 
         run_task(sync_index)
+        self.watcher.configure()
 
     def _attach_active(self):
         if self.recorder_panel.session is None:
@@ -693,6 +697,12 @@ class MainWindow(QMainWindow):
         run_task(export.export_audio, rec, Path(path), on_done=done,
                  on_error=lambda m: self.show_message(f"Export failed: {m}"))
 
+    def _watched_import(self, res):
+        from .. import watch
+
+        self.model.refresh()
+        self.show_message(watch.summary(res))
+
     def _meta_changed(self, rid: str):
         self.model.reload(rid)
         self._update_tags()
@@ -722,7 +732,10 @@ class MainWindow(QMainWindow):
     # ---- dialogs ----
     def show_settings(self):
         dlg = SettingsDialog(self.recorder_panel.session is not None, self)
-        if dlg.exec() and getattr(dlg, "data_changed", False):
+        accepted = dlg.exec()
+        if accepted:
+            self.watcher.configure()
+        if accepted and getattr(dlg, "data_changed", False):
             QMessageBox.information(self, "Recordings folder",
                                     "Echo will use the new folder the next time it starts. "
                                     "Existing recordings stay where they are.")
@@ -797,6 +810,7 @@ class MainWindow(QMainWindow):
 
     def shutdown(self):
         self._refresh_timer.stop()
+        self.watcher.stop()
         self.recorder_panel.shutdown()
         self.player.player.stop()
         self.player._timer.stop()

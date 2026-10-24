@@ -19,3 +19,20 @@
 - **Headless.** `echo-app import --watch` runs the same scanner in a loop with `--interval`
   (default 30 s), using `os.scandir` polling instead of Qt, for a server-like setup.
 - **UI.** Settings → "Watched folders": a list with Add (folder dialog) and Remove.
+
+## Decisions made while implementing
+
+- **Ledger layout**: `{"<folder>": {"handled": {"<path>": [size, mtime_ns]}, "failed": {"<path>":
+  {"signature": [size, mtime_ns], "reason": "..."}}}}` rather than hashes as keys: a file whose
+  size and modification time are unchanged is skipped without hashing it again, which matters
+  for folders full of long recordings. Duplicates (by hash) are still detected by the importer.
+- **"Not locked for writing"** is checked only on Windows, where a file being written cannot be
+  opened by another process. POSIX has no such lock, and synced folders may be read-only, so
+  there the size and time staying the same for 3 seconds is the test.
+- **Scanner** (`watch.py`, stdlib) is shared by the window and the CLI; the window runs it on
+  the background thread, one scan at a time, and looks again 3.5 s later while files are still
+  settling.
+- **Settings**: lists of strings are now allowed in `settings.toml` (`watch_dirs`), and Settings
+  has an "Import" tab with the folders, Add and Remove.
+- **`echo-app import --watch`** takes folders or uses the ones in settings, polls every
+  `--interval` seconds (30 by default) and sooner while a file is settling, and stops on Ctrl+C.

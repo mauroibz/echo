@@ -123,6 +123,10 @@ Model versions are pinned, and only weights and configuration are downloaded, ne
   and you can drag, edit or remove them on the waveform.
 - **Import.** Drop audio files or folders on the window, use File → Import (Ctrl+O), or open a
   file with Echo from your file manager.
+- **Watch a folder.** Settings → Import → Add folder: new audio files that land there (a phone
+  sync folder, WhatsApp exports) are imported while Echo runs, once they finish copying. The
+  files stay in place and duplicates are skipped. Without the window, `echo-app import --watch`
+  does the same.
 - **Transcribe.** New recordings and imports are transcribed automatically; progress and time
   left show in the list. You can keep recording and editing meanwhile.
 - **Read and edit.** Click a recording. Copy with Ctrl+Shift+C (Ctrl+Alt+C with passage
@@ -175,6 +179,7 @@ echo-app mark [--note TEXT]       add a marker to the active recording
 echo-app markers ID               list a recording's markers
 echo-app sources                  list inputs (* marks the default)
 echo-app import PATH...           import files or folders
+echo-app import --watch [FOLDER...] [--interval S]   keep importing new files (default: watched folders)
 echo-app transcribe ID... | --all [--wait] [--no-adapter] [--context TEXT] [--language CODE]
 echo-app cancel ID
 echo-app list [QUERY] [--tag T]   list or search recordings (#word in QUERY is a tag)

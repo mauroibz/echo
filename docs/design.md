@@ -97,6 +97,13 @@ Files are probed with ffprobe, copied to a staging file, verified by hash and re
 recording folder unchanged. Duplicates are found by hash. WhatsApp names (`PTT-…`, `AUD-…`,
 "WhatsApp Audio/Ptt … at/a las …", 12-hour and Spanish variants) give the recording its date.
 
+Watched folders (`watch_dirs` in settings) are scanned by `watch.py`, from the window (a
+`QFileSystemWatcher` per folder with a 2-second debounce, plus a full look at start and every
+five minutes) or from `echo-app import --watch` (polling). A file is imported once its size and
+modification time have stayed the same for 3 seconds. `<data>/watch.json` remembers per folder
+which files were handled, by size and modification time so they are not hashed again, and which
+failed and why; a failure is reported once and retried only when the file changes.
+
 ## Transcription
 
 Model: [Cohere Transcribe](https://huggingface.co/CohereLabs/cohere-transcribe-03-2026)

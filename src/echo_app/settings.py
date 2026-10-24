@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import tomllib
-from dataclasses import asdict, dataclass, fields
+from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 
 from . import paths
@@ -26,6 +26,7 @@ class Settings:
     show_timestamps: bool = False  # passage start times in the transcript margin
     language: str = "es"  # default transcription language
     edit_autopause: bool = True  # typing pauses a playing passage, which plays again a second later
+    watch_dirs: list[str] = field(default_factory=list)  # folders whose new audio files are imported
 
     @property
     def data_path(self) -> Path:
@@ -44,6 +45,7 @@ _COMMENTS = {
     "show_timestamps": "Show passage start times next to the transcript",
     "language": "Default transcription language (es, en, pt, fr, it, de, ...)",
     "edit_autopause": "While a passage plays for editing, typing pauses it and it plays again after",
+    "watch_dirs": "Folders whose new audio files are imported automatically (not their subfolders)",
 }
 
 
@@ -72,7 +74,7 @@ def load(path: Path | None = None) -> tuple[Settings, str | None]:
         if f.name in raw:
             value = raw[f.name]
             default = getattr(s, f.name)
-            if type(value) is type(default):
+            if type(value) is type(default) and (not isinstance(value, list) or all(isinstance(v, str) for v in value)):
                 setattr(s, f.name, value)
             else:
                 log.warning("Ignoring setting %s: expected %s", f.name, type(default).__name__)
@@ -80,6 +82,8 @@ def load(path: Path | None = None) -> tuple[Settings, str | None]:
 
 
 def _toml_value(v) -> str:
+    if isinstance(v, list):
+        return "[" + ", ".join(_toml_value(str(x)) for x in v) + "]"
     if isinstance(v, bool):
         return "true" if v else "false"
     if isinstance(v, int):

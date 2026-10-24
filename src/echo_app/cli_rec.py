@@ -208,8 +208,23 @@ def cmd_import(args) -> int:
 
     from . import importer
 
-    _, lib = _lib()
+    cfg, lib = _lib()
     importer.clean_staging(lib)
+    if args.watch:
+        from . import watch
+
+        folders = [Path(p).expanduser() for p in args.paths] or [Path(p).expanduser() for p in cfg.watch_dirs]
+        if not folders:
+            print("No folders to watch. Give some, or add them in Settings → Import.", file=sys.stderr)
+            return 1
+        try:
+            watch.watch_forever(lib, folders, interval=args.interval)
+        except KeyboardInterrupt:
+            pass
+        return 0
+    if not args.paths:
+        print("Give files or folders to import (or --watch).", file=sys.stderr)
+        return 2
 
     def progress(i, n, path):
         if path.name and sys.stdout.isatty():
@@ -262,8 +277,11 @@ def register(sub) -> None:
     s.add_argument("id")
     s.set_defaults(func=cmd_finalize)
     s = sub.add_parser("import", help="import audio files or folders")
-    s.add_argument("paths", nargs="+")
+    s.add_argument("paths", nargs="*")
     s.add_argument("--no-transcribe", action="store_true", help="do not queue transcription")
+    s.add_argument("--watch", action="store_true",
+                   help="keep importing new files that appear in the folders (default: the watched folders in settings)")
+    s.add_argument("--interval", type=float, default=30.0, help="seconds between looks at the folders (--watch)")
     s.set_defaults(func=cmd_import)
     s = sub.add_parser("_recorder")  # internal: the supervisor process
     s.add_argument("id")

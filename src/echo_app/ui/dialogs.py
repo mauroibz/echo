@@ -9,7 +9,7 @@ from PySide6.QtCore import QProcess, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QFont, QGuiApplication, QPainter
 from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog,
                                QFormLayout, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QInputDialog, QLabel,
-                               QLineEdit, QProgressBar, QPushButton, QSpinBox, QTabWidget, QTreeWidget,
+                               QLineEdit, QListWidget, QProgressBar, QPushButton, QSpinBox, QTabWidget, QTreeWidget,
                                QTreeWidgetItem, QVBoxLayout, QWidget)
 
 from .. import APP_NAME, __version__, dictionary, doctor, features, models, selfcmd, settings, transcription
@@ -432,6 +432,38 @@ class DictionaryPage(QWidget):
             self.dic.save()
 
 
+class WatchedFoldersPage(QWidget):
+    """Folders Echo imports new audio files from by itself."""
+
+    def __init__(self, folders: list[str], parent=None):
+        super().__init__(parent)
+        lay = QVBoxLayout(self)
+        lay.addWidget(_dim("New audio files that appear in these folders are imported while Echo runs, for example "
+                           "where your phone syncs voice notes or WhatsApp exports land. The files stay where they are; "
+                           "duplicates are skipped. Subfolders are not watched."))
+        self.list = QListWidget()
+        for f in folders:
+            self.list.addItem(f)
+        lay.addWidget(self.list, 1)
+        row = QHBoxLayout()
+        add = QPushButton(icon("folder"), "Add folder…")
+        add.clicked.connect(self._add)
+        self.remove = QPushButton(icon("delete"), "Remove")
+        self.remove.clicked.connect(lambda: [self.list.takeItem(self.list.row(i)) for i in self.list.selectedItems()])
+        row.addWidget(add)
+        row.addWidget(self.remove)
+        row.addStretch(1)
+        lay.addLayout(row)
+
+    def _add(self):
+        d = QFileDialog.getExistingDirectory(self, "Watch a folder", str(Path.home()))
+        if d and d not in self.folders():
+            self.list.addItem(d)
+
+    def folders(self) -> list[str]:
+        return [self.list.item(i).text() for i in range(self.list.count())]
+
+
 class SettingsDialog(QDialog):
     def __init__(self, recording_active: bool, parent=None):
         super().__init__(parent)
@@ -447,6 +479,8 @@ class SettingsDialog(QDialog):
         self.tabs.addTab(general, "General")
         self.dictionary = DictionaryPage()
         self.tabs.addTab(self.dictionary, "Dictionary")
+        self.watched = WatchedFoldersPage(self.cfg.watch_dirs)
+        self.tabs.addTab(self.watched, "Import")
         form = QFormLayout()
         form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
         row = QHBoxLayout()
@@ -545,6 +579,7 @@ class SettingsDialog(QDialog):
         self.cfg.channels = self.channels.currentData()
         self.cfg.auto_transcribe = self.auto.isChecked()
         self.cfg.use_adapter = self.adapter.isChecked()
+        self.cfg.watch_dirs = self.watched.folders()
         self.cfg.edit_autopause = self.autopause.isChecked()
         self.cfg.language = self.language.currentData() or "es"
         self.cfg.worker_idle_minutes = self.idle.value()
