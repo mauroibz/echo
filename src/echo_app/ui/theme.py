@@ -380,6 +380,10 @@ QWidget#sidebar QLineEdit, QWidget#sidebar QComboBox {{ background: {glass}; col
 QWidget#sidebar QLineEdit:focus, QWidget#sidebar QComboBox:hover {{ border-color: {t.foam}; background: {glass_hover}; }}
 QWidget#sidebar QComboBox:disabled {{ color: {t.on_deep_muted}; }}
 QWidget#sidebar QComboBox::down-arrow {{ image: url({deep_chev}); }}
+QWidget#sidebar QComboBox QAbstractItemView {{ background: {t.surface}; color: {t.ink}; border: 1px solid {t.line};
+    selection-background-color: {t.accent_soft}; selection-color: {t.ink}; }}
+QComboBox QAbstractItemView::item {{ color: {t.ink}; padding: 5px 8px; min-height: 22px; }}
+QComboBox QAbstractItemView::item:selected {{ background: {t.accent_soft}; color: {t.ink}; }}
 QWidget#sidebar QLineEdit {{ border-radius: 12px; padding: 8px 10px; }}
 QWidget#sidebar QToolButton {{ background: {glass}; color: {t.on_deep}; border: 1px solid {glass_line}; }}
 QWidget#sidebar QToolButton:hover {{ background: {glass_hover}; border-color: {t.foam}; }}

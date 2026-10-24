@@ -7,8 +7,8 @@ import time
 
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QLinearGradient, QPainter
-from PySide6.QtWidgets import (QComboBox, QGraphicsDropShadowEffect, QHBoxLayout, QLabel, QSizePolicy, QToolButton,
-                               QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QComboBox, QGraphicsDropShadowEffect, QHBoxLayout, QLabel, QSizePolicy,
+                               QStyledItemDelegate, QToolButton, QVBoxLayout, QWidget)
 
 from .. import recorder, settings
 from ..audio import levels, monitor, pipewire
@@ -91,6 +91,12 @@ class LevelMeter(QWidget):
 
 class SourceCombo(QComboBox):
     aboutToShow = Signal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        # The default combo delegate paints items in the combo's own (light, on-sidebar) text color;
+        # a styled delegate follows the popup's stylesheet rules instead.
+        self.setItemDelegate(QStyledItemDelegate(self))
 
     def showPopup(self):
         self.aboutToShow.emit()
