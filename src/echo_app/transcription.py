@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import fcntl
 import json
 import os
 import subprocess
 import time
 from pathlib import Path
 
-from . import features, paths, selfcmd, settings
+from . import features, locks, paths, selfcmd, settings
 from .fsutil import atomic_write_json, read_json
 from .library import Library, Recording
 
@@ -30,20 +29,15 @@ def _wanted_path() -> Path:
 def worker_info() -> dict | None:
     """{"pid", "data_dir"} of the running worker, or None if no worker runs."""
     try:
-        f = open(lock_path(), "a+")
+        payload = locks.holder_payload(lock_path())
     except OSError:
         return None
+    if payload is None:
+        return None
     try:
-        fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError:
-        f.seek(0)
-        try:
-            return json.loads(f.read() or "{}") or {"pid": None, "data_dir": None}
-        except ValueError:
-            return {"pid": None, "data_dir": None}
-    finally:
-        f.close()
-    return None
+        return json.loads(payload or "{}") or {"pid": None, "data_dir": None}
+    except ValueError:
+        return {"pid": None, "data_dir": None}
 
 
 def worker_running(lib: Library) -> bool:
@@ -75,9 +69,10 @@ def ensure_worker(lib: Library) -> bool:
         return True
     if wanted_dir() == str(lib.data_dir):
         _wanted_path().unlink(missing_ok=True)
-    subprocess.Popen(selfcmd.command("_worker", "--data-dir", str(lib.data_dir)), env=selfcmd.env(),
-                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                     start_new_session=True, close_fds=True)
+    from .audio.backend import detached_popen
+
+    detached_popen(selfcmd.command("_worker", "--data-dir", str(lib.data_dir)), env=selfcmd.env(),
+                   stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     return True
 
 

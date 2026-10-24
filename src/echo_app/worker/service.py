@@ -16,7 +16,8 @@ from typing import Any, Protocol
 import numpy as np
 
 from ..audio import ffmpeg
-from ..fsutil import atomic_write_json, flock_with_retry, read_json
+from .. import locks
+from ..fsutil import atomic_write_json, read_json
 from ..library import ERROR, PROGRESS, READY, REQUESTED, TRANSCRIPT, Library, Recording
 from . import planning
 
@@ -45,14 +46,11 @@ def try_lock(lib: Library):
     """One worker per user (the GPU holds one model), recording which folder it serves."""
     from .. import transcription
 
-    f = flock_with_retry(transcription.lock_path())
-    if f is None:
+    lock = locks.acquire(transcription.lock_path(), wait=2.0)
+    if lock is None:
         return None
-    f.seek(0)
-    f.truncate()
-    f.write(json.dumps({"pid": os.getpid(), "data_dir": str(lib.data_dir)}))
-    f.flush()
-    return f
+    lock.write_payload(json.dumps({"pid": os.getpid(), "data_dir": str(lib.data_dir)}))
+    return lock
 
 
 def _other_folder_waiting(lib: Library) -> bool:

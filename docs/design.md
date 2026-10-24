@@ -25,8 +25,17 @@ change.
 | Transcription worker (`echo-app _worker`) | on demand, one per user | Loads the model on the GPU, works through queued recordings, exits when idle. |
 
 Each of the first three can die without losing audio. The window talks to the supervisor
-through signals and two small JSON files; it finds running supervisors by their command line in
-`/proc`. Every action in the window is also a CLI command (`echo-app record`, `transcribe`,
+through files only: commands (pause, resume, stop) are one-line files in `takes/commands/`, read
+on every 0.1 s tick, and the supervisor answers in `status.json`, a heartbeat written twice a
+second with the random token it also put in `session.json`. A supervisor is alive while its
+heartbeat is under 3 seconds old, carries the session's token and its process exists; nothing
+reads `/proc`. A heartbeat that stops is given 10 seconds before recovery treats the supervisor
+as dead, and recovery never touches a recording whose supervisor process still holds the
+recording lock. The previous version's signals are still accepted, and a recording it started
+(no token) is still stopped with a signal. All audio device access goes through
+`audio/backend.py`; PipeWire is the only backend so far, and the tests use a command backend
+that runs `tests/fake_capture.py` in place of `pw-record`. Locks are `locks.py`: `flock` on
+POSIX, `msvcrt.locking` on Windows. Every action in the window is also a CLI command (`echo-app record`, `transcribe`,
 `import` and so on), which is how the core is tested without a display.
 
 ## Storage
@@ -57,8 +66,8 @@ to the desktop trash.
 1. `echo-app record` takes a per-data-folder lock (one recording at a time) and starts a
    detached supervisor, which runs `pw-record --raw` into `takes/take-001.raw`.
 2. The supervisor fsyncs the take every 2 seconds and writes `status.json` on each state change
-   and twice a second. Pause and resume are SIGUSR1 and SIGUSR2; each resume starts a new take.
-   Stop is SIGTERM.
+   and twice a second, also while it finalizes. Pause, resume and stop are command files; each
+   resume starts a new take.
 3. If capture dies, the supervisor restarts it into a new take with backoff and records the gap.
    After repeated failures on the chosen input it falls back to the default input and says so.
    It warns when the take stops growing and refuses to start with less than 1 GB free.
@@ -66,8 +75,9 @@ to the desktop trash.
    captured PCM (sha256 of the decoded samples); then the takes are deleted. Any failure leaves
    the takes in place and the recording marked "needs attention".
 5. On startup the window and `echo-app recover` look for interrupted recordings: a live
-   supervisor is reattached, a live `pw-record` without its supervisor is adopted, and if
-   everything is dead the takes are finalized.
+   supervisor is reattached, a `pw-record` still writing its take without a supervisor is
+   adopted (its process exists and the take was written within 3 seconds), and if everything is
+   dead the takes are finalized.
 
 Measured PipeWire behavior this relies on: SIGINT and SIGTERM flush everything; a SIGKILL of
 `pw-record` loses at most its 4 KB buffer (about 40 ms); a missing or unplugged target falls

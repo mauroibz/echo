@@ -1,4 +1,5 @@
-"""Playback through ffmpeg (decode from any position, any format) piped into pw-play.
+"""Playback through ffmpeg (decode from any position, any format) piped into the backend's output
+(pw-play with PipeWire).
 
 No media framework needed: seeking or changing speed restarts the pipeline at the new position,
 which takes about a tenth of a second.
@@ -88,14 +89,14 @@ class Playback:
             cmd += ["-t", f"{max(0.05, end - self._pos):.3f}"]
         cmd += ["-i", str(self.path), "-vn", *_atempo(self.speed), "-f", "s16le", "-ac", str(CHANNELS),
                 "-ar", str(RATE), "pipe:1"]
+        from . import backend
+
         try:
             self._dec = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.DEVNULL)
-            self._out = subprocess.Popen(
-                ["pw-play", "--raw", "--rate", str(RATE), "--channels", str(CHANNELS), "--format", "s16",
-                 "--latency", "50ms", "-P", '{ node.name="echo-player" node.description="Echo" application.name="Echo" }',
-                 "-"], stdin=self._dec.stdout, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            self._dec.stdout.close()  # pw-play owns the read end now
-        except OSError as e:
+            self._out = backend.get().output(RATE, CHANNELS, self._dec.stdout)
+            if isinstance(self._out, subprocess.Popen):
+                self._dec.stdout.close()  # the output process owns the read end now
+        except (OSError, backend.BackendMissing) as e:
             self.error = f"cannot start playback: {e}"
             self._cleanup()
             return

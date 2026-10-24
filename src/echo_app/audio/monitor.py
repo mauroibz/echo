@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import logging
-import subprocess
 import threading
 
-from . import levels, pipewire
+from . import backend, levels
+from .backend import Source
 
 log = logging.getLogger(__name__)
 
@@ -17,27 +17,26 @@ CHUNK = RATE // 20 * 2  # 50 ms of mono s16
 class LevelMonitor:
     """Reads a low-rate mono stream of a source and keeps the latest peak level."""
 
-    def __init__(self, source: pipewire.Source | None):
+    def __init__(self, source: Source | None):
         self.source = source
         self.level = levels.SILENCE_DB
         self.clipped = False
-        self._proc: subprocess.Popen | None = None
+        self._proc: backend.Stream | None = None
         self._thread: threading.Thread | None = None
 
     def start(self) -> None:
         self.stop()
         try:
-            self._proc = subprocess.Popen(pipewire.monitor_cmd(self.source, RATE), stdout=subprocess.PIPE,
-                                          stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL)
-        except OSError as e:
+            self._proc = backend.get().meter(self.source, RATE)
+        except (OSError, backend.BackendMissing) as e:
             log.warning("level monitor failed to start: %s", e)
             return
         self._thread = threading.Thread(target=self._run, args=(self._proc,), daemon=True)
         self._thread.start()
 
-    def _run(self, proc: subprocess.Popen) -> None:
+    def _run(self, proc: backend.Stream) -> None:
         while True:
-            data = proc.stdout.read(CHUNK)
+            data = proc.read(CHUNK)
             if not data:
                 break
             self.level, clip = levels.peak(data)
@@ -49,35 +48,30 @@ class LevelMonitor:
         return clip
 
     def running(self) -> bool:
-        return self._proc is not None and self._proc.poll() is None
+        return self._proc is not None and self._proc.running()
 
     def stop(self) -> None:
         if self._proc is not None:
-            self._proc.terminate()
-            try:
-                self._proc.wait(timeout=2)
-            except subprocess.TimeoutExpired:
-                self._proc.kill()
+            self._proc.stop()
             self._proc = None
         self.level = levels.SILENCE_DB
 
 
 class Listener:
-    """Plays the selected input through the default output (pw-loopback)."""
+    """Plays the selected input through the default output, where the backend can."""
 
     def __init__(self):
-        self._proc: subprocess.Popen | None = None
+        self._proc: backend.Output | None = None
 
     @property
     def active(self) -> bool:
         return self._proc is not None and self._proc.poll() is None
 
-    def start(self, source: pipewire.Source | None) -> None:
+    def start(self, source: Source | None) -> None:
         self.stop()
         try:
-            self._proc = subprocess.Popen(pipewire.loopback_cmd(source), stdin=subprocess.DEVNULL,
-                                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        except OSError as e:
+            self._proc = backend.get().listen(source)
+        except (OSError, backend.BackendMissing) as e:
             log.warning("listening failed to start: %s", e)
             self._proc = None
 
@@ -86,6 +80,6 @@ class Listener:
             self._proc.terminate()
             try:
                 self._proc.wait(timeout=2)
-            except subprocess.TimeoutExpired:
-                self._proc.kill()
+            except Exception:  # noqa: BLE001 - a process or a stream; either way it is gone
+                pass
             self._proc = None

@@ -11,7 +11,8 @@ from PySide6.QtWidgets import (QComboBox, QGraphicsDropShadowEffect, QHBoxLayout
                                QStyledItemDelegate, QToolButton, QVBoxLayout, QWidget)
 
 from .. import recorder, settings
-from ..audio import levels, monitor, pipewire
+from ..audio import backend, levels, monitor
+from ..audio.backend import INPUT, Source
 from ..library import Library
 from . import theme
 from .common import dot_icon, fmt_duration, icon, run_task
@@ -113,7 +114,7 @@ class RecorderPanel(QWidget):
         super().__init__(parent)
         self.library = library
         self.session: recorder.Session | None = None
-        self._sources: list[pipewire.Source] = []
+        self._sources: list[Source] = []
         self._monitor: monitor.LevelMonitor | None = None
         self._listener = monitor.Listener()
         self._busy = False
@@ -165,6 +166,10 @@ class RecorderPanel(QWidget):
         self.listen.setAccessibleName("Listen to input")
         self.listen.toggled.connect(self._toggle_listen)
         row.addWidget(self.listen)
+        try:
+            self.listen.setVisible(backend.get().can_listen)
+        except backend.BackendMissing:
+            self.listen.hide()
         lay.addLayout(row)
 
         self.meter = LevelMeter()
@@ -234,7 +239,10 @@ class RecorderPanel(QWidget):
     # ---- sources ----
     def reload_sources(self):
         def load():
-            return pipewire.list_sources()
+            try:
+                return backend.get().list_sources()
+            except backend.BackendMissing:
+                return []
 
         run_task(load, on_done=self._set_sources)
 
@@ -256,11 +264,11 @@ class RecorderPanel(QWidget):
                 self.source.insertSeparator(self.source.count())
             last_kind = s.kind
             self.source.addItem(s.short_label, s.name)
-            tip = s.label + (" (system default input)" if s.is_default and s.kind == pipewire.INPUT else "")
+            tip = s.label + (" (system default input)" if s.is_default and s.kind == INPUT else "")
             self.source.setItemData(self.source.count() - 1, tip, Qt.ItemDataRole.ToolTipRole)
         idx = self.source.findData(current) if current else -1
         if idx < 0:
-            d = pipewire.default_source(sources)
+            d = backend.get().default_source(sources)
             idx = self.source.findData(d.name) if d else 0
             if current and self._sources_loaded is False and cfg.source:
                 self.message.emit("The saved input is not available; using the default input.")
@@ -272,14 +280,14 @@ class RecorderPanel(QWidget):
     def current_source_name(self) -> str:
         return self.source.currentData() or ""
 
-    def current_source(self) -> pipewire.Source | None:
+    def current_source(self) -> Source | None:
         name = self.current_source_name()
         return next((s for s in self._sources if s.name == name), None)
 
     def _source_chosen(self, _index):
         cfg, _ = settings.load()
         s = self.current_source()
-        cfg.source = "" if (s is None or (s.is_default and s.kind == pipewire.INPUT)) else s.name
+        cfg.source = "" if (s is None or (s.is_default and s.kind == INPUT)) else s.name
         settings.save(cfg)
         self._restart_monitor()
         if self.listen.isChecked():
@@ -338,7 +346,7 @@ class RecorderPanel(QWidget):
     def start(self):
         cfg, _ = settings.load()
         s = self.current_source()
-        source = "" if s is None or (s.is_default and s.kind == pipewire.INPUT) else s.name
+        source = "" if s is None or (s.is_default and s.kind == INPUT) else s.name
         if self._monitor:
             self._monitor.stop()
             self._monitor = None

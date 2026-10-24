@@ -34,14 +34,18 @@ def _fmt(sec: float) -> str:
 
 
 def cmd_sources(args) -> int:
-    from .audio import pipewire
+    from .audio import backend
 
-    sources = pipewire.list_sources()
+    try:
+        sources = backend.get().list_sources()
+    except backend.BackendMissing as e:
+        print(e, file=sys.stderr)
+        return 1
     if not sources:
-        print("No PipeWire sources found. Is PipeWire running?", file=sys.stderr)
+        print("No audio inputs found. Run: echo-app doctor", file=sys.stderr)
         return 1
     for s in sources:
-        mark = "*" if s.is_default and s.kind == pipewire.INPUT else " "
+        mark = "*" if s.is_default and s.kind == backend.INPUT else " "
         print(f"{mark} {s.label}\n    {s.name}")
     return 0
 

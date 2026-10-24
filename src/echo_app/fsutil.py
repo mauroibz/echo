@@ -80,25 +80,3 @@ def free_bytes(path: Path) -> int:
         path = path.parent
     st = os.statvfs(path)
     return st.f_bavail * st.f_frsize
-
-
-def flock_with_retry(path: Path, seconds: float = 2.0):
-    """Open and exclusively flock `path`, retrying briefly.
-
-    Status checks take the same lock for an instant; retrying keeps a starting process from
-    mistaking such a check for a real owner. Returns the open file, or None if still held.
-    """
-    import fcntl
-    import time
-
-    f = open(path, "a+")
-    deadline = time.monotonic() + seconds
-    while True:
-        try:
-            fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            return f
-        except BlockingIOError:
-            if time.monotonic() >= deadline:
-                f.close()
-                return None
-            time.sleep(0.05)

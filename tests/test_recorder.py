@@ -153,7 +153,7 @@ def test_supervisor_killed_capture_adopted(lib):
     os.kill(old, signal.SIGKILL)
     assert wait_for(lambda: not s.alive())
     capture_pid = recorder.load_session(s.rec)["takes"][-1]["pid"]
-    assert recorder._alive(capture_pid), "capture must survive the supervisor"
+    assert recorder.pid_alive(capture_pid), "capture must survive the supervisor"
     actions = dict(recorder.recover_all(lib))
     assert actions[s.rec.id] == "adopted"
     assert s.alive() and s.supervisor_pid != old
@@ -171,7 +171,7 @@ def test_everything_killed_then_recovered(lib):
     info = recorder.load_session(s.rec)
     os.kill(info["supervisor_pid"], signal.SIGKILL)
     os.kill(info["takes"][-1]["pid"], signal.SIGKILL)
-    assert wait_for(lambda: not s.alive() and not recorder._alive(info["takes"][-1]["pid"]))
+    assert wait_for(lambda: not s.alive() and not recorder.pid_alive(info["takes"][-1]["pid"]))
     assert dict(recorder.recover_all(lib))[s.rec.id] == "finalized"
     m = s.rec.reload().meta
     assert m.state == READY and m.recovered and 1.5 < m.duration < 2.5
@@ -216,3 +216,84 @@ def test_disk_running_out_stops_cleanly(lib, monkeypatch):
     assert sup._check_disk() is False
     assert any("Disk almost full" in e["cause"] for e in recorder.load_session(rec)["events"])
     assert recorder.finalize(rec) == "ready"
+
+
+def test_commands_are_files_and_none_is_lost(lib):
+    s = recorder.start(lib, rate=RATE)
+    # Two quick commands in a row: both are applied in order (a single file would keep one).
+    recorder.send_command(s.rec, "pause")
+    recorder.send_command(s.rec, "resume")
+    assert wait_for(lambda: len([g for g in (recorder.load_session(s.rec) or {}).get("events", [])
+                                 if g["kind"] == "pause"]) == 1)
+    assert s.status()["state"] == recorder.S_RECORDING
+    assert not list((s.rec.takes_dir / recorder.COMMANDS).iterdir())  # consumed
+    assert s.stop(wait=20) == "ready"
+
+
+def test_signals_still_control_the_supervisor(lib):
+    s = recorder.start(lib, rate=RATE)
+    os.kill(s.supervisor_pid, signal.SIGUSR1)
+    assert wait_for(lambda: s.status()["state"] == recorder.S_PAUSED)
+    os.kill(s.supervisor_pid, signal.SIGUSR2)
+    assert wait_for(lambda: s.status()["state"] == recorder.S_RECORDING)
+    os.kill(s.supervisor_pid, signal.SIGTERM)
+    assert wait_for(lambda: s.rec.reload().meta.state == READY, 20)
+
+
+def test_liveness_needs_the_token_and_a_fresh_heartbeat(lib):
+    s = recorder.start(lib, rate=RATE)
+    assert s.alive() and s.info()["token"] == recorder.read_status(s.rec)["token"]
+    # A status file from some other supervisor (another token) does not count.
+    info = recorder.load_session(s.rec)
+    from echo_app.fsutil import atomic_write_json
+
+    atomic_write_json(recorder.session_path(s.rec), {**info, "token": "someone-else"})
+    assert not s.alive()
+    atomic_write_json(recorder.session_path(s.rec), info)
+    assert wait_for(s.alive)
+    s.stop(wait=20)
+
+
+def test_hung_supervisor_is_left_alone(lib, monkeypatch):
+    s = recorder.start(lib, rate=RATE)
+    pid = s.supervisor_pid
+    os.kill(pid, signal.SIGSTOP)
+    try:
+        assert wait_for(lambda: not s.alive(), timeout=recorder.HEARTBEAT_STALE + 2)
+        assert s.hung()
+        assert dict(recorder.recover_all(lib))[s.rec.id] == "live"  # within the grace period
+        monkeypatch.setattr(recorder, "HUNG_GRACE", recorder.HEARTBEAT_STALE + 0.5)
+        assert wait_for(lambda: not s.hung(), timeout=3)
+        # Past the grace period it still holds the lock: recovery must not touch its takes.
+        assert dict(recorder.recover_all(lib))[s.rec.id] == "hung"
+        assert recorder.take_files(s.rec) and s.rec.reload().meta.state == RECORDING
+    finally:
+        os.kill(pid, signal.SIGCONT)
+    assert wait_for(s.alive)
+    assert s.stop(wait=20) == "ready"
+
+
+def test_recording_from_the_previous_version_is_still_controlled(lib):
+    """A session without a token (started before the upgrade) is recognized by its heartbeat
+    and stopped with a signal."""
+    s = recorder.start(lib, rate=RATE)
+    time.sleep(1.0)  # some audio, so the stopped recording is kept rather than discarded as empty
+    sent = []
+    real_kill = os.kill
+
+    def kill(pid, sig):
+        sent.append(sig)
+        real_kill(pid, sig)
+
+    info = recorder.load_session(s.rec)
+    del info["token"]
+    from echo_app.fsutil import atomic_write_json
+
+    atomic_write_json(recorder.session_path(s.rec), info)
+    assert s.legacy and s.alive()
+    import unittest.mock
+
+    with unittest.mock.patch.object(recorder.os, "kill", kill):
+        s.stop()
+    assert [x for x in sent if x] == [signal.SIGTERM]  # kill(pid, 0) are liveness checks
+    assert wait_for(lambda: s.rec.reload().meta.state == READY, 20)
