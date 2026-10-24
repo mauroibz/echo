@@ -87,7 +87,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def _extensions():
     """Subcommands contributed by other modules (recorder, import, worker)."""
-    from . import cli_ext, cli_rec  # noqa: F401 - registers subcommands
+    from . import cli_ext, cli_rec, cli_tr  # noqa: F401 - registers subcommands
 
     return cli_ext.REGISTRARS
 

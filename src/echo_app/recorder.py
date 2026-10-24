@@ -605,7 +605,9 @@ def finalize(rec: Recording, recovered: bool = False) -> str:
     log.info("%s: finalized %.1f s", rec.id, frames / rate)
     try:
         if features.auto_transcribe() and rec.transcript_status() == "none":
-            rec.request_transcription()
+            from . import transcription
+
+            transcription.request(Library(rec.folder.parent.parent), rec)
     except OSError:
         log.exception("could not queue transcription for %s", rec.id)
     return "ready"

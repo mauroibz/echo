@@ -205,8 +205,14 @@ def import_paths(lib: Library, paths: Iterable[Path],
             progress(i, len(files), f)
         r = import_file(lib, f, hashes)
         if r.status == IMPORTED and auto_transcribe and r.recording:
-            r.recording.request_transcription()
+            from .settings import load
+
+            r.recording.request_transcription(adapter=load()[0].use_adapter)
         results.append(r)
     if progress:
         progress(len(files), len(files), Path())
+    if auto_transcribe and any(r.status == IMPORTED for r in results):
+        from . import transcription
+
+        transcription.ensure_worker(lib)
     return results

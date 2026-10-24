@@ -1,4 +1,9 @@
+import os
+
 import pytest
+
+# Captured before any test swaps HOME, for tests that need the real model cache.
+REAL_HF_HOME = os.environ.get("HF_HOME") or os.path.expanduser("~/.cache/huggingface")
 
 
 @pytest.fixture(autouse=True)
@@ -13,3 +18,8 @@ def isolated_home(tmp_path, monkeypatch):
         monkeypatch.delenv(var, raising=False)
     # XDG_RUNTIME_DIR stays real: PipeWire's socket lives there.
     return home
+
+
+@pytest.fixture
+def real_models(monkeypatch):
+    monkeypatch.setenv("HF_HOME", REAL_HF_HOME)
