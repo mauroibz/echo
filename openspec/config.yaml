@@ -2,8 +2,8 @@ schema: spec-driven
 
 context: |
   Echo is a single-user Linux desktop app (Fedora KDE, PipeWire) for recording long-form
-  audio and transcribing Spanish speech locally on an NVIDIA GPU. PLAN.md at the repo root
-  holds the agreed architecture and the quality bar (section 10).
+  audio and transcribing Spanish speech locally on an NVIDIA GPU. docs/design.md holds the
+  architecture and the reasons behind it.
   Hard constraints:
   - No audio may ever be lost. Recording must survive UI crashes, SIGKILL and power loss.
   - Lean and finished: few features done completely, no flags hiding unfinished work.

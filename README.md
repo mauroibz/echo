@@ -1,98 +1,128 @@
-# Echo
+<p align="center">
+  <img src="data/echo-app.svg" width="112" height="112" alt="Echo logo: foam waves and a coral dot on a deep teal tile">
+</p>
 
-Record long-form audio and transcribe Spanish speech locally, on your own GPU.
+<h1 align="center">Echo</h1>
 
-![Echo with a recording selected: the recorder and library on the deep teal sidebar, the waveform and transcript on the right](docs/screenshot.png)
+<p align="center">
+  Record long talks and voice notes, and get Spanish transcripts made on your own computer.
+</p>
 
-Echo is a desktop app for Linux with PipeWire. It records from any input (or from what the
-computer is playing), imports audio from anywhere including WhatsApp voice notes, and
-transcribes Spanish with [Cohere Transcribe](https://huggingface.co/CohereLabs/cohere-transcribe-03-2026)
-and the [Surus Spanish adapter](https://huggingface.co/surus-ai/cohere-transcribe-spanish-MegaASR).
-After the one-time model download nothing leaves the machine.
+<p align="center">
+  <img src="docs/screenshot.png" alt="Echo with a recording selected: the recorder and library on the deep teal sidebar, the waveform and transcript on the right" width="900">
+</p>
 
-What it is built around:
+Echo is a desktop app for Linux. It records from any microphone, or from whatever the computer
+is playing, imports audio from anywhere (WhatsApp voice notes included), and transcribes
+Spanish speech on your NVIDIA GPU. Nothing is uploaded: after a one-time model download it
+works offline.
 
-- **No lost audio.** Recording runs in its own background process and is flushed to disk every
-  two seconds. Closing the window, a crash, killing the recorder or a power cut loses nothing
-  that reached the disk; the next start recovers the recording automatically. The finished
-  file is lossless FLAC, kept only after it is verified to decode to exactly the captured audio.
-- **Long recordings.** Speech detection splits audio into passages of up to 28 seconds at
-  natural pauses, so hours of stream-of-consciousness talk transcribe with paragraph breaks and
-  timing. An RTX 3080 transcribes about 70 minutes of audio per minute.
-- **Your edits are safe.** The model transcript and your edited text are stored separately.
-  Transcribing again never overwrites your edits.
-- **Plain files.** Every recording is a folder with its audio, a `meta.json` and its
-  transcripts. Nothing is hidden in a database you depend on.
+It is made for long, unscripted speech: thinking out loud, interviews, meetings, hours of
+voice notes.
+
+## What it does
+
+- **Records without losing audio.** Recording runs in its own background process and is saved
+  to disk every two seconds. Closing the window, a crash or a power cut loses nothing that
+  reached the disk, and the next start recovers the recording by itself. Finished recordings
+  are lossless FLAC, kept only after Echo checks they decode to exactly what was captured.
+- **Transcribes long recordings well.** Speech is split at natural pauses into passages and
+  paragraphs with timing, punctuation and accents. An RTX 3080 transcribes about an hour of
+  audio per minute.
+- **Imports anything.** Drag files or folders onto the window. WhatsApp voice notes (`.opus`,
+  `.m4a`, `.amr`) are recognized and dated from their names, and duplicates are skipped.
+- **Lets you work with the text.** Click a recording to read its transcript, edit it (edits
+  save automatically and are never overwritten), search every transcript at once, copy or
+  export to `.txt` or `.md`, and Ctrl+click a passage to hear it.
+- **Plays and crops.** A waveform with speed control and non-destructive crop that snaps to
+  pauses.
+- **Keeps your files plain.** Each recording is a folder with its audio, a `meta.json` and its
+  transcripts.
+
+Transcription uses [Cohere Transcribe](https://huggingface.co/CohereLabs/cohere-transcribe-03-2026)
+with the [Surus Spanish adapter](https://huggingface.co/surus-ai/cohere-transcribe-spanish-MegaASR).
+
+## Requirements
+
+- Linux with PipeWire (the default on current Fedora, Ubuntu, Debian and Arch desktops)
+- `ffmpeg`
+- [`uv`](https://docs.astral.sh/uv/), which installs Echo's own Python
+- For transcription: an NVIDIA GPU with 8 GB of memory or more, its driver, and about 8 GB of
+  disk for the libraries and the model. Without a GPU Echo still records, imports, plays and
+  edits.
+
+Install the system packages:
+
+```sh
+# Fedora
+sudo dnf install uv ffmpeg-free pipewire-utils
+
+# Ubuntu / Debian
+sudo apt install ffmpeg pipewire-bin
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Arch
+sudo pacman -S uv ffmpeg pipewire
+```
 
 ## Install
 
-Requirements: Linux with PipeWire, `ffmpeg`, and [`uv`](https://docs.astral.sh/uv/).
-On Fedora:
-
 ```sh
-sudo dnf install uv ffmpeg-free pipewire-utils
-```
-
-Transcription needs an NVIDIA GPU with 8 GB or more and its driver. Without one, Echo still
-records, imports, plays and edits.
-
-```sh
-git clone <this repository> ~/apps/echo
+git clone https://github.com/mauroibz/echo.git ~/apps/echo
 cd ~/apps/echo
-./install.sh --with-transcription     # or plain ./install.sh for recording only
+./install.sh --with-transcription     # or ./install.sh for recording only
 ```
 
-The installer touches only the clone and your home directory. uv downloads its own Python,
-and every package is installed from the hash-locked `uv.lock`, wheels only, so no third-party
-build script runs. Nothing is installed into the system Python and nothing needs root.
+Echo then appears in your application menu. From a terminal, run `echo-app`.
 
-Echo then appears in the application menu. From a terminal, run `echo-app`.
+The installer touches only the folder you cloned and your home directory, and needs no root.
+Every package comes from the hash-locked `uv.lock` as a prebuilt wheel, so no third-party build
+script runs, and nothing is installed into the system Python.
 
-### The transcription model
+### Get the transcription model
 
-The model is free but gated on Hugging Face. Accept the terms on both model pages with your
-account, then create a read token at <https://huggingface.co/settings/tokens>. The welcome
-screen asks for the token and downloads the model (about 4.3 GB) with a progress bar. The same
-screen is under Help → Transcription model. From a terminal instead:
+The model is free, but you have to accept its terms on Hugging Face first:
+
+1. Sign in to [Hugging Face](https://huggingface.co) and accept the terms on both
+   [Cohere Transcribe](https://huggingface.co/CohereLabs/cohere-transcribe-03-2026) and the
+   [Surus adapter](https://huggingface.co/surus-ai/cohere-transcribe-spanish-MegaASR).
+2. Create a read token at <https://huggingface.co/settings/tokens>.
+3. Open Echo. The welcome screen asks for the token and downloads the model (about 4.3 GB).
+   The same screen is under Help → Transcription model.
+
+From a terminal instead:
 
 ```sh
 hf auth login                 # or put the token in ~/.cache/huggingface/token
 echo-app models download
 ```
 
-Model revisions are pinned in `src/echo_app/models.py`; only data files are downloaded, never
-code from the model repositories.
+Model versions are pinned, and only weights and configuration are downloaded, never code.
 
 ## Using Echo
 
-- **Record.** Pick the input at the top left and check the meter. Press Record (Ctrl+R). Pause
-  and resume with Ctrl+Shift+R. Press Stop to save. Choosing "Computer audio: …" records what
-  the computer plays, for example a call.
-- **Import.** Drop audio files or folders anywhere on the window, use File → Import (Ctrl+O), or
-  open a file with Echo from the file manager. WhatsApp voice notes (`.opus`, `.ogg`, `.m4a`,
-  `.amr`) are recognized and dated from their file names. Duplicates are skipped.
-- **Transcribe.** New recordings and imports are transcribed automatically (Settings can turn
-  that off). Progress and time left show in the list. Transcription runs in the background
-  while you keep recording or editing.
-- **Read and edit.** Click a recording to see its transcript on the right. Edits save
-  automatically. Copy (Ctrl+Shift+C), find (Ctrl+F) and export to `.txt` or `.md` (Ctrl+E).
-  While playing, the current passage is highlighted; Ctrl+click a passage to jump there.
-- **Crop.** Drag the edges of the waveform, or press `[` and `]` at the playhead. Edges snap to
-  pauses unless you hold Shift; Ctrl+arrows nudge them. Crop never changes the original file.
-  Transcribe again to transcribe only the cropped part. Export audio writes the cropped span
-  as FLAC.
+- **Record.** Pick the input at the top left and speak; the meter and the waves should move.
+  Press Record (Ctrl+R), pause with Ctrl+Shift+R, press Stop to save. "Computer audio: …"
+  records what the computer plays, for example a call.
+- **Import.** Drop audio files or folders on the window, use File → Import (Ctrl+O), or open a
+  file with Echo from your file manager.
+- **Transcribe.** New recordings and imports are transcribed automatically; progress and time
+  left show in the list. You can keep recording and editing meanwhile.
+- **Read and edit.** Click a recording. Copy with Ctrl+Shift+C, find with Ctrl+F, export with
+  Ctrl+E. While playing, the current passage is highlighted.
+- **Crop.** Drag the edges of the waveform, or press `[` and `]` at the playhead. Hold Shift to
+  turn off snapping. Transcribe again to transcribe only the cropped part.
 - **Search.** The search box matches titles and transcript text, ignoring accents.
-- **Close the window while recording** and the recording continues; a tray icon shows it and
-  can stop it. Opening Echo again shows the recording in progress.
-
-- **Appearance.** Echo is light by default. Settings → Appearance switches to dark or follows the
-  system, and the change applies immediately.
+- **Close the window while recording** and the recording continues, with a tray icon to stop
+  it.
+- **Appearance.** Light by default; Settings → Appearance switches to dark or follows the
+  system.
 
 All shortcuts are under Help → Keyboard shortcuts (F1).
 
 ## Command line
 
-The window is the main way to use Echo, but every core action also works from a terminal:
+Every core action also works from a terminal:
 
 ```text
 echo-app                          open the window (files given are imported)
@@ -110,17 +140,11 @@ echo-app rescan                   rebuild the search index from the folders
 echo-app doctor                   check the setup
 ```
 
-## Update
+## Update and uninstall
 
 ```sh
-cd ~/apps/echo && git pull && ./install.sh
-```
+cd ~/apps/echo && git pull && ./install.sh    # remembers whether transcription was installed
 
-The installer remembers whether transcription was installed.
-
-## Uninstall
-
-```sh
 ./uninstall.sh            # removes the launcher, menu entry and environment; keeps recordings
 ./uninstall.sh --purge    # also deletes recordings, settings and logs (asks first)
 ```
@@ -129,7 +153,7 @@ The installer remembers whether transcription was installed.
 
 | What | Where |
 |---|---|
-| Recordings and transcripts | `~/.local/share/echo/recordings/` (one folder per recording) |
+| Recordings and transcripts | `~/.local/share/echo/recordings/`, one folder per recording |
 | Settings | `~/.config/echo/settings.toml` |
 | Logs | `~/.local/state/echo/` |
 | Waveform cache | `~/.cache/echo/` |
@@ -141,44 +165,46 @@ Deleted recordings go to the desktop trash.
 
 ## Troubleshooting
 
-Start with Help → Check setup, or `echo-app doctor`. It checks PipeWire, ffmpeg and its decoders,
-the Python environment, the lockfile, disk space, the GPU, the Hugging Face login and the model
+Start with Help → Check setup, or `echo-app doctor`. It checks PipeWire, ffmpeg and its
+decoders, the Python environment, disk space, the GPU, the Hugging Face login and the model
 files, and says how to fix whatever fails.
 
-- **The level meter does not move.** Pick another input; "(system default input)" in the tooltip
-  marks the system default. After a few seconds of total silence Echo says so under the meter:
-  a connected microphone with its gain up never sends exact silence, so check the cable, the mute
-  switch and the gain (in the system sound settings or on the audio interface). The meter runs
-  while the Echo window is open and stops when it is minimized or hidden to the tray.
-- **Old voice notes (`.amr`) do not import.** Fedora's `ffmpeg-free` lacks the AMR decoder.
-  Install `ffmpeg` from RPM Fusion.
-- **"Not enough GPU memory".** The model needs about 5 GB free. Close other programs that use the
-  GPU and try again. The transcriber frees the GPU five minutes after its last job (configurable).
+- **The meter does not move.** Pick another input. If Echo says no sound is arriving, check the
+  cable, the mute switch and the input gain, in the system sound settings or on your audio
+  interface.
+- **Old voice notes (`.amr`) do not import.** Fedora's `ffmpeg-free` lacks the AMR decoder;
+  install `ffmpeg` from RPM Fusion.
+- **"Not enough GPU memory".** The model needs about 5 GB free. Close other programs using the
+  GPU. Echo frees the GPU five minutes after its last transcription (configurable in Settings).
 - **A recording shows "Needs attention".** Its raw audio is safe in the recording's `takes/`
-  folder. Try saving again from the transcript panel or with `echo-app finalize ID`.
+  folder. Use "Try saving again" in the transcript panel, or `echo-app finalize ID`.
+- **The window does not open on an X11 session (Ubuntu).** Install `libxcb-cursor0`.
 
-Logs are in `~/.local/state/echo/` (`gui.log`, `recorder.log`, `worker.log`, `cli.log`).
+Logs are in `~/.local/state/echo/`.
 
 ## Development
 
 ```sh
-uv sync --locked --extra worker     # full environment including dev tools
+uv sync --locked --extra worker     # full environment including test tools
 uv run --no-sync pytest             # fast suite, no GPU or microphone needed
 ECHO_PIPEWIRE_TESTS=1 uv run --no-sync pytest tests/test_pipewire_integration.py   # records the default input
-ECHO_MODEL_TESTS=1 uv run --no-sync pytest tests/test_model_smoke.py               # needs the GPU and models
+ECHO_MODEL_TESTS=1 uv run --no-sync pytest tests/test_model_smoke.py               # needs the GPU and model
 ```
 
-Changes are planned with [OpenSpec](https://github.com/Fission-AI/OpenSpec): specs in
-`openspec/specs/`, archived changes in `openspec/changes/archive/`. `PLAN.md` holds the
-architecture, the decisions made while building, and the quality bar.
+[docs/design.md](docs/design.md) explains the architecture and the reasons behind it. Behavior
+is specified with [OpenSpec](https://github.com/Fission-AI/OpenSpec) in `openspec/specs/`, and
+each past change is in `openspec/changes/archive/`.
 
 Updating dependencies is deliberate: move `exclude-newer` in `pyproject.toml` forward (keeping
-two weeks of margin), run `uv lock --upgrade`, review the diff, run the tests.
+two weeks of margin), run `uv lock --upgrade`, review the diff and run the tests.
 
-## Credits
+## License and credits
+
+Echo is released under the [MIT License](LICENSE).
 
 Speech recognition by Cohere Transcribe (Apache-2.0) with the Surus Spanish adapter
-(Apache-2.0). Speech detection by Silero VAD (MIT). Icons from [Lucide](https://lucide.dev) (ISC).
-Interface type set in [Manrope](https://github.com/sharanda/manrope) (SIL Open Font License); the
-static weights in `src/echo_app/ui/assets/fonts/` are instances of the variable font. License
-texts are next to the files.
+(Apache-2.0); speech detection by Silero VAD (MIT). The models are downloaded separately under
+their own terms. Icons from [Lucide](https://lucide.dev) (ISC). Interface type set in
+[Manrope](https://github.com/sharanda/manrope) (SIL Open Font License); the static weights in
+`src/echo_app/ui/assets/fonts/` are cut from the variable font. License texts sit next to those
+files.

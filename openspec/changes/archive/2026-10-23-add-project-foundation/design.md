@@ -3,7 +3,7 @@
 ## Context
 
 Greenfield repository. Host tools available: uv, ffmpeg, PipeWire utilities. See proposal.md
-for motivation and PLAN.md sections 2 and 9 for the agreed layout and packaging approach.
+for motivation and docs/design.md (Storage, Packaging) for the layout and packaging approach.
 
 ## Goals / Non-Goals
 

@@ -4,7 +4,7 @@
 
 Engine APIs exist and are stdlib-only: `recorder` (start/active/Session/recover_all),
 `importer`, `transcription` (request/cancel/ensure_worker), `library`, `index`, `doctor`,
-`audio.monitor` (LevelMonitor, Listener). See proposal.md for motivation and PLAN.md section 10 for the quality bar.
+`audio.monitor` (LevelMonitor, Listener). See proposal.md for motivation and docs/design.md for the principles.
 
 ## Goals / Non-Goals
 
