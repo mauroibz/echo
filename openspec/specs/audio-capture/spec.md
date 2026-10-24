@@ -54,13 +54,15 @@ SHALL exclude paused time. Only one recording SHALL be active at a time.
 - **THEN** the request is refused with a message naming the active recording
 
 ### Requirement: Recording independent of the window
-Capture SHALL run in a process separate from the user interface. Closing or crashing the user
-interface SHALL NOT stop or interrupt a recording.
+Recording SHALL run in a process separate from the window, controlled through files in the
+recording folder (a command file for pause, resume and stop; a status file with a heartbeat).
+Closing the window, a crash of the window or of the CLI SHALL NOT stop or damage the
+recording. A new window or CLI SHALL find the running recording from its folder and status
+file alone, without inspecting the process table.
 
-#### Scenario: Window crashes while recording
-- **WHEN** the user interface process is killed during a recording
-- **THEN** capture continues, and the next time the window opens it shows the recording in
-  progress with correct elapsed time and the ability to stop it
+#### Scenario: Window closed while recording
+- **WHEN** the window is closed during a recording
+- **THEN** the recording continues and the reopened window shows it as recording with the correct elapsed time
 
 ### Requirement: No audio lost
 Captured audio SHALL be written to disk continuously and flushed to stable storage at least

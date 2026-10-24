@@ -75,3 +75,9 @@ the protocol so recorder tests do not touch audio.
   recording is made from the computer's output ("Computer audio") rather than the microphone,
   so no room audio is captured while nobody is there; it exercises the same `pw-record`
   pipeline, takes, pause and finalize.
+- **1.5 results**: the PipeWire kill-and-recover integration test passes; the two-hour recording
+  through real PipeWire (40 minutes, a 2-minute pause, 80 minutes, controlled with `echo-app
+  pause`, `resume` and `stop`, i.e. command files) produced a verified FLAC of 7200.02 s, with
+  the pause noted at 2400.15 s lasting 120.15 s, no takes left, and stop to saved in 2 s. The
+  source was the computer's output, which was silent, so FLAC encoding was faster than it would
+  be for speech.
