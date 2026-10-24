@@ -66,6 +66,7 @@ def test_cli_language_flag(tmp_path, monkeypatch):
     settings.save(settings.Settings(data_dir=str(tmp_path / "data")))
     rec = Library(tmp_path / "data").create("t", "imported", audio="a.wav", sha256="x")
     monkeypatch.setattr(features, "transcription_installed", lambda: True)
+    monkeypatch.setattr(models, "all_cached", lambda: True)
     assert cli.main(["transcribe", rec.id, "--language", "fr"]) == 0
     assert json.loads(rec.path(REQUESTED).read_text())["language"] == "fr"
     assert Library(tmp_path / "data").get(rec.id).meta.language == "fr"

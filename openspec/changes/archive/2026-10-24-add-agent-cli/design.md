@@ -103,4 +103,21 @@ or agent file: `--help` is what every agent reads first.
 
 ## Decisions made while implementing
 
-(to be filled in by the implementing session)
+- **`transcribe --json` nests the recording.** Each input is
+  `{"input", "result", "error", "output", "recording"}`, where `recording` is the same
+  dictionary `info --json` prints (null for a file that was not imported). Flattening the
+  recording's keys into the entry, as first sketched, would have given `transcribe` a different
+  shape from `list` and `info`, which the spec forbids. `result` is the transcript status, or
+  `rejected` and `failed` for inputs that never got that far.
+- **`notes` is in the record**, next to `tags`: both are the user's own words about a recording.
+- **`list --json`** prints `{"recordings": [...], "sets": [{"id", "title", "members"}]}` with
+  the sets that contain a listed recording, so the sets stay visible without changing the
+  recording shape.
+- **Ids are tried only for bare names.** An input with a path separator is never looked up as a
+  recording id, so `Library.get` cannot be pointed outside the recordings folder.
+- **One recording given twice** (by id and by its file) is one job and one result.
+- **Notes when stdout is the result.** With `--format` or `--json`, the human lines ("Imported",
+  "Queued", "Already transcribed", "Done", "Saved") go to standard error; without them they stay
+  on standard output as before, where they are the result.
+- **Tests run the real worker loop** with the stub engine in a thread (`FakeWorker`), so the
+  command's polling, progress and output are exercised end to end without a GPU.

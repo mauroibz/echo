@@ -244,11 +244,12 @@ def test_request_without_context_has_no_key(tmp_path):
 
 
 def test_cli_context_flag(tmp_path, monkeypatch, capsys):
-    from echo_app import cli, features, settings
+    from echo_app import cli, features, models, settings
 
     settings.save(settings.Settings(data_dir=str(tmp_path / "data")))
     lib = Library(tmp_path / "data")
     rec = lib.create("t", "imported", audio="audio.wav", sha256="x")
     monkeypatch.setattr(features, "transcription_installed", lambda: True)
+    monkeypatch.setattr(models, "all_cached", lambda: True)
     assert cli.main(["transcribe", rec.id, "--context", "Charla con Ana"]) == 0
     assert json.loads(rec.path(REQUESTED).read_text())["context"] == "Charla con Ana."

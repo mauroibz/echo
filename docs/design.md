@@ -313,6 +313,33 @@ makes the session take that rate before any audio exists. PortAudio sources are 
 this Fedora machine through PortAudio's ALSA layer: recording with pause and markers, and a
 SIGKILL of the supervisor, which recovery turned into a verified recording of the audio so far.
 
+## Command line for scripts and agents
+
+`echo-app transcribe` is the scripted entry point: inputs are recording ids, or files and
+folders that go through the importer (`DUPLICATE` resolves to the existing recording), resolved
+all at once so a missing input stops the command before anything is imported or queued. A
+recording whose transcript is done, queued or running is not queued again without `--again`;
+together with duplicate detection this makes a rerun after a timeout cost nothing. `--format`
+waits and renders through `export.render_transcript`, the same text the window exports.
+
+Waiting polls the recording's files every 0.5 s, as the window does; the worker stays a separate
+detached process, so `--timeout` only stops the waiting (exit code 3). Results go to standard
+output and everything else to standard error, where progress is a redrawn line on a terminal
+and otherwise one line per stage change and per further 10%, so a captured log stays short.
+Before importing, the command checks that transcription and the models are installed.
+
+`cli_json.record` builds the one dictionary every `--json` output uses for a recording (`list`,
+`info`, and `transcribe` nested under each input's `recording`); its key list `KEYS` is pinned by
+a test, since scripts depend on it. None of these commands imports Qt; a test runs them in a
+process without display variables and checks `PySide6` was never loaded.
+
+Measured as an agent runs it, with no display variables, on the 40-minute meeting video from
+the import section and an empty library: `echo-app transcribe <video> --format md --timeout 540`
+exited 0 after 57 s with the Markdown transcript on standard output and 35 lines on standard
+error (imported, queued, then the stages `loading`, `detecting`, `transcribing` with time left,
+and `speakers`, each in steps of about 10%). The same command again took 0.6 s, queued nothing
+and printed the identical transcript.
+
 ## Window
 
 PySide6 (`PySide6-Essentials` only). Playback is ffmpeg piped into `pw-play`, which avoids

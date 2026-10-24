@@ -11,6 +11,15 @@ tag.
   and more) becomes an audio recording with one track, copied without re-encoding when its
   format allows and verified; the video is left untouched and never copied. OBS file names give
   the title and date, and watched folders pick up videos too.
+- A command line for scripts and AI agents. `echo-app transcribe` takes audio and video files
+  (imported first) as well as ids; `--format` waits and prints the transcript; `--timeout`
+  bounds the wait (exit code 3) without stopping the job; `--json` on `transcribe`, `list` and
+  the new `echo-app info` prints machine-readable results; progress goes to standard error.
+
+### Changed
+
+- `echo-app transcribe ID` no longer transcribes again a recording that already has a
+  transcript, or one that is queued or running; add `--again` for a new run.
 
 ## 1.0.1 - 2026-10-24
 

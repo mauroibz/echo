@@ -46,6 +46,18 @@ def _cmd_list(args) -> int:
     idx = Index(lib)
     idx.sync()
     rows = idx.list(args.query or "", tags=args.tag or ())
+    if args.json:
+        import json
+
+        from . import cli_json
+
+        recs = [rec for rec in (lib.get(r["id"]) for r in rows) if rec is not None]
+        ids = {rec.id for rec in recs}
+        sets = [{"id": st["id"], "title": st["title"], "members": list(st["members"])}
+                for st in idx.sets() if ids & set(st["members"])]
+        print(json.dumps({"recordings": [cli_json.record(rec) for rec in recs], "sets": sets},
+                         ensure_ascii=False, indent=2))
+        return 0
     by_id = {r["id"]: r for r in rows}
     linked = {m: st for st in idx.sets() for m in st["members"]}
 
@@ -215,6 +227,7 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("list", help="list recordings")
     s.add_argument("query", nargs="?", help="search titles, notes and transcripts; #word is a tag")
     s.add_argument("--tag", action="append", metavar="TAG", help="only recordings with this tag (repeatable)")
+    s.add_argument("--json", action="store_true", help="print recordings and linked sets as JSON")
     s.set_defaults(func=_cmd_list)
 
     s = sub.add_parser("rescan", help="rebuild the library index from the recording folders")

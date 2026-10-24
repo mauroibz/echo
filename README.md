@@ -222,11 +222,13 @@ echo-app pause | resume | stop | status
 echo-app mark [--note TEXT]       add a marker to the active recording
 echo-app markers ID               list a recording's markers
 echo-app sources                  list inputs (* marks the default)
-echo-app import PATH...           import files or folders
+echo-app import PATH...           import audio or video files, or folders
 echo-app import --watch [FOLDER...] [--interval S]   keep importing new files (default: watched folders)
-echo-app transcribe ID... | --all [--wait] [--no-adapter] [--context TEXT] [--language CODE]
+echo-app transcribe ID|FILE|FOLDER... | --all [--wait] [--again] [--format F [--out PATH]]
+                  [--timeout S] [--json] [--no-adapter] [--context TEXT] [--language CODE]
+echo-app info ID [--json]         one recording: transcript state, progress, speakers, files
 echo-app cancel ID
-echo-app list [QUERY] [--tag T]   list or search recordings (#word in QUERY is a tag)
+echo-app list [QUERY] [--tag T] [--json]   list or search recordings (#word in QUERY is a tag)
 echo-app tag ID [+TAG ...] [-TAG ...]   show, add or remove tags
 echo-app link ID ID... [--title T]   link recordings into a set (a set id among them: add to it)
 echo-app unlink ID                a set id dissolves the set; a recording id takes it out of its set
@@ -238,6 +240,41 @@ echo-app finalize ID              retry saving a recording whose raw audio was k
 echo-app rescan                   rebuild the search index from the folders
 echo-app doctor                   check the setup
 ```
+
+### From scripts and AI agents
+
+`echo-app transcribe` takes audio and video files as well as recording ids, imports them, and
+with `--format` waits and prints the transcript, speaker names included. It needs no window or
+display and never asks anything, so it works over SSH and from an AI agent's shell:
+
+```sh
+echo-app transcribe meeting.mp4 --format md                  # the transcript on standard output
+echo-app transcribe ~/Videos/meetings --format md --out ~/notes   # one file per recording
+echo-app transcribe meeting.mp4 --format md --context "Lucía y Martín, presupuesto 2027"
+```
+
+- **Safe to repeat.** A file already in the library is its existing recording, and a recording
+  that is transcribed, queued or running is not queued again (`--again` forces a new run). The
+  same command run twice gives the same transcript.
+- **Waiting with a limit.** `--timeout SECONDS` stops waiting and exits with code 3 while the
+  transcription carries on in the background; running the same command again keeps waiting.
+  An agent whose commands are cut off after a few minutes uses `--timeout 540` and repeats.
+- **Output.** Standard output carries only the result; progress goes to standard error, as one
+  line per stage and per 10% when it is not a terminal.
+- **JSON.** `--json` on `transcribe`, `list` and `info` prints one JSON document. A recording
+  has the same keys everywhere: `id`, `title`, `created`, `duration`, `source`,
+  `extracted_from`, `state`, `transcript_status` (`none`, `queued`, `running`, `done`,
+  `failed`), `progress` (`stage`, `fraction`, `eta_s`), `error`, `language`, `speakers`
+  (`count`, `names`), `tags`, `notes`, `folder`, `audio` and `files` (`transcript`,
+  `corrected`, `edited`, absolute paths or null). `transcribe --json` lists each input with its
+  `result`, `error`, the `output` file written and the `recording`. Keys are added in later
+  versions, never renamed.
+- **Exit codes.** 0 done (or queued, without waiting); 1 a recording failed, a file was not
+  imported or not found, or transcription is not installed; 2 usage error; 3 timed out, still
+  transcribing.
+
+`echo-app FILE` without a command opens the window, as the file manager's "Open with" does; scripts
+use `transcribe` or `import`.
 
 ## Windows
 
