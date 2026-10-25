@@ -26,6 +26,7 @@ _ICONS = {
     "settings": "settings", "crop": "crop", "clear": "eraser", "help": "circle-help", "warning": "triangle-alert",
     "error": "circle-alert", "ok": "circle-check", "download": "download", "more": "ellipsis", "mic": "mic",
     "set": "layers", "link": "link", "unlink": "unlink", "expand": "chevron-right", "collapse": "chevron-down",
+    "volume": "volume-2",
 }
 
 

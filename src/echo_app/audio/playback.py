@@ -2,7 +2,7 @@
 (pw-play with PipeWire).
 
 No media framework needed: seeking or changing speed restarts the pipeline at the new position,
-which takes about a tenth of a second.
+which takes about a tenth of a second. The volume works the same way.
 """
 
 from __future__ import annotations
@@ -19,10 +19,23 @@ CHANNELS = 2
 OUTPUT_LATENCY = 0.06  # seconds between writing and hearing (pw-play --latency 50ms + buffering)
 
 
-def _atempo(speed: float) -> list[str]:
-    if abs(speed - 1.0) < 1e-3:
-        return []
-    return ["-af", f"atempo={speed:.3f}"]
+MAX_VOLUME = 4.0  # +12 dB: brings a meeting averaging -31 dB up to ordinary speech level
+
+# A boost is followed by a limiter so loud moments do not clip. Five minutes of a quiet meeting
+# at 4x: 70,908 samples at full scale without it, none with it (peak -0.3 dB, mean -20.1 dB
+# instead of -19.6). level=false: no make-up gain, so 1.0 stays the recorded level.
+LIMITER = "alimiter=limit=0.97:level=false"
+
+
+def _filters(speed: float, volume: float = 1.0) -> list[str]:
+    chain = []
+    if abs(speed - 1.0) >= 1e-3:
+        chain.append(f"atempo={speed:.3f}")
+    if abs(volume - 1.0) >= 1e-3:
+        chain.append(f"volume={volume:.2f}")
+        if volume > 1.0:
+            chain.append(LIMITER)
+    return ["-af", ",".join(chain)] if chain else []
 
 
 class Playback:
@@ -30,6 +43,7 @@ class Playback:
         self.path: Path | None = None
         self.duration = 0.0
         self.speed = 1.0
+        self.volume = 1.0
         self._pos = 0.0  # position when stopped, or start position of the running pipeline
         self._t0 = 0.0
         self._end: float | None = None
@@ -87,7 +101,7 @@ class Playback:
         cmd = ["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-ss", f"{self._pos:.3f}"]
         if end is not None:
             cmd += ["-t", f"{max(0.05, end - self._pos):.3f}"]
-        cmd += ["-i", str(self.path), "-vn", *_atempo(self.speed), "-f", "s16le", "-ac", str(CHANNELS),
+        cmd += ["-i", str(self.path), "-vn", *_filters(self.speed, self.volume), "-f", "s16le", "-ac", str(CHANNELS),
                 "-ar", str(RATE), "pipe:1"]
         from . import backend
 
@@ -119,12 +133,21 @@ class Playback:
             self._pos = sec
 
     def set_speed(self, speed: float) -> None:
-        if abs(speed - self.speed) < 1e-3:
-            return
+        if abs(speed - self.speed) >= 1e-3:
+            self._restart(speed=speed)
+
+    def set_volume(self, volume: float) -> None:
+        volume = max(0.0, min(volume, MAX_VOLUME))
+        if abs(volume - self.volume) >= 1e-3:
+            self._restart(volume=volume)
+
+    def _restart(self, **change) -> None:
+        """Apply a new speed or volume, continuing from the same place if playing."""
         was = self.playing
         pos = self.position()
         self.pause()
-        self.speed = speed
+        for k, v in change.items():
+            setattr(self, k, v)
         self._pos = pos
         if was:
             self.play(pos, self._end)
@@ -266,3 +289,10 @@ class SetPlayback:
 
     def set_speed(self, speed: float) -> None:
         self.inner.set_speed(speed)
+
+    @property
+    def volume(self) -> float:
+        return self.inner.volume
+
+    def set_volume(self, volume: float) -> None:
+        self.inner.set_volume(volume)

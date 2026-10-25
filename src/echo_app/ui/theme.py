@@ -425,6 +425,12 @@ QWidget#sidebar QFrame#selectionbar QLabel {{ color: {t.on_deep}; }}
 QWidget#sidebar QToolButton#linkbtn {{ background: {t.foam}; color: {t.deep_top}; border: none; border-radius: 8px;
     padding: 4px 10px; font-weight: 700; }}
 QWidget#sidebar QToolButton#linkbtn:hover {{ background: #ffffff; }}
+QSlider::groove:horizontal {{ height: 4px; border-radius: 2px; background: {t.line}; }}
+QSlider::sub-page:horizontal {{ height: 4px; border-radius: 2px; background: {t.accent}; }}
+QSlider::handle:horizontal {{ width: 14px; height: 14px; margin: -5px 0; border-radius: 7px;
+    background: {t.surface}; border: 2px solid {t.accent}; }}
+QSlider::sub-page:horizontal:disabled {{ background: {t.line}; }}
+QSlider::handle:horizontal:disabled {{ border-color: {t.line}; }}
 QWidget#sidebar QSlider::groove:horizontal {{ height: 4px; border-radius: 2px; background: {glass_line}; }}
 QWidget#sidebar QSlider::sub-page:horizontal {{ height: 4px; border-radius: 2px; background: {t.foam}; }}
 QWidget#sidebar QSlider::handle:horizontal {{ width: 14px; height: 14px; margin: -5px 0; border-radius: 7px;

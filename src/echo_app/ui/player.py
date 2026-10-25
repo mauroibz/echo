@@ -5,13 +5,13 @@ from __future__ import annotations
 import logging
 
 import numpy as np
-from PySide6.QtCore import QPointF, QRectF, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QPointF, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QKeyEvent, QLinearGradient, QMouseEvent, QPainter, QPen
 from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMenu, QSizePolicy,
-                               QToolButton, QToolTip, QVBoxLayout, QWidget)
+                               QSlider, QToolButton, QToolTip, QVBoxLayout, QWidget)
 
 from ..audio import peaks as peaks_mod
-from ..audio.playback import Playback, SetPlayback
+from ..audio.playback import MAX_VOLUME, Playback, SetPlayback
 from ..library import READY, Recording
 from . import theme
 from .common import fmt_date, fmt_duration, icon, run_task
@@ -398,6 +398,7 @@ class PlayerPanel(QWidget):
         self._rec_player = Playback()
         self._set_player = SetPlayback()
         self.player = self._rec_player
+        self.volumes: dict[str, float] = {}  # recording or set id -> volume, only those not at 100%
         self._build()
         self._timer = QTimer(self, interval=40, timeout=self._tick)
         self.set_recording(None)
@@ -465,6 +466,33 @@ class PlayerPanel(QWidget):
         self.speed.setAccessibleName("Playback speed")
         self.speed.currentIndexChanged.connect(lambda _i: self.player.set_speed(self.speed.currentData()))
         row.addWidget(self.speed)
+        row.addSpacing(10)
+        # Volume, for quiet recordings: up to 400% (a limiter keeps the boost from clipping).
+        # Each change restarts the pipeline, so a drag applies once the slider settles.
+        vol_icon = QLabel()
+        vol_icon.setPixmap(icon("volume", "muted").pixmap(16, 16))
+        row.addWidget(vol_icon)
+        self.volume = QSlider(Qt.Orientation.Horizontal)
+        self.volume.setRange(0, round(MAX_VOLUME * 100))
+        self.volume.setSingleStep(5)
+        self.volume.setPageStep(10)
+        self.volume.setValue(100)
+        self.volume.setFixedWidth(120)
+        self.volume.setToolTip("Volume. Above 100% boosts quiet recordings; the audio file is not changed.\n"
+                               "Remembered for each recording. Double-click for 100%.")
+        self.volume.setAccessibleName("Volume")
+        self.volume.valueChanged.connect(self._volume_moved)
+        self.volume.installEventFilter(self)
+        row.addWidget(self.volume)
+        self.volume_label = QToolButton()
+        self.volume_label.setText("100%")
+        self.volume_label.setFont(theme.display_font(0.85, QFont.Weight.Bold, tabular=True))
+        self.volume_label.setMinimumWidth(self.volume_label.fontMetrics().horizontalAdvance("400%") + 12)
+        self.volume_label.setToolTip("Back to 100%")
+        self.volume_label.setAccessibleName("Reset volume to 100%")
+        self.volume_label.clicked.connect(lambda: self.volume.setValue(100))
+        row.addWidget(self.volume_label)
+        self._volume_timer = QTimer(self, singleShot=True, interval=150, timeout=self._apply_volume)
         row.addStretch(1)
         self.crop_label = QLabel("")
         row.addWidget(self.crop_label)
@@ -526,8 +554,9 @@ class PlayerPanel(QWidget):
                                   f" to {fmt_date(last)}")
         self.subtitle.setText(f"{sets.summary(linked, parts)}  ·  {span}")
         playable = any(p.rec.audio_path is not None and p.rec.audio_path.exists() for p in timeline)
-        for w in (self.play_btn, self.speed, self.wave):
+        for w in (self.play_btn, self.speed, self.volume, self.volume_label, self.wave):
             w.setEnabled(playable)
+        self._show_volume()
         if same and sig == getattr(self, "_set_sig", None):
             self.wave.markers = self._set_markers(timeline)
             self.wave.update()
@@ -581,8 +610,9 @@ class PlayerPanel(QWidget):
         same = rec is not None and self.rec is not None and rec.id == self.rec.id
         self.rec = rec
         playable = rec is not None and rec.meta.state == READY and rec.audio_path is not None and rec.audio_path.exists()
-        for w in (self.play_btn, self.speed, self.export_btn, self.wave):
+        for w in (self.play_btn, self.speed, self.volume, self.volume_label, self.export_btn, self.wave):
             w.setEnabled(playable)
+        self._show_volume()
         self.title.setEnabled(rec is not None)
         for w in (self.context, self.tags, self.notes):
             w.setEnabled(rec is not None)
@@ -840,6 +870,46 @@ class PlayerPanel(QWidget):
         idx = self.speed.findData(value)
         if idx >= 0:
             self.speed.setCurrentIndex(idx)
+
+    # ---- volume ----
+    def _volume_key(self) -> str | None:
+        if self.linked is not None:
+            return self.linked.id
+        return self.rec.id if self.rec is not None else None
+
+    def _show_volume(self):
+        """Put the shown recording's own volume on the slider and the player."""
+        self._volume_timer.stop()
+        value = self.volumes.get(self._volume_key(), 1.0)
+        if self.volume.value() != round(value * 100):
+            self.volume.blockSignals(True)
+            self.volume.setValue(round(value * 100))
+            self.volume.blockSignals(False)
+        self.volume_label.setText(f"{self.volume.value()}%")
+        self.player.set_volume(value)
+
+    def _volume_moved(self, pct: int):
+        # Stored at once, so a refresh of the same recording during a drag keeps the new value.
+        self.volume_label.setText(f"{pct}%")
+        key = self._volume_key()
+        if key is not None:
+            if pct == 100:
+                self.volumes.pop(key, None)
+            else:
+                self.volumes[key] = pct / 100
+        self._volume_timer.start()
+
+    def _apply_volume(self):
+        self.player.set_volume(self.volume.value() / 100)
+
+    def volume_value(self) -> float:
+        return self.volume.value() / 100
+
+    def eventFilter(self, obj, event):
+        if obj is self.volume and event.type() == QEvent.Type.MouseButtonDblClick:
+            self.volume.setValue(100)
+            return True
+        return super().eventFilter(obj, event)
 
     def is_playing(self) -> bool:
         return self.player.playing

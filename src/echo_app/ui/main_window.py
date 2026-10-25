@@ -384,6 +384,9 @@ class MainWindow(QMainWindow):
         self.split.setSizes(self.state.get("split") or [330, 850])
         self.right_split.setSizes(self.state.get("right_split") or [200, 560])
         self.player.set_speed(self.state.get("speed", 1.0))
+        vols = self.state.get("volumes")
+        self.player.volumes = {k: float(v) for k, v in (vols.items() if isinstance(vols, dict) else ())
+                               if isinstance(v, (int, float))}
 
     def _save_state(self):
         if not self.isMaximized():
@@ -393,6 +396,7 @@ class MainWindow(QMainWindow):
         self.state.set("split", self.split.sizes())
         self.state.set("right_split", self.right_split.sizes())
         self.state.set("speed", self.player.speed_value())
+        self.state.set("volumes", self.player.volumes)
         key = self.current_key()
         if key:
             self.state.set("selected", key)
