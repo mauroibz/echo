@@ -343,7 +343,13 @@ and printed the identical transcript.
 ## Window
 
 PySide6 (`PySide6-Essentials` only). Playback is ffmpeg piped into `pw-play`, which avoids
-QtMultimedia and the several hundred megabytes of the Addons wheel. A second launch forwards
+QtMultimedia and the several hundred megabytes of the Addons wheel. Speed (`atempo`) and volume
+(`volume`) are ffmpeg filters, and changing either restarts the pipeline at the same position;
+the volume slider applies 150 ms after it stops moving, so a drag is one restart. Above 100% an
+`alimiter` (limit 0.97, no make-up gain) follows the gain: five minutes of a quiet meeting
+(mean -31 dB) at 400% had 70,908 samples at full scale without it and none with it, and starting
+the pipeline took 0.07 s either way. The volume is a viewing preference like the selection, kept
+per recording and per set in `~/.local/state/echo/ui.json` (`volumes`), never in `meta.json`. A second launch forwards
 its files to the running window over a local socket. Closing the window while recording leaves a
 tray icon; the recording continues.
 

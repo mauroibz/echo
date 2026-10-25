@@ -15,6 +15,9 @@ tag.
   (imported first) as well as ids; `--format` waits and prints the transcript; `--timeout`
   bounds the wait (exit code 3) without stopping the job; `--json` on `transcribe`, `list` and
   the new `echo-app info` prints machine-readable results; progress goes to standard error.
+- A volume slider in the player, up to 400% for quiet recordings, with a limiter so the boost
+  does not distort. Each recording and linked set remembers its own volume. Playback only: the
+  audio file is unchanged.
 
 ### Changed
 

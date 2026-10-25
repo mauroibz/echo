@@ -37,8 +37,8 @@ voice notes.
   save automatically and are never overwritten), search every transcript at once, show when
   each passage starts, copy it with or without times, export it as text, Markdown, subtitles
   (SRT, VTT) or JSON, and Ctrl+click a passage to hear it.
-- **Plays and crops.** A waveform with speed control and non-destructive crop that snaps to
-  pauses.
+- **Plays and crops.** A waveform with speed and volume controls (up to 400% for quiet
+  meetings) and non-destructive crop that snaps to pauses.
 - **Keeps your files plain.** Each recording is a folder with its audio, a `meta.json` and its
   transcripts.
 
@@ -178,6 +178,10 @@ Model versions are pinned, and only weights and configuration are downloaded, ne
   good. Names typed into a title are suggested the same way. The line under the title, "Who is
   speaking, what about", is optional context for that recording. Settings → Dictionary lists
   everything for removing or merging, and imports a list from a text file.
+- **Volume.** The slider next to the speed goes up to 400% for quiet recordings; a limiter
+  keeps loud moments from distorting. Each recording remembers its own volume. Click the
+  percentage, or double-click the slider, to go back to 100%. Only playback changes: the audio
+  file, exports and transcription stay as they were.
 - **Crop.** Drag the edges of the waveform, or press `[` and `]` at the playhead. Hold Shift to
   turn off snapping. Transcribe again to transcribe only the cropped part.
 - **Search.** Ctrl+Shift+F (or Ctrl+K) searches titles, notes and transcript text of every
