@@ -110,11 +110,13 @@ class ProcessCapture:
                 continue
 
 
-def stop_together(captures: list) -> None:
+def stop_together(captures: list, tick=None, every: float = 0.5) -> None:
     """Stop captures at the same moment, so the takes of a pair end on the same sample.
 
     Each `stop` signals and then waits; stopping them one after another would end the second take
-    as much later as the first took to exit.
+    as much later as the first took to exit. A capture that does not answer SIGINT takes up to
+    five seconds to kill, so `tick` is called every `every` seconds meanwhile (the supervisor's
+    heartbeat, which must not go stale while it waits).
     """
     import threading
 
@@ -122,7 +124,10 @@ def stop_together(captures: list) -> None:
     for t in threads:
         t.start()
     for t in threads:
-        t.join()
+        while t.is_alive():
+            t.join(every)
+            if t.is_alive() and tick is not None:
+                tick()
 
 
 def detached_popen(cmd: list[str], **kw) -> subprocess.Popen:

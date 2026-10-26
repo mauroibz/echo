@@ -115,7 +115,9 @@ With "Computer audio" on, the supervisor runs a second `pw-record` with no `--ta
 when the default output changes. Reading a source or a monitor takes nothing from other
 programs, so the call app keeps its microphone and its sound. The two captures form a pair of
 takes, `take-NNN.raw` (the input) and `out-NNN.raw`, started together and stopped together
-(signalled at the same moment from two threads). If either dies or stalls, both end and a new
+(signalled at the same moment from two threads; a capture frozen hard enough to ignore SIGINT
+takes up to 5 s to kill, and the heartbeat goes on meanwhile so nothing takes the supervisor for
+dead). If either dies or stalls, both end and a new
 pair starts, and the gap is noted once; restarting only the failed one would leave the other
 running across the gap with nothing to align it by. If the computer audio cannot start at all,
 the input records alone with a warning. A crash adopts whichever captures still run; if only

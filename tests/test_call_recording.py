@@ -116,7 +116,12 @@ def test_out_capture_stalled_restarts_both(lib):
     first = current_take(s.rec)
     os.kill(first["out"]["pid"], signal.SIGSTOP)
     try:
-        assert wait_for(lambda: current_take(s.rec)["file"] != first["file"], timeout=15)
+        # A frozen capture ignores SIGINT and takes seconds to kill; the heartbeat goes on meanwhile.
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline and current_take(s.rec)["file"] == first["file"]:
+            assert s.alive(), "the supervisor must keep answering while it stops a frozen capture"
+            time.sleep(0.05)
+        assert current_take(s.rec)["file"] != first["file"]
     finally:
         try:
             os.kill(first["out"]["pid"], signal.SIGCONT)

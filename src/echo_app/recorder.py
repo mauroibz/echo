@@ -466,7 +466,7 @@ class Supervisor:
         together = (reason in ("paused", "stopped") and self.capture is not None and self.out is not None
                     and self.capture.alive() and self.out.alive())
         caps = [c for c in (self.capture, self.out) if c is not None]
-        backend.stop_together(caps)
+        backend.stop_together(caps, tick=self._status)
         takes = self.session.get("takes", [])
         entry = next((t for t in reversed(takes) if t["file"] == self.take_file), None)
         kept = False
