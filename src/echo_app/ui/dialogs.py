@@ -551,6 +551,11 @@ class SettingsDialog(QDialog):
         self.tabs.addTab(self.watched, "Import")
         form = QFormLayout()
         form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+        self.your_name = QLineEdit(self.cfg.your_name)
+        self.your_name.setPlaceholderText("Echo names you in transcripts once it knows your voice")
+        self.your_name.setToolTip("Echo learns your voice when you answer \"It's me\" for a speaker, and from the "
+                                  "microphone side of recorded calls. Voices stay on this computer.")
+        form.addRow("Your name", self.your_name)
         row = QHBoxLayout()
         self.data_dir = QLineEdit(str(self.cfg.data_path))
         row.addWidget(self.data_dir, 1)
@@ -668,6 +673,10 @@ class SettingsDialog(QDialog):
 
         self.cfg.data_dir = "" if new_dir == paths.default_data_dir() else str(new_dir)
         self.cfg.sample_rate = self.rate.currentData()
+        name = " ".join(self.your_name.text().split())
+        if self.cfg.your_name and name and name != self.cfg.your_name:
+            dictionary.rename_voice(self.cfg.your_name, name)
+        self.cfg.your_name = name
         self.cfg.channels = self.channels.currentData()
         self.cfg.auto_transcribe = self.auto.isChecked()
         self.cfg.use_adapter = self.adapter.isChecked()

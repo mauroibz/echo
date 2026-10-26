@@ -103,6 +103,46 @@ def decode_tracks(rec: Recording) -> np.ndarray:
     return np.frombuffer(r.stdout, dtype=np.int16).reshape(-1, 2)
 
 
+def _speaker_tracks(labels, sides, spans) -> dict[str, int]:
+    """Each speaker's track in a call (0 the microphone, 1 the computer audio): where most of their speech is."""
+    secs: dict[int, list[float]] = {}
+    for who, side, (start, end) in zip(labels, sides, spans):
+        if who is not None:
+            secs.setdefault(who, [0.0, 0.0])[side] += end - start
+    return {str(n): int(s[1] > s[0]) for n, s in secs.items()}
+
+
+def name_user(rec: Recording, record: dict) -> int | None:
+    """Name the user in `rec`, given its speakers record; returns their speaker number.
+
+    In a call, the one speaker on the microphone track is the user: the track says so, and their
+    voice is learned from it. Otherwise it is the speaker whose voice was suggested as the user's;
+    that match is not folded back into the voice, so one wrong match cannot drift it. A name the
+    user gave is never replaced, and nobody else is named here: other people are confirmed by the
+    user (see docs/design.md).
+    """
+    from .. import dictionary, settings
+
+    name = settings.load()[0].your_name.strip()
+    if not name:
+        return None
+    named = dict(rec.reload().meta.speakers)
+    for n, given in named.items():
+        if given == name:
+            return int(n)
+    mic = [n for n, t in (record.get("tracks") or {}).items() if t == 0]
+    certain = len(mic) == 1
+    n = mic[0] if certain else next((k for k, v in (record.get("suggested") or {}).items() if v == name), None)
+    if n is None or n in named:
+        return None
+    rec.update(speakers={**named, n: name})
+    centroid = (record.get("centroids") or {}).get(n)
+    if certain and centroid:
+        dictionary.remember_voice(name, centroid)
+    log.info("%s: speaker %s is the user", rec.id, n)
+    return int(n)
+
+
 def quietest_fn(audio: np.ndarray):
     frame = SAMPLE_RATE // 10
 
@@ -365,6 +405,7 @@ class Worker:
         spans = [(p.start, p.end) for p in passages]
         sides = speakers.louder_track(decode_tracks(rec), spans, TRACKS_RATE) if rec.meta.tracks else None
         labels, centroids = speakers.label(spans, embs, tracks=sides)
+        tracks = _speaker_tracks(labels, sides, spans) if sides is not None else None
         if not centroids:
             return None
         prev = None
@@ -381,8 +422,14 @@ class Worker:
             best = dictionary.recognize(c, speakers.similarity, speakers.RECOGNIZE)
             if best:
                 suggestions[str(n)] = best
-        return {"count": len(centroids), "centroids": {str(k): v for k, v in centroids.items()},
-                "suggested": suggestions, "model": f"{models.SPEAKER.repo}@{models.SPEAKER.revision}"}
+        record = {"count": len(centroids), "centroids": {str(k): v for k, v in centroids.items()},
+                  "suggested": suggestions, "model": f"{models.SPEAKER.repo}@{models.SPEAKER.revision}"}
+        if tracks is not None:
+            record["tracks"] = tracks
+        me = name_user(rec, record)
+        if me is not None:
+            record["me"] = me
+        return record
 
     @staticmethod
     def _load_partial(rec: Recording, key: dict) -> dict:

@@ -291,6 +291,11 @@ def recognize(centroid, similarity, threshold: float) -> str | None:
     return best
 
 
+def rename_voice(old: str, new: str) -> None:
+    """Keep a voice under a new name (the user changed their own name in Settings)."""
+    _rename_voice(old, new)
+
+
 def _rename_voice(old: str, new: str | None) -> None:
     data = voices()
     if old in data:

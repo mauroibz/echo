@@ -9,7 +9,7 @@ import unicodedata
 from PySide6.QtCore import QRect, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import (QAction, QColor, QFont, QKeySequence, QMouseEvent, QPainter, QTextCharFormat,
                            QTextCursor)
-from PySide6.QtWidgets import (QApplication, QFileDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QMenu, QMessageBox,
+from PySide6.QtWidgets import (QApplication, QCompleter, QFileDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QMenu, QMessageBox,
                                QPlainTextEdit, QProgressBar, QPushButton, QStackedWidget, QTextEdit, QToolButton,
                                QVBoxLayout, QWidget)
 
@@ -25,6 +25,7 @@ AUTOSAVE_MS = 1000
 # Block states marking a linked set's fixed lines: the part's heading, a line saying why it has no
 # text yet, and the blank line between parts. Body lines carry no state.
 HEAD, LOCK, SEP = 100_000, 200_000, 300_000
+NAME_SAMPLE_S = 6.0  # how much of a speaker the naming bar plays: enough to know a voice
 REPLAY_AFTER_MS = 1000  # after this long without typing, the passage being corrected plays again
 
 
@@ -639,6 +640,51 @@ class TranscriptPanel(QWidget):
         self.chip.hide()
         pl.addWidget(self.chip)
 
+        # Naming speakers: one unnamed speaker at a time, most speech first, after the chip above
+        # is answered.
+        # Nothing here takes the keyboard focus unless the user clicks into the name field.
+        self.namebar = QFrame()
+        self.namebar.setObjectName("chip")
+        nl = QHBoxLayout(self.namebar)
+        nl.setContentsMargins(6, 4, 6, 4)
+        nl.setSpacing(6)
+        self.name_play = QToolButton()
+        self.name_play.setIcon(icon("play"))
+        self.name_play.setToolTip("Hear this speaker")
+        self.name_play.setAccessibleName("Hear this speaker")
+        self.name_play.clicked.connect(self._play_speaker)
+        nl.addWidget(self.name_play)
+        self.name_text = QLabel()
+        self.name_text.setTextFormat(Qt.TextFormat.RichText)
+        nl.addWidget(self.name_text, 1)
+        self.name_edit = QLineEdit()
+        self.name_edit.setPlaceholderText("Name")
+        self.name_edit.setAccessibleName("Speaker name")
+        self.name_edit.setMinimumWidth(160)
+        self.name_edit.returnPressed.connect(self._name_typed)
+        nl.addWidget(self.name_edit)
+        self.name_yes = QPushButton(icon("ok"), "")
+        self.name_yes.clicked.connect(self._name_suggested)
+        nl.addWidget(self.name_yes)
+        self.name_other = QPushButton("Someone else…")
+        self.name_other.clicked.connect(self._name_someone_else)
+        nl.addWidget(self.name_other)
+        self.name_me = QPushButton("It's me")
+        self.name_me.setToolTip("Echo learns your voice and names you in later recordings by itself")
+        self.name_me.clicked.connect(self._name_me)
+        nl.addWidget(self.name_me)
+        self.name_skip = QPushButton("Not now")
+        self.name_skip.setToolTip("Do not ask about this recording's speakers again (the margin still names them)")
+        self.name_skip.clicked.connect(self._name_dismiss)
+        nl.addWidget(self.name_skip)
+        for b in (self.name_play, self.name_yes, self.name_other, self.name_me, self.name_skip):
+            b.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._ask: int | None = None  # the speaker the bar asks about
+        self._ask_typing = False  # "Someone else…" was pressed: the name field replaces the suggestion
+        self._ask_your_name = False  # "It's me" before Echo knows the user's name
+        self.namebar.hide()
+        pl.insertWidget(pl.indexOf(column), self.namebar)  # at the top, over the text it names
+
         self.findbar = QWidget()
         fl = QHBoxLayout(self.findbar)
         fl.setContentsMargins(0, 0, 0, 0)
@@ -1125,6 +1171,7 @@ class TranscriptPanel(QWidget):
             self._shown_signature = sig
         self._update_status(rec)
         self._update_notice(rec, st)
+        self._update_namebar()  # names may have changed without the text: elsewhere, or by the worker
 
     def _load_text(self, rec: Recording):
         self._loading = True
@@ -1289,6 +1336,117 @@ class TranscriptPanel(QWidget):
     def _update_margin(self):
         stamps = [(a, t) for a, _b, t in self._spans] if self.show_timestamps else None
         self.editor.set_stamps(stamps, self._marker_anchors(), self._speaker_labels())
+        self._update_namebar()
+
+    # ---- the naming bar ----
+    def _unnamed_speaker(self) -> int | None:
+        """The unnamed speaker with the most speech in the shown recording, if the bar should ask."""
+        rec = self.rec
+        if self.linked is not None or rec is None or rec.meta.speakers_off or rec.meta.naming_dismissed:
+            return None
+        t = rec.transcript() or {}
+        info = t.get("speakers") or {}
+        if not info:
+            return None
+        secs: dict[int, float] = {}
+        for sg in t.get("segments") or []:
+            n = sg.get("speaker")
+            if n is not None and sg.get("text"):
+                secs[n] = secs.get(n, 0.0) + float(sg.get("end", 0)) - float(sg.get("start", 0))
+        named = rec.meta.speakers
+        waiting = [n for n in secs if str(n) not in named and n != info.get("me")]
+        return max(waiting, key=lambda n: (secs[n], -n)) if waiting else None
+
+    def _update_namebar(self):
+        n = self._unnamed_speaker() if self.chip.isHidden() else None
+        if n != self._ask:
+            self._ask_typing = self._ask_your_name = False
+            self.name_edit.clear()
+        self._ask = n
+        if n is None:
+            self.namebar.hide()
+            return
+        rec = self.rec
+        info = (rec.transcript() or {}).get("speakers") or {}
+        your_name = settings.load()[0].your_name.strip()
+        suggested = (info.get("suggested") or {}).get(str(n))
+        if suggested and (suggested == your_name or suggested in rec.meta.speakers.values()):
+            suggested = None  # already someone else in this recording
+        me_named = info.get("me") is not None or (your_name and your_name in rec.meta.speakers.values())
+        typing = self._ask_your_name or self._ask_typing or not suggested
+        if self._ask_your_name:
+            self.name_text.setText("What is your name? Echo will name you by itself from now on.")
+            self.name_edit.setPlaceholderText("Your name")
+        elif suggested and not self._ask_typing:
+            self.name_text.setText(f"Speaker {n} sounds like <b>{_html(suggested)}</b>.")
+            self.name_yes.setText(f"Yes, {suggested}")
+        else:
+            self.name_text.setText(f"Who is speaker {n}?")
+            self.name_edit.setPlaceholderText("Name")
+            people = [e.name for e in dictionary.current().entries if e.kind == dictionary.PEOPLE]
+            completer = QCompleter(people, self.name_edit)
+            completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+            self.name_edit.setCompleter(completer)
+        self.name_edit.setVisible(typing)
+        self.name_yes.setVisible(not typing)
+        self.name_other.setVisible(bool(suggested) and not typing)
+        self.name_me.setVisible(not me_named and not self._ask_your_name)
+        self.name_play.setVisible(self.player is not None)
+        self.namebar.show()
+
+    def _play_speaker(self):
+        """A few seconds of the asked speaker: the start of their longest passage."""
+        if self.player is None or self._ask is None or self.rec is None:
+            return
+        segs = [s for s in (self.rec.transcript() or {}).get("segments") or []
+                if s.get("speaker") == self._ask and s.get("text")]
+        if not segs:
+            return
+        sg = max(segs, key=lambda s: float(s.get("end", 0)) - float(s.get("start", 0)))
+        start = float(sg.get("start", 0))
+        self._audio_k, self._typing_paused = None, False
+        self.player.play_span(start, min(float(sg.get("end", 0)), start + NAME_SAMPLE_S))
+
+    def _name_suggested(self):
+        info = ((self.rec.transcript() or {}).get("speakers") or {}) if self.rec else {}
+        name = (info.get("suggested") or {}).get(str(self._ask))
+        if self._ask is not None and name:
+            self.name_speaker(self._ask, name)
+
+    def _name_someone_else(self):
+        self._ask_typing = True
+        self._update_namebar()
+        self.name_edit.setFocus()
+
+    def _name_typed(self):
+        name = " ".join(self.name_edit.text().split())
+        if self._ask is None or not name:
+            return
+        if self._ask_your_name:
+            cfg, _ = settings.load()
+            cfg.your_name = name
+            settings.save(cfg)
+        self.name_edit.clear()
+        self.name_speaker(self._ask, name)
+
+    def _name_me(self):
+        your_name = settings.load()[0].your_name.strip()
+        if self._ask is None:
+            return
+        if your_name:
+            self.name_speaker(self._ask, your_name)
+            return
+        self._ask_your_name = True
+        self._update_namebar()
+        self.name_edit.setFocus()
+
+    def _name_dismiss(self):
+        rec = self.rec
+        if rec is None:
+            return
+        rec.update(naming_dismissed=True)
+        self._update_namebar()
+        self.changed.emit(rec.id)
 
     SPEAKER_COLORS = ("accent_deep", "coral_deep", "amber", "accent", "muted")
 
@@ -1595,11 +1753,13 @@ class TranscriptPanel(QWidget):
         self._candidate = cand
         if cand is None:
             self.chip.hide()
+            self._update_namebar()
             return
         what = "person" if cand.kind == dictionary.PEOPLE else "term"
         alias = f" (instead of “{cand.alias}”)" if cand.alias and cand.alias != cand.name else ""
         self.chip_text.setText(f"Add <b>{_html(cand.name)}</b>{_html(alias)} to the dictionary as a {what}?")
         self.chip.show()
+        self._update_namebar()
 
     def offer_title(self, rid: str, title: str):
         """Capitalized words typed into a title are candidates too."""

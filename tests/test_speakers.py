@@ -154,15 +154,14 @@ def test_louder_track():
     assert speakers.louder_track(stereo, [(0, 2), (2, 4), (5, 6)], rate) == [0, 1, 0]
 
 
-def test_worker_labels_a_call_by_track(tmp_path, monkeypatch):
-    """Two people with indistinguishable voices: the tracks alone tell the user from the call."""
+def _call(lib_, tmp_path, sides=(1, 0, 1, 0)):
+    """A call recording: 15 s passages, each on the microphone (0) or the computer audio (1)."""
     import subprocess
 
-    lib_ = Library(tmp_path / "data")
     n, gap = 15 * 16000, np.zeros((3 * 16000, 2), np.int16)
     tone = (np.sin(np.arange(n) * 0.1) * 8000).astype(np.int16)
     parts = []
-    for side in (1, 0, 1, 0):  # the call speaks first
+    for side in sides:
         p = np.zeros((n, 2), np.int16)
         p[:, side] = tone
         parts += [p, gap]
@@ -171,20 +170,83 @@ def test_worker_labels_a_call_by_track(tmp_path, monkeypatch):
                     str(path)], input=np.concatenate(parts).tobytes(), check=True)
     rec = importer.import_file(lib_, path).recording
     rec.update(tracks=["mic", "computer"])
+    return rec
 
-    class SameVoice:
+
+def _embedder(monkeypatch, voices):
+    """Embeddings in turn from `voices` (seeds), repeating."""
+    calls = []
+
+    class Embedder:
         @staticmethod
         def available():
             return True
 
         def embed(self, samples):
-            return _voice(1)
+            calls.append(1)
+            return _voice(voices[(len(calls) - 1) % len(voices)])
 
-    monkeypatch.setattr(speakers, "Embedder", SameVoice)
-    rec.request_transcription()
+    monkeypatch.setattr(speakers, "Embedder", Embedder)
+
+
+def _process(lib_, rec):
     from echo_app.worker.service import Worker
 
+    rec.request_transcription()
     Worker(lib_, VoiceEngine()).process(rec)
-    t = rec.transcript()
+    return rec.reload().transcript()
+
+
+def test_worker_labels_a_call_by_track(tmp_path, monkeypatch):
+    """Two people with indistinguishable voices: the tracks alone tell the user from the call."""
+    lib_ = Library(tmp_path / "data")
+    rec = _call(lib_, tmp_path)  # the call speaks first
+    _embedder(monkeypatch, [1])
+    t = _process(lib_, rec)
     assert [s["speaker"] for s in t["segments"]] == [2, 1, 2, 1]
-    assert t["speakers"]["count"] == 2
+    assert t["speakers"]["count"] == 2 and t["speakers"]["tracks"] == {"1": 0, "2": 1}
+    assert "me" not in t["speakers"] and rec.meta.speakers == {}  # nobody's name is known
+
+
+def test_call_names_the_user_and_learns_their_voice(tmp_path, monkeypatch):
+    from echo_app import settings
+
+    settings.save(settings.Settings(your_name="Sofía"))
+    lib_ = Library(tmp_path / "data")
+    rec = _call(lib_, tmp_path)
+    _embedder(monkeypatch, [2, 1])  # the call is voice 2, the user voice 1
+    t = _process(lib_, rec)
+    assert t["speakers"]["me"] == 1 and rec.meta.speakers == {"1": "Sofía"}
+    assert speakers.similarity(dictionary.voices()["Sofía"]["voice"], _voice(1)) > 0.95
+
+
+def test_recognized_voice_names_the_user_without_learning_from_it(tmp_path, monkeypatch):
+    from echo_app import settings
+
+    settings.save(settings.Settings(your_name="Sofía"))
+    dictionary.remember_voice("Sofía", list(_voice(1)))
+    lib_ = Library(tmp_path / "data")
+    pattern = []
+    for _ in range(4):
+        pattern += [(15, True), (3, False)]
+    rec = importer.import_file(lib_, speechy_wav(tmp_path / "m.wav", pattern)).recording
+    _embedder(monkeypatch, [3, 1])  # someone else first, then the user
+    t = _process(lib_, rec)
+    assert t["speakers"]["me"] == 2 and rec.meta.speakers == {"2": "Sofía"}
+    assert dictionary.voices()["Sofía"]["recordings"] == 1  # a match is not folded back in
+
+
+def test_the_users_names_are_never_replaced(tmp_path, monkeypatch):
+    from echo_app import settings
+
+    lib_ = Library(tmp_path / "data")
+    rec = _call(lib_, tmp_path)
+    _embedder(monkeypatch, [2, 1])
+    rec.update(speakers={"1": "Lucía"})  # someone else on the user's microphone, named by the user
+    settings.save(settings.Settings(your_name="Sofía"))
+    t = _process(lib_, rec)
+    assert "me" not in t["speakers"] and rec.meta.speakers == {"1": "Lucía"}
+    rec.update(speakers={})
+    settings.save(settings.Settings(your_name=""))
+    t = _process(lib_, rec)
+    assert "me" not in t["speakers"] and rec.meta.speakers == {}  # no name set: nobody is named
