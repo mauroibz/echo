@@ -320,6 +320,11 @@ the alignment is redone 0.4 s after the last keystroke.
 Tags are stored as typed in `meta.json` and compared folded (case and accents ignored), like
 the search. The index (schema 2) has a `tags` table and puts the notes in the full-text body;
 a schema change drops and rebuilds the index, so older installs pick both up on first start.
+A tag's category is the text before its first colon (`client:Acme`), with text on both sides;
+nothing about categories is stored apart from the tags, so there is nothing to migrate or keep
+in sync. `#client:` matches the folded prefix `client:` in the `tags` table, so a plain tag
+named `client` is not in the category. Markdown exports write `#client/Acme`, the nested form
+Obsidian reads, since colons are not allowed in its tags.
 
 ### Speakers
 

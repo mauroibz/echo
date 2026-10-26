@@ -507,7 +507,7 @@ class MainWindow(QMainWindow):
 
         counts = self.model.tag_counts()
         active = {fold_tag(t) for t in parse_query(self.search.text())[1]}
-        self.tag_bar.set_tags(counts, active)
+        self.tag_bar.set_tags(counts, active, self.model.category_totals())
         self.player.tags.set_known([t for t, _n in counts])
 
     def _toggle_tag(self, tag: str, on: bool):

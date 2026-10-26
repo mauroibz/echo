@@ -63,3 +63,33 @@ def test_statistics(lib, tmp_path):
     # "Hola mundo. Segunda parte." is 4 words in 3.4 s of passages.
     assert statistics(rec) == "4 words  ·  71 words a minute  ·  15% silence"
     assert statistics(lib.create("x", "imported")) == ""
+
+
+def test_category_chip_groups_values(window, lib):
+    a, b, c = (lib.create(t, "imported") for t in ("Acme call", "Globex call", "Diario"))
+    a.set_tags(["client:Acme"])
+    b.set_tags(["client:Globex", "client:Acme"])
+    c.set_tags(["nota"])
+    window.model.refresh()
+    window._update_tags()
+    bar = window.tag_bar
+    chips = [bar.flow.itemAt(i).widget() for i in range(bar.flow.count())]
+    assert [ch.text() for ch in chips] == ["client ▾  2", "#nota  1"]  # two recordings, not three tags
+    actions = [a.text() for a in chips[0].menu().actions() if a.text()]
+    assert actions == ["Any client  (2)", "Acme  (2)", "Globex  (1)"]
+    next(x for x in chips[0].menu().actions() if x.text().startswith("Globex")).trigger()
+    assert window.search.text() == "#client:Globex"
+    assert wait_until(lambda: window.model.rowCount() == 1 and window.model.recording(0).id == b.id)
+    chip = bar.flow.itemAt(0).widget()
+    assert chip.isChecked()
+    next(x for x in chip.menu().actions() if x.text().startswith("Globex")).trigger()
+    next(x for x in bar.flow.itemAt(0).widget().menu().actions() if x.text().startswith("Any")).trigger()
+    assert window.search.text() == "#client:"
+    assert wait_until(lambda: window.model.rowCount() == 2)
+    # The editor sets a category apart, and "client:" completes its values.
+    window._select(a.id)
+    pump(100)
+    ed = window.player.tags
+    assert ed._chips[0].text() == "client › Acme  ×"
+    ed._completer.setCompletionPrefix("client:")
+    assert ed._completer.completionCount() == 2

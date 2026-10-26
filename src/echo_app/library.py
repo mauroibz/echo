@@ -66,6 +66,13 @@ def fold_tag(tag: str) -> str:
     return "".join(c for c in unicodedata.normalize("NFD", tag) if not unicodedata.combining(c)).casefold()
 
 
+def tag_category(tag: str) -> tuple[str, str] | None:
+    """`client:Acme` -> ("client", "Acme"): a tag's category and value; None for a plain tag."""
+    cat, sep, value = tag.partition(":")
+    cat, value = cat.strip(), value.strip()
+    return (cat, value) if sep and cat and value else None
+
+
 def auto_title(text: str, limit: int = 60) -> str:
     """The first sentence of a transcript as a title: cut at the sentence end or at a word
     boundary within `limit` characters, without trailing punctuation; "" if there is no text."""

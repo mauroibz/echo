@@ -62,3 +62,29 @@ def test_cli_tag_and_list(tmp_path, capsys):
     assert "Charla" in capsys.readouterr().out
     assert cli.main(["list", "--tag", "otro"]) == 0
     assert "No matches." in capsys.readouterr().out
+
+
+def test_tag_categories_and_searching_a_whole_category(tmp_path):
+    from echo_app.library import tag_category
+
+    assert tag_category("client:Acme") == ("client", "Acme") and tag_category("client: Acme ") == ("client", "Acme")
+    assert tag_category("nota") is None and tag_category("client:") is None and tag_category(":x") is None
+    lib = _lib(tmp_path)
+    a, b, c = (lib.create(t, "imported") for t in ("a", "b", "c"))
+    a.set_tags(["client:Acme"])
+    b.set_tags(["Client:Globex", "type:standup"])
+    c.set_tags(["client", "nota"])  # a plain tag named like the category is not in it
+    idx = Index(lib)
+    idx.sync()
+    ids = lambda q: sorted(r["id"] for r in idx.list(q))  # noqa: E731
+    assert ids("#client:") == sorted([a.id, b.id]) and ids("#CLIENT:") == sorted([a.id, b.id])
+    assert ids("#client:acme") == [a.id]
+    assert ids("#client: #type:") == [b.id]
+    idx.close()
+    assert cli.main(["list", "--tag", "client:"]) == 0
+
+
+def test_markdown_tags_nest_categories(tmp_path):
+    from echo_app import export
+
+    assert export._md_tag("client:Acme") == "#client/Acme" and export._md_tag("una nota") == "#una-nota"

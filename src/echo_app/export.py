@@ -75,6 +75,11 @@ def _clock(sec: float, sep: str) -> str:
     return f"{h:02d}:{m:02d}:{s:02d}{sep}{ms:03d}"
 
 
+def _md_tag(tag: str) -> str:
+    """A tag as Markdown tools read it: no spaces, and a category nested with "/" (`#client/Acme`)."""
+    return "#" + tag.replace(" ", "-").replace(":", "/")
+
+
 def speaker_name(rec: Recording, number: int | None) -> str | None:
     """The name for a speaker number: the user's, else "Speaker N"; None when speakers are off."""
     if number is None or rec.meta.speakers_off or not (rec.transcript() or {}).get("speakers"):
@@ -324,7 +329,7 @@ def to_markdown(rec: Recording, timestamps: bool = False, audio_link: str | None
     if rec.meta.duration:
         line += f" · {stamp(rec.meta.duration)}"
     if rec.meta.tags:
-        line += " · " + " ".join("#" + t.replace(" ", "-") for t in rec.meta.tags)
+        line += " · " + " ".join(_md_tag(t) for t in rec.meta.tags)
     head.append(line)
     people = _people(rec, text)
     if people:
@@ -425,7 +430,7 @@ def set_to_markdown(title: str, parts, timestamps: bool = False, audio_links=Non
         tags += [t for t in r.meta.tags if t not in tags]
     line = f"_{span}_ · {stamp(total(tl))} · {len(parts)} parts"
     if tags:
-        line += " · " + " ".join("#" + t.replace(" ", "-") for t in tags)
+        line += " · " + " ".join(_md_tag(t) for t in tags)
     head = [f"# {title}", "", line]
     people: list[str] = []
     for r in parts:

@@ -78,3 +78,13 @@ back; a set with fewer than two present members SHALL be shown as its remaining 
 #### Scenario: Linking a member of another set
 - **WHEN** the user links a recording that belongs to set A into set B
 - **THEN** it is a member of set B only and set A no longer lists it
+
+### Requirement: Tag categories
+A tag of the form `category:value`, with text on both sides of its first colon, SHALL belong to
+that category; any other tag is a plain tag. Tags SHALL stay as typed in `meta.json`. Searching
+`#category:value` SHALL find recordings with that tag, and `#category:` SHALL find recordings
+with any tag of that category, compared without case or accents like every tag.
+
+#### Scenario: Any client
+- **WHEN** one recording is tagged `client:Acme`, another `Client:Globex` and a third `nota`
+- **THEN** searching `#client:` finds the first two, and `#client:acme` only the first

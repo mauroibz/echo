@@ -298,6 +298,16 @@ class LibraryModel(QAbstractListModel):
         out = [(max(sp, key=sp.get), sum(sp.values())) for sp in totals.values()]
         return sorted(out, key=lambda x: (-x[1], fold_tag(x[0])))
 
+    def category_totals(self) -> dict[str, int]:
+        """Recordings carrying any tag of each category (folded), over the whole library."""
+        from ..library import fold_tag, tag_category
+
+        out: dict[str, int] = {}
+        for rec in self._all.values():
+            for cat in {fold_tag(c[0]) for t in rec.meta.tags if (c := tag_category(t))}:
+                out[cat] = out.get(cat, 0) + 1
+        return out
+
     def recording(self, row: int) -> Recording | None:
         """The recording on a recording or part row; None on headings and set rows."""
         if 0 <= row < len(self._rows):

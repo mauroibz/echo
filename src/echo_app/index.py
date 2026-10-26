@@ -135,7 +135,7 @@ class Index:
 
     def list(self, query: str = "", tags=()) -> list[sqlite3.Row]:
         """Recordings matching the words of `query` (titles, notes, transcripts) and every tag;
-        `#word` in the query is a tag too."""
+        `#word` in the query is a tag too, and `#category:` any tag of that category."""
         words, tags = parse_query(query, tags)
         sql = "SELECT r.* FROM recordings r"
         args: list = []
@@ -145,8 +145,13 @@ class Index:
             where.append("search MATCH ?")
             args.append(" ".join(f'"{w.replace(chr(34), "")}"*' for w in words))
         for t in tags:
-            where.append("r.id IN (SELECT id FROM tags WHERE tag_folded = ?)")
-            args.append(fold_tag(t))
+            ft = fold_tag(t)
+            if ft.endswith(":") and len(ft) > 1:  # "#client:": any value of the category
+                where.append("r.id IN (SELECT id FROM tags WHERE substr(tag_folded, 1, ?) = ?)")
+                args += [len(ft), ft]
+            else:
+                where.append("r.id IN (SELECT id FROM tags WHERE tag_folded = ?)")
+                args.append(ft)
         if where:
             sql += " WHERE " + " AND ".join(where)
         return self.db.execute(sql + " ORDER BY r.created DESC", args).fetchall()

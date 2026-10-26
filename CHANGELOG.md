@@ -18,6 +18,9 @@ tag.
   speaker at a time, with a few seconds of them to hear: a known voice in one click, anyone else
   by typing their name, or "Not now". Answer "It's me" once and Echo names you itself from then
   on, by your voice and on the microphone side of recorded calls. "Your name" is in Settings.
+- Tag categories. A tag like `client:Acme` belongs to the category "client": the tag bar shows
+  one chip per category with its values and "Any client", `#client:` searches the whole
+  category, and Markdown exports write `#client/Acme`.
 
 ## 1.1.0 - 2026-10-25
 

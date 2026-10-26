@@ -7,7 +7,7 @@ from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (QCompleter, QLayout, QLineEdit, QMenu, QPlainTextEdit, QSizePolicy, QToolButton,
                                QWidget, QWidgetItem)
 
-from ..library import fold_tag
+from ..library import fold_tag, tag_category
 from . import theme
 
 MAX_CHIPS = 12  # chips shown in the bar; the rest are in a menu
@@ -88,7 +88,11 @@ def _chip(text: str, name: str, checkable: bool = False) -> QToolButton:
 
 
 class TagBar(QWidget):
-    """The most used tags above the list; clicking one adds or removes #tag in the search box."""
+    """The most used tags above the list; clicking one adds or removes #tag in the search box.
+
+    Tags of a category (`client:Acme`) share one chip whose menu holds the category's values and
+    "Any client" (`#client:`); plain tags are chips of their own.
+    """
 
     toggled = Signal(str, bool)  # tag, now active
 
@@ -98,33 +102,77 @@ class TagBar(QWidget):
         self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
         self._shown: tuple = ()
 
-    def set_tags(self, counts: list[tuple[str, int]], active: set[str]):
-        """counts: (tag, recordings) most used first; active: folded tags in the search."""
-        key = (tuple(counts), tuple(sorted(active)))
+    def set_tags(self, counts: list[tuple[str, int]], active: set[str], totals: dict[str, int] | None = None):
+        """counts: (tag, recordings) most used first; active: folded tags in the search; totals:
+        recordings with any value of each (folded) category."""
+        key = (tuple(counts), tuple(sorted(active)), tuple(sorted((totals or {}).items())))
         if key == self._shown:
             return
         self._shown = key
         self.flow.clear()
-        for tag, n in counts[:MAX_CHIPS]:
-            b = _chip(f"#{tag}  {n}", "tagchip", checkable=True)
-            b.setChecked(fold_tag(tag) in active)
-            b.setToolTip(f"Show only recordings tagged “{tag}”")
-            b.toggled.connect(lambda on, t=tag: self.toggled.emit(t, on))
-            self.flow.addWidget(b)
-        if len(counts) > MAX_CHIPS:
-            more = _chip(f"more ({len(counts) - MAX_CHIPS})…", "tagchip")
+        # (folded category, its spelling, recordings, [(tag, n)]) in order of use, and plain tags.
+        cats: dict[str, tuple[str, list[tuple[str, int]]]] = {}
+        items: list[tuple[int, object]] = []
+        for tag, n in counts:
+            c = tag_category(tag)
+            if c is None:
+                items.append((n, (tag, n)))
+            else:
+                cats.setdefault(fold_tag(c[0]), (c[0], []))[1].append((tag, n))
+        for folded, (name, values) in cats.items():
+            total = (totals or {}).get(folded) or sum(n for _t, n in values)
+            items.append((total, (folded, name, total, values)))
+        items.sort(key=lambda x: -x[0])  # stable: equal counts keep the order of use
+        shown = [it for _n, it in items]
+        for it in shown[:MAX_CHIPS]:
+            self.flow.addWidget(self._category_chip(it, active) if len(it) == 4 else self._tag_chip(it, active))
+        if len(shown) > MAX_CHIPS:
+            more = _chip(f"more ({len(shown) - MAX_CHIPS})…", "tagchip")
             more.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
             more.setStyleSheet("QToolButton::menu-indicator { image: none; width: 0; }")
             menu = QMenu(more)
-            for tag, n in counts[MAX_CHIPS:]:
-                a = menu.addAction(f"#{tag}  ({n})")
-                a.setCheckable(True)
-                a.setChecked(fold_tag(tag) in active)
-                a.toggled.connect(lambda on, t=tag: self.toggled.emit(t, on))
+            for it in shown[MAX_CHIPS:]:
+                if len(it) == 4:
+                    self._fill_category(menu.addMenu(f"{it[1]}  ({it[2]})"), it, active)
+                else:
+                    self._add_action(menu, f"#{it[0]}  ({it[1]})", it[0], active)
             more.setMenu(menu)
             self.flow.addWidget(more)
         self.setVisible(bool(counts))
         self.updateGeometry()
+
+    def _tag_chip(self, item, active) -> QToolButton:
+        tag, n = item
+        b = _chip(f"#{tag}  {n}", "tagchip", checkable=True)
+        b.setChecked(fold_tag(tag) in active)
+        b.setToolTip(f"Show only recordings tagged “{tag}”")
+        b.toggled.connect(lambda on, t=tag: self.toggled.emit(t, on))
+        return b
+
+    def _category_chip(self, item, active) -> QToolButton:
+        folded, name, total, values = item
+        b = _chip(f"{name} ▾  {total}", "tagchip", checkable=True)
+        b.setChecked(any(a == folded + ":" or a.startswith(folded + ":") for a in active))
+        b.setToolTip(f"Show recordings by {name}")
+        b.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        b.setStyleSheet("QToolButton::menu-indicator { image: none; width: 0; }")
+        menu = QMenu(b)
+        self._fill_category(menu, item, active)
+        b.setMenu(menu)
+        return b
+
+    def _fill_category(self, menu: QMenu, item, active):
+        folded, name, total, values = item
+        self._add_action(menu, f"Any {name}  ({total})", f"{name}:", active)
+        menu.addSeparator()
+        for tag, n in values:
+            self._add_action(menu, f"{tag_category(tag)[1]}  ({n})", tag, active)
+
+    def _add_action(self, menu: QMenu, text: str, tag: str, active):
+        a = menu.addAction(text)
+        a.setCheckable(True)
+        a.setChecked(fold_tag(tag) in active)
+        a.toggled.connect(lambda on, t=tag: self.toggled.emit(t, on))
 
 
 class TagEditor(QWidget):
@@ -163,7 +211,8 @@ class TagEditor(QWidget):
         self._chips = []
         self.flow.removeWidget(self.entry)
         for t in self.tags:
-            b = _chip(f"#{t}  ×", "tageditchip")
+            c = tag_category(t)
+            b = _chip(f"{c[0]} › {c[1]}  ×" if c else f"#{t}  ×", "tageditchip")
             b.setToolTip(f"Remove “{t}”")
             b.clicked.connect(lambda _c=False, tag=t: self._remove(tag))
             self.flow.addWidget(b)

@@ -217,7 +217,11 @@ Model versions are pinned, and only weights and configuration are downloaded, ne
   it or add markers). Drag a part to reorder it (or Alt+Shift+↑/↓), drag it out of the set to
   unlink it, or right-click the set → Unlink. Copy and Export cover the whole set.
 - **Tags and notes.** Under the title, add tags ("+ tag", with completion) and a note. The most
-  used tags show as chips above the list; click one to filter, click again to clear. A long
+  used tags show as chips above the list; click one to filter, click again to clear. A tag
+  with a colon has a category: `client:Acme`, `project:Echo`, `type:standup`. A category's tags
+  share one chip ("client ▾") that lists its values and "Any client"; in the search,
+  `#client:acme` is one value and `#client:` any of them. Markdown exports write them as
+  nested tags (`#client/Acme`). A long
   library is grouped by month, and each transcribed recording shows its word count, speaking
   rate and share of silence.
 - **Notes in a vault.** File → Export library to folder… writes one Markdown note per
@@ -250,7 +254,8 @@ echo-app transcribe ID|FILE|FOLDER... | --all [--wait] [--again] [--format F [--
                   [--timeout S] [--json] [--no-adapter] [--context TEXT] [--language CODE]
 echo-app info ID [--json]         one recording: transcript state, progress, speakers, files
 echo-app cancel ID
-echo-app list [QUERY] [--tag T] [--json]   list or search recordings (#word in QUERY is a tag)
+echo-app list [QUERY] [--tag T] [--json]   list or search recordings (#word in QUERY is a tag,
+                                  #category: any tag of a category)
 echo-app tag ID [+TAG ...] [-TAG ...]   show, add or remove tags
 echo-app link ID ID... [--title T]   link recordings into a set (a set id among them: add to it)
 echo-app unlink ID                a set id dissolves the set; a recording id takes it out of its set
