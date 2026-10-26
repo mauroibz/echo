@@ -225,7 +225,8 @@ def build_parser() -> argparse.ArgumentParser:
     s.set_defaults(func=_cmd_gui)
 
     s = sub.add_parser("list", help="list recordings")
-    s.add_argument("query", nargs="?", help="search titles, notes and transcripts; #word is a tag")
+    s.add_argument("query", nargs="?", help="search titles, notes and transcripts; #word is a tag, @name a speaker "
+                                                   "(@name words: only what they said)")
     s.add_argument("--tag", action="append", metavar="TAG", help="only recordings with this tag (repeatable)")
     s.add_argument("--json", action="store_true", help="print recordings and linked sets as JSON")
     s.set_defaults(func=_cmd_list)

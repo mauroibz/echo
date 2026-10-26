@@ -21,6 +21,9 @@ tag.
 - Tag categories. A tag like `client:Acme` belongs to the category "client": the tag bar shows
   one chip per category with its values and "Any client", `#client:` searches the whole
   category, and Markdown exports write `#client/Acme`.
+- Search by speaker. `@ana` lists the recordings where Ana speaks; `@ana precio` finds only what
+  she said, shows her words under each result, and highlights them in her passages. Typing `@`
+  offers the names. Works in `echo-app list` too.
 
 ## 1.1.0 - 2026-10-25
 

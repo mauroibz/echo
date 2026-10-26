@@ -316,7 +316,7 @@ local summaries have no folder yet; they wait for the dictionary to be in daily 
 | 6 | `add-call-recording` | product | done; a real call with headphones and an output switch are open |
 | 6 | `add-speaker-naming` | AI | done; a check with real recordings of the user is open |
 | 7 | `add-tag-categories` | product | archived |
-| 7 | `add-speaker-search` | product | planned |
+| 7 | `add-speaker-search` | product | archived |
 | 7 | `add-people-profiles` | product | planned |
 
 The open items are listed under "Blocked" in each change's `tasks.md`, with what a person has

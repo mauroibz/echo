@@ -495,6 +495,7 @@ class TranscriptPanel(QWidget):
         self._find_matches: list[tuple[int, int]] = []
         self._find_index = -1
         self._find_from_search = False
+        self._find_speakers: set[int] | None = None  # a speaker search: find only in their passages
         self._shown_signature = None
         self._autosave = QTimer(self, singleShot=True, interval=AUTOSAVE_MS, timeout=self.save)
         # While typing, passage positions follow the text a moment later (alignment of the edit).
@@ -692,7 +693,7 @@ class TranscriptPanel(QWidget):
         self.find_edit.setPlaceholderText("Find in transcript")
         self.find_edit.setClearButtonEnabled(True)
         self.find_edit.textChanged.connect(self._find_update)
-        self.find_edit.textEdited.connect(lambda _t: setattr(self, "_find_from_search", False))
+        self.find_edit.textEdited.connect(self._find_typed)
         self.find_edit.returnPressed.connect(lambda: self._find_step(1))
         fl.addWidget(self.find_edit, 1)
         self.find_count = QLabel()
@@ -1965,11 +1966,13 @@ class TranscriptPanel(QWidget):
         self.find_edit.selectAll()
         self._find_update()
 
-    def find_from_search(self, text: str):
+    def find_from_search(self, text: str, speakers=None):
         """Show the find bar with the library search's words, leaving the focus where it is
-        (the list, while the user steps through results)."""
+        (the list, while the user steps through results). With `speakers` (numbers), only their
+        passages are searched: what @Ana said, not what anyone said."""
         if self.stack.currentWidget() is not self.page:
             return
+        self._find_speakers = set(speakers) if speakers and self.linked is None else None
         self.findbar.show()
         self._find_from_search = True
         cur = self.editor.textCursor()
@@ -1987,6 +1990,7 @@ class TranscriptPanel(QWidget):
 
     def close_find(self, focus: bool = True):
         self._find_from_search = False
+        self._find_speakers = None
         self.findbar.hide()
         self._find_matches = []
         self._apply_selections()
@@ -2006,8 +2010,23 @@ class TranscriptPanel(QWidget):
                 for a, b in spans:
                     if not self._find_matches or a >= self._find_matches[-1][1]:
                         self._find_matches.append((a, b))
+            if self._find_speakers:
+                self._find_matches = [m for m in self._find_matches if self._speaker_at(m[0]) in self._find_speakers]
         self._find_index = -1
         self._find_step(1)
+
+    def _find_typed(self, _text: str):
+        """Typed here, the find is the user's own: all speakers, and no longer the library search's."""
+        self._find_from_search = False
+        if self._find_speakers:
+            self._find_speakers = None
+            self._find_update()
+
+    def _speaker_at(self, pos: int) -> int | None:
+        k = self._passage_at(pos)
+        if k is None or k >= len(self._passages):
+            return None
+        return self._segments[self._passages[k][2]].get("speaker")
 
     def _find_step(self, direction: int):
         n = len(self._find_matches)

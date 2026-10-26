@@ -7,12 +7,12 @@ from pathlib import Path
 
 from PySide6.QtCore import QEvent, QItemSelectionModel, QObject, QSize, Qt, QTimer, QUrl
 from PySide6.QtGui import QAction, QCloseEvent, QDesktopServices, QFont, QKeySequence, QShortcut
-from PySide6.QtWidgets import (QAbstractItemView, QApplication, QFileDialog, QFrame, QHBoxLayout, QLabel, QLineEdit,
+from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCompleter, QFileDialog, QFrame, QHBoxLayout, QLabel, QLineEdit,
                                QListView, QMainWindow, QMenu, QMessageBox, QSplitter, QStatusBar, QSystemTrayIcon,
                                QToolButton, QVBoxLayout, QWidget)
 
 from .. import APP_NAME, export, features, importer, recorder, sets, settings, transcription
-from ..index import Index, parse_query
+from ..index import Index, parse_people, parse_query
 from ..library import READY, RECORDING, T_QUEUED, T_RUNNING, Library, Recording
 from . import theme
 from .common import RECORD_RED, UiState, app_icon, dot_icon, fmt_duration, icon, run_task
@@ -115,6 +115,14 @@ class MainWindow(QMainWindow):
         self._clear_search.setVisible(False)
         self.search.textChanged.connect(lambda t: self._clear_search.setVisible(bool(t)))
         self.search.textChanged.connect(lambda _t: self._search_timer.start())
+        # "@" offers the people who speak in the library; the rest of the search is left as typed.
+        self._people = QCompleter([], self)
+        self._people.setWidget(self.search)
+        self._people.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        self._people.setFilterMode(Qt.MatchFlag.MatchContains)
+        self._people.activated.connect(self._complete_person)
+        self.search.textEdited.connect(self._offer_people)
+        self._speech: dict[str, dict] = {}  # speaker search: per recording, speaker numbers and snippet
 
         self.model = LibraryModel(self.library, self)
         self.model.expanded = set(self.state.get("expanded") or [])
@@ -711,12 +719,40 @@ class MainWindow(QMainWindow):
     def _search_words(self) -> str:
         return " ".join(parse_query(self.search.text())[0])
 
+    def _offer_people(self, text: str):
+        token = text[:self.search.cursorPosition()].split(" ")[-1]
+        if not token.startswith("@"):
+            self._people.popup().hide()
+            return
+        idx = Index(self.library)
+        try:
+            idx.sync()  # only folders changed since the last search are read again
+            names = [n.replace(" ", "_") for n, _count in idx.speakers()]
+        finally:
+            idx.close()
+        self._people.model().setStringList(names)
+        self._people.setCompletionPrefix(token[1:])
+        if self._people.completionCount():
+            self._people.complete()
+        else:
+            self._people.popup().hide()
+
+    def _complete_person(self, name: str):
+        text, pos = self.search.text(), self.search.cursorPosition()
+        start = text.rfind(" ", 0, pos) + 1
+        self.search.setText(f"{text[:start]}@{name} {text[pos:].lstrip()}")
+        self.search.setCursorPosition(start + len(name) + 2)
+
     def _carry_search(self):
         """Open a search result with its words already found in the transcript, so finding
-        them there takes no second search."""
+        them there takes no second search; in a speaker search, only in their passages."""
         words = self._search_words()
-        if words and (self.current() is not None or self.current_set() is not None):
-            self.transcript.find_from_search(words)
+        rec = self.current()
+        numbers = None
+        if rec is not None and parse_people(self.search.text()):
+            numbers = (self._speech.get(rec.id) or {}).get("numbers")
+        if words and (rec is not None or self.current_set() is not None):
+            self.transcript.find_from_search(words, numbers)
 
     def _run_search(self):
         q = self.search.text().strip()
@@ -732,13 +768,15 @@ class MainWindow(QMainWindow):
             idx = Index(lib)
             try:
                 idx.sync()
-                return {r["id"] for r in idx.list(q)}
+                return {r["id"] for r in idx.list(q)}, idx.speech_matches(q) if parse_people(q) else {}
             finally:
                 idx.close()
 
-        def done(ids):
+        def done(result):
+            ids, speech = result
             if self.search.text().strip() == q:
-                self.model.set_filter(ids)
+                self._speech = speech
+                self.model.set_filter(ids, {rid: m["snippet"] for rid, m in speech.items() if m["snippet"]})
                 self._update_empty()
                 if self.model.first_row() >= 0 and not self.list.currentIndex().isValid():
                     self.list.setCurrentIndex(self.model.index(self.model.first_row()))

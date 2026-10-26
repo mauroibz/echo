@@ -206,6 +206,11 @@ Model versions are pinned, and only weights and configuration are downloaded, ne
   recording, ignoring accents; `#word` in it filters by tag. Opening a result shows its
   transcript with the words already found (Enter or the arrows in the find bar step through
   them). Ctrl+F finds within the open transcript.
+- **Search by speaker.** `@ana` lists the recordings where a speaker named Ana talks (any word of
+  the name, from its start: `@lopez` finds Ana López too; `@ana_lopez` asks for both words).
+  `@ana precio` finds only what Ana said: each result shows her words under its title, and
+  opening it highlights them in her passages only. Typing `@` offers the names. Speakers you
+  have not named are not people yet, so they are not found this way.
 - **Linked recordings.** Voice notes that are one long message (WhatsApp cuts them every few
   minutes), or a recording you stopped and started again, can be linked into a set without
   merging any audio. Select them (Ctrl+click or Shift+click) and press Link in the bar under
@@ -255,7 +260,7 @@ echo-app transcribe ID|FILE|FOLDER... | --all [--wait] [--again] [--format F [--
 echo-app info ID [--json]         one recording: transcript state, progress, speakers, files
 echo-app cancel ID
 echo-app list [QUERY] [--tag T] [--json]   list or search recordings (#word in QUERY is a tag,
-                                  #category: any tag of a category)
+                                  #category: any tag of a category, @name a speaker)
 echo-app tag ID [+TAG ...] [-TAG ...]   show, add or remove tags
 echo-app link ID ID... [--title T]   link recordings into a set (a set id among them: add to it)
 echo-app unlink ID                a set id dissolves the set; a recording id takes it out of its set

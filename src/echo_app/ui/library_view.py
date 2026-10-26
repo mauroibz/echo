@@ -22,6 +22,7 @@ ROLE_HEADER = Qt.ItemDataRole.UserRole + 3
 ROLE_KIND = Qt.ItemDataRole.UserRole + 4  # ROW_* below
 ROLE_SET = Qt.ItemDataRole.UserRole + 5  # (LinkedSet, its present parts) on a set row
 ROLE_PART = Qt.ItemDataRole.UserRole + 6  # (part number from 1, expanded set id) on a part row
+ROLE_SNIPPET = Qt.ItemDataRole.UserRole + 7  # "Ana: …el precio sube…" under a speaker search result
 
 ROW_HEADER, ROW_REC, ROW_SET, ROW_PART = "header", "rec", "set", "part"
 
@@ -126,6 +127,7 @@ class LibraryModel(QAbstractListModel):
         self._status: dict[str, Status] = {}
         self._rows: list[str] = []
         self._filter: set[str] | None = None
+        self._snippets: dict[str, str] = {}
         self._loaded = False
         self._sets: dict[str, sets.LinkedSet] = {}
         self._sets_sig: tuple = ()
@@ -162,6 +164,8 @@ class LibraryModel(QAbstractListModel):
             return rec
         if role == ROLE_STATUS:
             return self._status.get(rid)
+        if role == ROLE_SNIPPET:
+            return self._snippets.get(rid)
         if role == Qt.ItemDataRole.ToolTipRole:
             st = self._status.get(rid)
             tip = f"{rec.meta.title}\n{fmt_date(rec.meta.created)} · {fmt_duration(rec.meta.duration)}"
@@ -323,8 +327,10 @@ class LibraryModel(QAbstractListModel):
         except ValueError:
             return -1
 
-    def set_filter(self, ids: set[str] | None) -> None:
+    def set_filter(self, ids: set[str] | None, snippets: dict[str, str] | None = None) -> None:
+        """Show only `ids` (None: all); `snippets` are lines of matching speech per recording."""
         self._filter = ids
+        self._snippets = dict(snippets or {})
         self._rebuild_rows()
 
     def refresh(self) -> None:
@@ -461,7 +467,8 @@ class RowDelegate(QStyledItemDelegate):
             return QSize(200, fm.height() + 14)
         if index.data(ROLE_KIND) == ROW_PART:
             return QSize(200, fm.height() + 16)
-        return QSize(200, fm.height() * 2 + self.PAD * 2 + 8)
+        extra = fm.height() + 3 if index.data(ROLE_SNIPPET) else 0
+        return QSize(200, fm.height() * 2 + self.PAD * 2 + 8 + extra)
 
     def chevron_rect(self, rect: QRect) -> QRect:
         """Where a set row's expand arrow is drawn (and clicked)."""
@@ -599,6 +606,14 @@ class RowDelegate(QStyledItemDelegate):
             p.setFont(small)
             p.drawText(srect, Qt.AlignmentFlag.AlignCenter if pill else Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
                        status_text)
+        # Line 3, in a speaker search: what they said around the words.
+        snippet = index.data(ROLE_SNIPPET)
+        if snippet:
+            y3 = y2 + fm.height() + 3
+            p.setFont(option.font)
+            p.setPen(QColor(t.foam))
+            p.drawText(QRect(r.left(), y3, r.width(), fm.height()), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+                       fm.elidedText(" ".join(snippet.split()), Qt.TextElideMode.ElideRight, r.width()))
         # Progress along the bottom of the row card
         if st and st.progress is not None and st.kind == K_BUSY:
             bar = QRectF(card.left() + 12, card.bottom() - 4, card.width() - 24, 3)

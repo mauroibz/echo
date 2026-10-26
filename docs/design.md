@@ -326,6 +326,16 @@ in sync. `#client:` matches the folded prefix `client:` in the `tags` table, so 
 named `client` is not in the category. Markdown exports write `#client/Acme`, the nested form
 Obsidian reads, since colons are not allowed in its tags.
 
+Search by speaker uses two more tables (schema 4): `spoken`, full text of what each named speaker
+said in each recording (the shown text, edited or corrected, cut into passages with
+`align.cues` as the exports do), and `speakers`, who speaks where and for how long. Both come
+from `meta.json` and the transcripts, so a rename or an edit re-indexes with the folder. `@ana`
+is matched against the few names in `speakers` in Python (each `_`-separated word the start of
+consecutive words of the folded name) and then filtered in SQL by exact names; with words, the
+words must match `spoken` rows of those people, and FTS5's `snippet()` gives the line shown under
+each result. The window passes the speaker numbers to the transcript, whose find keeps only
+matches inside their passages. Only named speakers are indexed: "Speaker 2" is not a person.
+
 ### Speakers
 
 After recognition the worker labels passages by speaker, on the processor: a voice embedding per
