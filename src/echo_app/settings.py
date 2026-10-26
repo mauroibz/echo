@@ -19,6 +19,7 @@ class Settings:
     source: str = ""  # PipeWire node name; empty means the system default source
     sample_rate: int = 48000
     channels: int = 1
+    computer_audio: bool = False  # also record what the default output plays, as a second track (calls)
     use_adapter: bool = True  # Spanish robustness LoRA on top of the base model
     auto_transcribe: bool = True  # queue transcription when a recording or import finishes
     worker_idle_minutes: int = 5
@@ -43,6 +44,7 @@ _COMMENTS = {
     "source": "PipeWire source node name. Empty = system default input",
     "sample_rate": "Recording sample rate in Hz",
     "channels": "1 = mono, 2 = stereo",
+    "computer_audio": "Also record the computer audio (a call's other side) next to the microphone",
     "use_adapter": "Use the Spanish robustness adapter when transcribing",
     "auto_transcribe": "Transcribe new recordings and imports automatically",
     "worker_idle_minutes": "Minutes before the idle transcription worker exits and frees GPU memory",

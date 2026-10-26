@@ -9,8 +9,8 @@ from typing import Any
 
 from .library import CORRECTED, EDITED, TRANSCRIPT, Recording
 
-KEYS = ("id", "title", "created", "duration", "source", "extracted_from", "state", "transcript_status",
-        "progress", "error", "language", "speakers", "tags", "notes", "folder", "audio", "files")
+KEYS = ("id", "title", "created", "duration", "source", "tracks", "extracted_from", "state",
+        "transcript_status", "progress", "error", "language", "speakers", "tags", "notes", "folder", "audio", "files")
 
 
 def _file(rec: Recording, name: str) -> str | None:
@@ -49,6 +49,7 @@ def record(rec: Recording) -> dict[str, Any]:
         "created": rec.meta.created,
         "duration": rec.meta.duration,
         "source": rec.meta.source,
+        "tracks": rec.meta.tracks,
         "extracted_from": rec.meta.extracted_from,
         "state": rec.meta.state,
         "transcript_status": status,

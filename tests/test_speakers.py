@@ -134,3 +134,57 @@ def test_naming_in_the_editor(window, lib, tmp_path):
     tp.set_speakers_off(True)
     assert lib.get(rec.id).meta.speakers_off and not tp.editor.margin.labels
     tp.editor.margin.grab()
+
+
+def test_label_per_track_keeps_sides_apart_and_mic_first():
+    passages = [(i * 10.0, i * 10.0 + 9) for i in range(5)]
+    embs = {0: _voice(1), 1: _voice(1), 3: _voice(1), 4: _voice(1)}  # one voice; passage 2 is short
+    sides = [1, 0, 1, 1, 0]
+    labels, centroids = speakers.label(passages, embs, tracks=sides)
+    assert labels == [2, 1, 2, 2, 1] and set(centroids) == {1, 2}
+    assert speakers.label(passages, embs) == ([None] * 5, {})  # without tracks: one speaker
+
+
+def test_louder_track():
+    rate = 1000
+    stereo = np.zeros((4000, 2), np.int16)
+    stereo[:2000, 0] = 8000
+    stereo[:2000, 1] = 500  # the call faintly in the room's microphone would look like this
+    stereo[2000:, 1] = 6000
+    assert speakers.louder_track(stereo, [(0, 2), (2, 4), (5, 6)], rate) == [0, 1, 0]
+
+
+def test_worker_labels_a_call_by_track(tmp_path, monkeypatch):
+    """Two people with indistinguishable voices: the tracks alone tell the user from the call."""
+    import subprocess
+
+    lib_ = Library(tmp_path / "data")
+    n, gap = 15 * 16000, np.zeros((3 * 16000, 2), np.int16)
+    tone = (np.sin(np.arange(n) * 0.1) * 8000).astype(np.int16)
+    parts = []
+    for side in (1, 0, 1, 0):  # the call speaks first
+        p = np.zeros((n, 2), np.int16)
+        p[:, side] = tone
+        parts += [p, gap]
+    path = tmp_path / "call.wav"
+    subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-f", "s16le", "-ar", "16000", "-ac", "2", "-i", "pipe:0",
+                    str(path)], input=np.concatenate(parts).tobytes(), check=True)
+    rec = importer.import_file(lib_, path).recording
+    rec.update(tracks=["mic", "computer"])
+
+    class SameVoice:
+        @staticmethod
+        def available():
+            return True
+
+        def embed(self, samples):
+            return _voice(1)
+
+    monkeypatch.setattr(speakers, "Embedder", SameVoice)
+    rec.request_transcription()
+    from echo_app.worker.service import Worker
+
+    Worker(lib_, VoiceEngine()).process(rec)
+    t = rec.transcript()
+    assert [s["speaker"] for s in t["segments"]] == [2, 1, 2, 1]
+    assert t["speakers"]["count"] == 2

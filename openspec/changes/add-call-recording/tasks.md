@@ -9,12 +9,12 @@
 
 ## 2. Listening and transcription
 
-- [ ] 2.1 Mixing on decode: `ffmpeg.decode_cmd(..., mix=True)` sums the two channels into one; the waveform and the worker use it for two-track recordings; playback plays the sum in both ears through the limiter; tests on the ffmpeg commands and on decoded content of a two-channel file
-- [ ] 2.2 Speakers per track: each passage goes to the louder track (RMS over the passage), passages are clustered per track, the microphone's speakers numbered first; tests with the stub embedder on a synthetic two-channel recording
+- [x] 2.1 Mixing on decode: `ffmpeg.decode_cmd(..., mix=True)` sums the two channels into one; the waveform and the worker use it for two-track recordings; playback plays the sum in both ears through the limiter; tests on the ffmpeg commands and on decoded content of a two-channel file
+- [x] 2.2 Speakers per track: each passage goes to the louder track (RMS over the passage), passages are clustered per track, the microphone's speakers numbered first; tests with the stub embedder on a synthetic two-channel recording
 
 ## 3. Command line and settings
 
-- [ ] 3.1 `settings.computer_audio` (remembered, off by default); `echo-app record --computer-audio / --no-computer-audio`, defaulting to the setting; `recorder.start(computer_audio=...)` refuses it for a monitor source or a backend that cannot record outputs; `status` names both sources; `info` and `info --json` report `tracks`; tests in `tests/test_recorder.py` and `tests/test_agent_cli.py`
+- [x] 3.1 `settings.computer_audio` (remembered, off by default); `echo-app record --computer-audio / --no-computer-audio`, defaulting to the setting; `recorder.start(computer_audio=...)` refuses it for a monitor source or a backend that cannot record outputs; `status` names both sources; `info` and `info --json` report `tracks`; tests in `tests/test_recorder.py` and `tests/test_agent_cli.py`
 
 ## 4. Window
 

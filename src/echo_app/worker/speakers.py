@@ -154,17 +154,8 @@ def cluster(embs: np.ndarray, threshold: float = THRESHOLD) -> list[int]:
     return owner
 
 
-def label(passages: Sequence[tuple[float, float]], embs: dict[int, np.ndarray],
-          threshold: float = THRESHOLD) -> tuple[list[int | None], dict[int, list[float]]]:
-    """Speaker numbers 1..N per passage (None when nobody could be told apart) and centroids.
-
-    `embs` maps passage index to embedding for passages long enough to have one; the others take
-    the previous passage's speaker (or the next one's at the start). Speakers with very little
-    speech join the nearest other speaker, and a recording with one speaker gets no labels.
-    """
-    idx = sorted(embs)
-    if not idx:
-        return [None] * len(passages), {}
+def _clusters(passages, embs: dict[int, np.ndarray], idx: list[int], threshold: float) -> list[list[int]]:
+    """Passage indices grouped by voice, with speakers of very little speech folded in."""
     groups = cluster(np.stack([embs[i] for i in idx]), threshold)
     by_group: dict[int, list[int]] = {}
     for i, g in zip(idx, groups):
@@ -177,24 +168,79 @@ def label(passages: Sequence[tuple[float, float]], embs: dict[int, np.ndarray],
         if g not in big:
             target = max(big, key=lambda b: float(centroid[g] @ centroid[b]))
             by_group[target] += by_group.pop(g)
-    if len(by_group) < 2:
+    return list(by_group.values())
+
+
+def label(passages: Sequence[tuple[float, float]], embs: dict[int, np.ndarray],
+          threshold: float = THRESHOLD, tracks: Sequence[int] | None = None,
+          ) -> tuple[list[int | None], dict[int, list[float]]]:
+    """Speaker numbers 1..N per passage (None when nobody could be told apart) and centroids.
+
+    `embs` maps passage index to embedding for passages long enough to have one; the others take
+    the previous passage's speaker (or the next one's at the start). Speakers with very little
+    speech join the nearest other speaker, and a recording with one speaker gets no labels.
+
+    `tracks` gives, for a call recording, the track each passage is on (0 the microphone, 1 the
+    computer audio). Voices are then clustered within each track, so a voice in the room and a
+    voice in the call are never one speaker, the microphone's speakers are numbered first, and a
+    short passage takes its speaker from its own track.
+    """
+    idx = sorted(embs)
+    if not idx:
         return [None] * len(passages), {}
-    of: dict[int, int] = {i: g for g, members in by_group.items() for i in members}
-    # Number speakers in order of first appearance.
+    side = list(tracks) if tracks is not None else [0] * len(passages)
+    groups: list[list[int]] = []
+    for t in sorted({side[i] for i in idx}):
+        groups += _clusters(passages, embs, [i for i in idx if side[i] == t], threshold)
+    if len(groups) < 2:
+        return [None] * len(passages), {}
+    of: dict[int, int] = {i: g for g, members in enumerate(groups) for i in members}
+    # Number speakers by track, then in order of first appearance.
     numbers: dict[int, int] = {}
-    for i in sorted(of):
+    for i in sorted(of, key=lambda i: (side[i], i)):
         numbers.setdefault(of[i], len(numbers) + 1)
     out: list[int | None] = [numbers[of[i]] if i in of else None for i in range(len(passages))]
-    for i in range(len(out)):  # short passages: the previous speaker
+    # Short passages: the previous speaker on the same track, or the next one's at its start; then,
+    # on a track with no voice of its own, its neighbors' on any track.
+    last: dict[int, int] = {}
+    for i in range(len(out)):
+        if out[i] is None:
+            out[i] = last.get(side[i])
+        if out[i] is not None:
+            last[side[i]] = out[i]
+    following: dict[int, int] = {}
+    for i in range(len(out) - 1, -1, -1):
+        if out[i] is None:
+            out[i] = following.get(side[i])
+        if out[i] is not None:
+            following[side[i]] = out[i]
+    for i in range(len(out)):
         if out[i] is None and i > 0:
             out[i] = out[i - 1]
-    for i in range(len(out) - 1, -1, -1):  # ...or the next one at the very start
+    for i in range(len(out) - 1, -1, -1):
         if out[i] is None and i + 1 < len(out):
             out[i] = out[i + 1]
-    centroids = {numbers[g]: [round(float(x), 5) for x in
-                              _unit(np.mean([embs[i] for i in members], axis=0))]
-                 for g, members in by_group.items()}
+    centroids = {numbers[g]: [round(float(x), 5) for x in _unit(np.mean([embs[i] for i in members], axis=0))]
+                 for g, members in enumerate(groups)}
     return out, centroids
+
+
+def louder_track(stereo: np.ndarray, spans: Sequence[tuple[float, float]], rate: int = SAMPLE_RATE) -> list[int]:
+    """For each span of a call's (N, 2) samples, 0 if the microphone is louder over it, else 1.
+
+    With headphones the microphone hears only the room and the computer audio only the call, so
+    the louder track says which side spoke; where both talk at once the passage goes to the
+    louder of the two.
+    """
+    out = []
+    for start, end in spans:
+        part = stereo[int(start * rate):int(end * rate)].astype(np.float64)
+        if not len(part):
+            out.append(0)
+            continue
+        rms = np.sqrt(np.mean(part ** 2, axis=0))
+        out.append(0 if rms[0] >= rms[1] else 1)
+    return out
 
 
 def _unit(v: np.ndarray) -> np.ndarray:

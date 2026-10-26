@@ -83,11 +83,24 @@ def queued(lib: Library) -> list[tuple[float, Recording]]:
 def decode(rec: Recording) -> tuple[np.ndarray, float]:
     """16 kHz mono int16 samples of the crop span, and the offset of sample 0 in the recording."""
     start, end = rec.effective_span()
-    r = subprocess.run(ffmpeg.decode_cmd(rec.audio_path, SAMPLE_RATE, 1, start or None, end),
-                       capture_output=True, timeout=3600)
+    cmd = ffmpeg.decode_cmd(rec.audio_path, SAMPLE_RATE, 1, start or None, end, mix=bool(rec.meta.tracks))
+    r = subprocess.run(cmd, capture_output=True, timeout=3600)
     if r.returncode != 0:
         raise RuntimeError(f"could not decode the audio: {r.stderr.decode(errors='replace').strip()[-300:]}")
     return np.frombuffer(r.stdout, dtype=np.int16), float(start or 0.0)
+
+
+TRACKS_RATE = 4000  # enough to tell which side is louder: an hour is 57 MB instead of 230 at 16 kHz
+
+
+def decode_tracks(rec: Recording) -> np.ndarray:
+    """A call recording's crop span as (N, 2) samples at TRACKS_RATE: the microphone, the computer audio."""
+    start, end = rec.effective_span()
+    r = subprocess.run(ffmpeg.decode_cmd(rec.audio_path, TRACKS_RATE, 2, start or None, end),
+                       capture_output=True, timeout=3600)
+    if r.returncode != 0:
+        raise RuntimeError(f"could not decode the audio: {r.stderr.decode(errors='replace').strip()[-300:]}")
+    return np.frombuffer(r.stdout, dtype=np.int16).reshape(-1, 2)
 
 
 def quietest_fn(audio: np.ndarray):
@@ -349,7 +362,9 @@ class Worker:
                 last = time.monotonic()
                 self._check(rec, requested_at)
                 self._progress(rec, "speakers", i, len(passages), None, started)
-        labels, centroids = speakers.label([(p.start, p.end) for p in passages], embs)
+        spans = [(p.start, p.end) for p in passages]
+        sides = speakers.louder_track(decode_tracks(rec), spans, TRACKS_RATE) if rec.meta.tracks else None
+        labels, centroids = speakers.label(spans, embs, tracks=sides)
         if not centroids:
             return None
         prev = None

@@ -612,6 +612,8 @@ class Supervisor:
         wanted = self.session.get("source")
         self.source, note = self.backend.resolve(wanted or "")
         self.session["source_label"] = self.source.label if self.source else "System default input"
+        if self.computer_audio:
+            self.session["source_label"] += " + computer audio"
         if note:
             self.warning = note
             self.session["events"].append({"at": 0.0, "wall": _now_iso(), "cause": note, "kind": "info"})
@@ -931,6 +933,20 @@ def active(lib: Library) -> Session | None:
             if s.alive():
                 return s
     return None
+
+
+def can_add_computer_audio(source: str = "") -> bool:
+    """Whether a call recording can be made from this source: an input, on a backend that records outputs."""
+    try:
+        b = backend.get()
+    except backend.BackendMissing:
+        return False
+    if not b.records_outputs:
+        return False
+    if backend.is_fake():
+        return True
+    src, _ = b.resolve(source)
+    return src is None or src.kind == backend.INPUT
 
 
 def start(lib: Library, source: str = "", rate: int = 48000, channels: int = 1,

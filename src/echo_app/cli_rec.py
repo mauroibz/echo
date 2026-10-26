@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import signal
 import sys
 import time
@@ -63,10 +64,15 @@ def cmd_record(args) -> int:
             if code == 0 and args.wait and active.rec.meta.quick_note:
                 return _print_quick_note(lib, active.rec.id)
             return code
+    source = args.source if args.source is not None else cfg.source
+    # The remembered choice applies only where it can; an explicit flag that cannot is an error.
+    # A quick note is the user alone, whatever the setting says.
+    computer_audio = args.computer_audio
+    if computer_audio is None:
+        computer_audio = cfg.computer_audio and not args.quick_note and recorder.can_add_computer_audio(source)
     try:
-        sess = recorder.start(lib, source=args.source if args.source is not None else cfg.source,
-                              rate=cfg.sample_rate, channels=cfg.channels, title=args.title,
-                              quick_note=args.quick_note)
+        sess = recorder.start(lib, source=source, rate=cfg.sample_rate, channels=cfg.channels, title=args.title,
+                              quick_note=args.quick_note, computer_audio=computer_audio)
     except recorder.RecorderError as e:
         print(e, file=sys.stderr)
         return 1
@@ -296,6 +302,9 @@ def register(sub) -> None:
     s.add_argument("--toggle", action="store_true", help="start a recording, or stop the active one")
     s.add_argument("--quick-note", action="store_true",
                    help="like --toggle, for a short note tagged 'nota' whose text is copied when ready")
+    s.add_argument("--computer-audio", action=argparse.BooleanOptionalAction, default=None,
+                   help="also record what the computer plays (a call's other side) as a second track; "
+                        "default: as last chosen in the window")
     s.set_defaults(func=cmd_record)
     for name, fn, hlp in (("pause", cmd_pause, "pause the active recording"),
                           ("resume", cmd_resume, "resume the paused recording"),

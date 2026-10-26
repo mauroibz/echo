@@ -24,15 +24,15 @@ def cache_dir() -> Path:
     return base
 
 
-def compute(path: Path, cache_key: str | None = None) -> np.ndarray:
-    """Return an (N, 2) int16 array of [min, max] per 10 ms bucket."""
+def compute(path: Path, cache_key: str | None = None, mix: bool = False) -> np.ndarray:
+    """Return an (N, 2) int16 array of [min, max] per 10 ms bucket; `mix` for a call's two tracks."""
     cached = cache_dir() / f"{cache_key}.npy" if cache_key else None
     if cached and cached.exists():
         try:
             return np.load(cached)
         except (OSError, ValueError):
             cached.unlink(missing_ok=True)
-    proc = subprocess.Popen(ffmpeg.decode_cmd(path, RATE), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    proc = subprocess.Popen(ffmpeg.decode_cmd(path, RATE, mix=mix), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
     chunks = []
     leftover = b""
     block = BUCKET * 2 * 4096

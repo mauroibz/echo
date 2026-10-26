@@ -27,14 +27,19 @@ MAX_VOLUME = 4.0  # +12 dB: brings a meeting averaging -31 dB up to ordinary spe
 LIMITER = "alimiter=limit=0.97:level=false"
 
 
-def _filters(speed: float, volume: float = 1.0) -> list[str]:
-    chain = []
+# A call's two tracks in both ears, each at its recorded level; the limiter catches the rare
+# moment both sides peak together.
+MIX_STEREO = "pan=stereo|c0=c0+c1|c1=c0+c1"
+
+
+def _filters(speed: float, volume: float = 1.0, mix: bool = False) -> list[str]:
+    chain = [MIX_STEREO] if mix else []
     if abs(speed - 1.0) >= 1e-3:
         chain.append(f"atempo={speed:.3f}")
     if abs(volume - 1.0) >= 1e-3:
         chain.append(f"volume={volume:.2f}")
-        if volume > 1.0:
-            chain.append(LIMITER)
+    if volume > 1.0 + 1e-3 or mix:
+        chain.append(LIMITER)
     return ["-af", ",".join(chain)] if chain else []
 
 
@@ -44,6 +49,7 @@ class Playback:
         self.duration = 0.0
         self.speed = 1.0
         self.volume = 1.0
+        self.mix = False  # a call recording: its two tracks are played together
         self._pos = 0.0  # position when stopped, or start position of the running pipeline
         self._t0 = 0.0
         self._end: float | None = None
@@ -52,9 +58,10 @@ class Playback:
         self.error: str | None = None
 
     # ---- state ----
-    def load(self, path: Path | None, duration: float) -> None:
+    def load(self, path: Path | None, duration: float, mix: bool = False) -> None:
         self.stop()
         self.path = Path(path) if path else None
+        self.mix = mix
         self.duration = max(0.0, duration or 0.0)
         self._pos = 0.0
         self.error = None
@@ -101,7 +108,7 @@ class Playback:
         cmd = ["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-ss", f"{self._pos:.3f}"]
         if end is not None:
             cmd += ["-t", f"{max(0.05, end - self._pos):.3f}"]
-        cmd += ["-i", str(self.path), "-vn", *_filters(self.speed, self.volume), "-f", "s16le", "-ac", str(CHANNELS),
+        cmd += ["-i", str(self.path), "-vn", *_filters(self.speed, self.volume, self.mix), "-f", "s16le", "-ac", str(CHANNELS),
                 "-ar", str(RATE), "pipe:1"]
         from . import backend
 
@@ -213,7 +220,8 @@ class SetPlayback:
         k = max(0, min(k, len(self.parts) - 1))
         if k != self.k:
             p = self.parts[k]
-            self.inner.load(p.rec.audio_path if self._playable(k) else None, p.rec.meta.duration or 0)
+            self.inner.load(p.rec.audio_path if self._playable(k) else None, p.rec.meta.duration or 0,
+                            bool(p.rec.meta.tracks))
             self.inner.seek(p.start)
             self.k = k
 

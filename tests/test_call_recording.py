@@ -77,6 +77,7 @@ def test_call_record_pause_resume_stop(lib):
     s = recorder.start(lib, rate=RATE, computer_audio=True, title="call")
     assert wait_for(lambda: s.status().get("out_take"))
     assert s.status()["tracks"] == ["mic", "computer"]
+    assert s.status()["source"].endswith("+ computer audio")
     time.sleep(1.2)
     s.pause()
     assert wait_for(lambda: s.status()["state"] == recorder.S_PAUSED)
@@ -243,3 +244,100 @@ def test_interleaving_an_hour_is_quick(tmp_path):
     elapsed = time.perf_counter() - t
     assert total == n * 4
     assert elapsed < 30, elapsed
+
+
+# ---- mixing: playback, waveform and transcription hear both sides ---------------------------------
+
+def _call_file(tmp_path, left: str, right: str, seconds: float = 1.0) -> Path:
+    path = tmp_path / "call.flac"
+    subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi", "-i",
+                    f"aevalsrc='{left}|{right}':s={RATE}:d={seconds}", "-c:a", "flac", str(path)], check=True)
+    return path
+
+
+def _peak(raw: bytes) -> float:
+    return max(abs(v) for v in array.array("h", raw)) / 32768
+
+
+def test_decode_mix_keeps_each_side_at_its_level(tmp_path):
+    # The input alone for the first half, the call alone for the second.
+    path = _call_file(tmp_path, "if(lt(t,0.5),0.4*sin(2*PI*300*t),0)", "if(gte(t,0.5),0.3*sin(2*PI*500*t),0)")
+    mixed = subprocess.run(ffmpeg.decode_cmd(path, RATE, mix=True), capture_output=True, check=True).stdout
+    averaged = subprocess.run(ffmpeg.decode_cmd(path, RATE), capture_output=True, check=True).stdout
+    half = len(mixed) // 2
+    assert abs(_peak(mixed[:half]) - 0.4) < 0.01 and abs(_peak(mixed[half:]) - 0.3) < 0.01
+    assert abs(_peak(averaged[:half]) - 0.2) < 0.01  # what -ac 1 alone would give: 6 dB down
+
+
+def test_playback_mix_in_both_ears_without_clipping(tmp_path):
+    from echo_app.audio import playback
+
+    assert playback._filters(1.0, 1.0, mix=True) == ["-af", f"{playback.MIX_STEREO},{playback.LIMITER}"]
+    path = _call_file(tmp_path, "0.7*sin(2*PI*300*t)", "0.7*sin(2*PI*300*t)")  # both sides peak together
+    cmd = ["ffmpeg", "-nostdin", "-loglevel", "error", "-i", str(path), *playback._filters(1.0, 1.0, mix=True),
+           "-f", "s16le", "-ac", "2", "-ar", str(playback.RATE), "pipe:1"]
+    a = array.array("h", subprocess.run(cmd, capture_output=True, check=True).stdout)
+    left, right = a[0::2], a[1::2]
+    assert list(left) == list(right)
+    assert max(abs(v) for v in left) < 32767
+
+
+def test_waveform_of_a_call_shows_both_sides(tmp_path, monkeypatch):
+    from echo_app.audio import peaks
+
+    path = _call_file(tmp_path, "0", "0.5*sin(2*PI*300*t)")  # only the call speaks
+    mixed = peaks.compute(path, mix=True)
+    assert mixed[:, 1].max() > 0.45 * 32768
+
+
+def test_worker_transcribes_the_sum(tmp_path):
+    from echo_app import importer
+    from echo_app.worker import service
+
+    lib = Library(tmp_path / "data")
+    rec = importer.import_file(lib, _call_file(tmp_path, "0.4*sin(2*PI*300*t)", "0")).recording
+    rec.update(tracks=["mic", "computer"])
+    audio, _ = service.decode(rec)
+    assert abs(int(abs(audio).max()) / 32768 - 0.4) < 0.01
+
+
+# ---- command line ---------------------------------------------------------------------------------
+
+def test_cli_record_call_and_info_json(lib, capsys):
+    import json
+
+    from echo_app import cli, settings
+
+    settings.save(settings.Settings(data_dir=str(lib.data_dir), sample_rate=RATE))
+    assert cli.main(["record", "--computer-audio", "--title", "llamada"]) == 0
+    s = recorder.active(lib)
+    assert s is not None and s.rec.meta.source.endswith("+ computer audio")
+    time.sleep(0.8)
+    assert cli.main(["stop"]) == 0
+    capsys.readouterr()
+    assert cli.main(["info", s.rec.id, "--json"]) == 0
+    d = json.loads(capsys.readouterr().out)
+    assert d["tracks"] == ["mic", "computer"]
+    assert s.rec.reload().meta.channels == 2
+
+
+def test_cli_follows_the_setting_unless_told(lib, capsys):
+    from echo_app import cli, settings
+
+    settings.save(settings.Settings(data_dir=str(lib.data_dir), sample_rate=RATE, computer_audio=True))
+    for argv, tracks_ in ((["record"], ["mic", "computer"]), (["record", "--no-computer-audio"], None),
+                          (["record", "--quick-note"], None)):
+        assert cli.main(argv) == 0
+        s = recorder.active(lib)
+        time.sleep(0.5)
+        assert cli.main(["stop"]) == 0
+        assert s.rec.reload().meta.tracks == tracks_, argv
+
+
+def test_refused_without_output_recording(lib, monkeypatch):
+    from echo_app.audio import backend
+
+    monkeypatch.setattr(backend.CommandBackend, "records_outputs", False)
+    assert not recorder.can_add_computer_audio()
+    with pytest.raises(recorder.RecorderError, match="cannot record the computer audio"):
+        recorder.start(lib, rate=RATE, computer_audio=True)

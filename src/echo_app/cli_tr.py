@@ -276,6 +276,8 @@ def cmd_info(args) -> int:
         return OK
     rows = [("Title", d["title"]), ("Created", d["created"]),
             ("Length", _clock(d["duration"]) if d["duration"] else "unknown"), ("Source", d["source"] or "-")]
+    if d["tracks"]:
+        rows.append(("Tracks", "channel 1 microphone, channel 2 computer audio"))
     if d["extracted_from"]:
         rows.append(("From video", f"{d['extracted_from']['name']} (sound {d['extracted_from']['method']})"))
     status = d["transcript_status"]

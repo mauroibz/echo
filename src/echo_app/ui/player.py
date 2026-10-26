@@ -571,14 +571,15 @@ class PlayerPanel(QWidget):
         self.wave.set_recording(sets.total(timeline), None, None, (), self._set_markers(timeline))
         self.wave.set_peaks(None)
         sid = linked.id
-        jobs = [(p.rec.audio_path, p.rec.meta.sha256, p.start, p.length) for p in timeline]
+        jobs = [(p.rec.audio_path, p.rec.meta.sha256, p.start, p.length, bool(p.rec.meta.tracks))
+                for p in timeline]
 
         def compute():
             chunks = []
-            for path, key, start, length in jobs:
+            for path, key, start, length, mix in jobs:
                 n = int(round(length * peaks_mod.BUCKETS_PER_SECOND))
                 try:
-                    pk = peaks_mod.compute(path, key) if path is not None and path.exists() else None
+                    pk = peaks_mod.compute(path, key, mix) if path is not None and path.exists() else None
                 except Exception:  # noqa: BLE001 - a part without a waveform still has its place
                     pk = None
                 a = int(round(start * peaks_mod.BUCKETS_PER_SECOND))
@@ -669,7 +670,7 @@ class PlayerPanel(QWidget):
             self._update_time()
             return
         self._loaded_sha = rec.meta.sha256
-        self.player.load(rec.audio_path, rec.meta.duration or 0)
+        self.player.load(rec.audio_path, rec.meta.duration or 0, bool(rec.meta.tracks))
         if rec.meta.crop_start:
             self.player.seek(rec.meta.crop_start)
         gaps = [g["at"] for g in interruptions if "at" in g]
@@ -678,7 +679,8 @@ class PlayerPanel(QWidget):
                                 rec.meta.markers)
         self.wave.set_peaks(None)
         rid, path, key = rec.id, rec.audio_path, rec.meta.sha256
-        run_task(peaks_mod.compute, path, key, on_done=lambda pk: self._peaks_ready(rid, pk),
+        run_task(peaks_mod.compute, path, key, bool(rec.meta.tracks),
+                 on_done=lambda pk: self._peaks_ready(rid, pk),
                  on_error=lambda m: log.warning("waveform failed: %s", m))
         self._update_crop_label()
         self._update_time()

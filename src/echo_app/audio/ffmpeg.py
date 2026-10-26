@@ -244,13 +244,19 @@ def encode_pcm_flac_verified(chunks: Iterable[bytes], rate: int, channels: int, 
     return total // frame
 
 
+# A call recording's two tracks heard as one: summed, so each side keeps its recorded level.
+# ffmpeg's own -ac 1 averages them, 6 dB below what was recorded.
+MIX_MONO = "pan=mono|c0=c0+c1"
+
+
 def decode_cmd(path: Path, rate: int, channels: int = 1, start: float | None = None,
-               end: float | None = None) -> list[str]:
-    """Command that decodes any audio file to raw s16le on stdout."""
+               end: float | None = None, mix: bool = False) -> list[str]:
+    """Command that decodes any audio file to raw s16le on stdout; `mix` sums a call's two tracks."""
     cmd = ["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error"]
     if start:
         cmd += ["-ss", f"{start:.3f}"]
     cmd += ["-i", str(path)]
     if end is not None:
         cmd += ["-t", f"{max(0.0, end - (start or 0.0)):.3f}"]
-    return cmd + ["-vn", "-f", "s16le", "-ac", str(channels), "-ar", str(rate), "pipe:1"]
+    return cmd + ["-vn", *(["-af", MIX_MONO] if mix else []), "-f", "s16le", "-ac", str(channels),
+                  "-ar", str(rate), "pipe:1"]

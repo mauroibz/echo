@@ -266,8 +266,8 @@ echo-app transcribe meeting.mp4 --format md --context "Lucía y Martín, presupu
 - **Output.** Standard output carries only the result; progress goes to standard error, as one
   line per stage and per 10% when it is not a terminal.
 - **JSON.** `--json` on `transcribe`, `list` and `info` prints one JSON document. A recording
-  has the same keys everywhere: `id`, `title`, `created`, `duration`, `source`,
-  `extracted_from`, `state`, `transcript_status` (`none`, `queued`, `running`, `done`,
+  has the same keys everywhere: `id`, `title`, `created`, `duration`, `source`, `tracks`
+  (`["mic", "computer"]` for a recorded call, else null), `extracted_from`, `state`, `transcript_status` (`none`, `queued`, `running`, `done`,
   `failed`), `progress` (`stage`, `fraction`, `eta_s`), `error`, `language`, `speakers`
   (`count`, `names`), `tags`, `notes`, `folder`, `audio` and `files` (`transcript`,
   `corrected`, `edited`, absolute paths or null). `transcribe --json` lists each input with its
