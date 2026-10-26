@@ -397,6 +397,17 @@ paragraph breaks the worker made at the speaker change stay, since removing them
 the shown text that the editor and an edited copy are aligned to. A new transcription numbers
 speakers afresh, so the worker drops the merges.
 
+"Said by" fixes are a list in `meta.json` (`speaker_fixes`): the passage (segment index), the
+speaker and their name at the time, and for words split off a passage the exact words with times
+estimated from their character position in the passage (the model times passages, not words).
+Each carries the transcript's `created` time and applies only to that transcript, so a new
+transcription neither misapplies them nor loses them: they remain labeled examples (a time span
+and who spoke) for tuning the labeling. `align.speaker_pieces` cuts the shown text into speaker
+pieces from the aligned passages and the fixes, finding a split's words inside its passage; the
+exports (`align.cues`, hence the index), the margin and find all use it. Splitting inserts
+paragraph breaks around the words as one undoable edit, so the text, its labels and the exports
+agree; if the user later rewrites the split words, the split stops applying rather than guessing.
+
 ### Audio backends
 
 All device access goes through `audio/backend.py`. PipeWire (its command-line tools) is used

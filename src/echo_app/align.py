@@ -115,16 +115,66 @@ def align(segments: list[dict], text: str, language: str = "es") -> list[tuple[i
     return result
 
 
-def cues(segments: list[dict], text: str, language: str = "es") -> list[tuple[float, float, str, bool, int | None]]:
-    """(start s, end s, text, starts a paragraph, speaker number) per passage of `text`, for
-    subtitles and exports. Passages whose text the user deleted are left out.
-    """
+def speaker_pieces(segments: list[dict], text: str, spans: list[tuple[int, int, int]],
+                   fixes: list[dict] | None = None) -> list[tuple[int, int, int, int | None]]:
+    """(start, end, segment index, speaker) pieces of `text`: each passage span with its speaker,
+    a whole-passage fix replacing it, and a fix's words (`text`) cut out of their passage as a
+    piece of their own. Words no longer found in their passage are ignored. Pieces exclude the
+    whitespace around them; merges are not resolved here (Recording.speaker does that)."""
+    whole = {f["segment"]: f["speaker"] for f in fixes or () if not f.get("text")}
+    cuts_of: dict[int, list[dict]] = {}
+    for f in fixes or ():
+        if f.get("text"):
+            cuts_of.setdefault(f["segment"], []).append(f)
     out = []
-    for s, e, k in align(segments, text, language):
-        piece = text[s:e].strip()
-        if not piece:
-            continue
+
+    def add(a: int, b: int, k: int, who):
+        while a < b and text[a].isspace():
+            a += 1
+        while b > a and text[b - 1].isspace():
+            b -= 1
+        if b > a:
+            out.append((a, b, k, who))
+
+    for a, b, k in spans:
+        who = whole.get(k, segments[k].get("speaker"))
+        cuts = []
+        for f in cuts_of.get(k, ()):
+            i = text.find(f["text"], a, b)
+            if i >= 0:
+                cuts.append((i, i + len(f["text"]), f["speaker"]))
+        pos = a
+        for s, e, sp in sorted(cuts):
+            if s < pos:
+                continue  # overlaps an earlier cut
+            add(pos, s, k, who)
+            add(s, e, k, sp)
+            pos = e
+        add(pos, b, k, who)
+    return out
+
+
+def cues(segments: list[dict], text: str, language: str = "es",
+         fixes: list[dict] | None = None) -> list[tuple[float, float, str, bool, int | None]]:
+    """(start s, end s, text, starts a paragraph, speaker number) per piece of `text`, for
+    subtitles and exports. Passages whose text the user deleted are left out. A passage split by
+    a speaker fix gives several pieces, timed by their place in the passage's text (the model
+    times passages, not words)."""
+    spans = align(segments, text, language)
+    span_of = {}
+    for a, b, k in spans:  # each passage's text, without the whitespace around it
+        piece = text[a:b]
+        a += len(piece) - len(piece.lstrip())
+        span_of[k] = (a, a + len(piece.strip()))
+    out = []
+    last_k = None
+    for s, e, k, who in speaker_pieces(segments, text, spans, fixes):
         seg = segments[k]
-        out.append((float(seg.get("start", 0.0)), float(seg.get("end", 0.0)), piece, bool(seg.get("paragraph")),
-                    seg.get("speaker")))
+        t0, t1 = float(seg.get("start", 0.0)), float(seg.get("end", 0.0))
+        ps, pe = span_of[k]
+        if (s, e) != (ps, pe) and pe > ps:  # split by a fix: timed by its place in the passage
+            t0, t1 = round(t0 + (t1 - t0) * (s - ps) / (pe - ps), 2), round(t0 + (t1 - t0) * (e - ps) / (pe - ps), 2)
+        # A passage starts a paragraph where the model said so; a piece split off it always does.
+        out.append((t0, t1, text[s:e], bool(seg.get("paragraph")) if k != last_k else True, who))
+        last_k = k
     return out

@@ -99,7 +99,7 @@ def cues(rec: Recording) -> list[tuple[float, float, str, bool, int | None]]:
     c = rec.corrected()
     if c and len(c.get("segments", [])) == len(segs):
         segs = [{**sg, "text": tx} for sg, tx in zip(segs, c["segments"])]
-    return align.cues(segs, rec.text(), t.get("language", "es"))
+    return align.cues(segs, rec.text(), t.get("language", "es"), rec.fixes(t))
 
 
 def with_timestamps(rec: Recording) -> str:
@@ -167,8 +167,7 @@ def to_json(rec: Recording, items) -> str:
 def _names(rec: Recording) -> dict | None:
     if not has_speakers(rec):
         return None
-    count = int(rec.transcript()["speakers"].get("count", 0))
-    return {n: speaker_name(rec, n) for n in sorted({rec.speaker(i) for i in range(1, count + 1)})}
+    return {n: speaker_name(rec, n) for n in rec.speaker_numbers()}
 
 
 def render_transcript(rec: Recording, fmt: str) -> str:

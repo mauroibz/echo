@@ -504,6 +504,7 @@ class TranscriptPanel(QWidget):
         self._segments: list[dict] = []
         self._flagged: list[tuple[int, int, dict]] = []
         self._passages: list[tuple[int, int, int]] = []  # (start, end, segment index) in the shown text
+        self._pieces: list[tuple[int, int, int, int | None]] = []  # (start, end, segment, speaker) after fixes
         self.player = None  # the PlayerPanel, for editing with the audio
         self._audio_k: int | None = None  # the passage playing (or paused by typing) for editing
         self._typing_paused = False
@@ -1079,6 +1080,7 @@ class TranscriptPanel(QWidget):
                             corrections.append((b[0] + base + ed["start"], b[0] + base + ed["end"], ed))
                             self._correction_part[id(ed)] = part.rec
         self._passages = passages
+        self._pieces = []  # speaker fixes are made on a part, not in the set
         self._spans = [(a, e, float(segs[k].get("start", 0.0))) for a, e, k in passages]
         self._flagged = [(a, e, segs[k]) for a, e, k in passages
                          if segs[k].get("flags") and text[a:e].strip() == (segs[k].get("text") or "").strip()]
@@ -1224,7 +1226,7 @@ class TranscriptPanel(QWidget):
         self.act_speakers.blockSignals(False)
         self.act_speakers.setEnabled(labeled or rec.meta.speakers_off)
         if labeled and not rec.meta.speakers_off and not rec.is_edited():
-            n = len({rec.speaker(i) for i in range(1, int(t["speakers"].get("count", 0)) + 1)})
+            n = len(rec.speaker_numbers())
             self.status.setText(self.status.text() + f" · {n} speakers")
         self._update_flag_count()
 
@@ -1301,6 +1303,8 @@ class TranscriptPanel(QWidget):
         language = ((self.rec.transcript() if self.rec else None) or {}).get("language", "es")
         passages = [(a, b, k) for a, b, k in align.align(segs, text, language) if b > a] if segs else []
         self._passages = passages
+        fixes = self.rec.fixes() if self.rec is not None else []
+        self._pieces = align.speaker_pieces(segs, text, passages, fixes) if segs else []
         self._spans = [(a, b, float(segs[k].get("start", 0.0))) for a, b, k in passages]
         self._flagged = [(a, b, segs[k]) for a, b, k in passages
                          if segs[k].get("flags") and text[a:b].strip() == (segs[k].get("text") or "").strip()]
@@ -1351,8 +1355,9 @@ class TranscriptPanel(QWidget):
         if not info:
             return None
         secs: dict[int, float] = {}
-        for sg in t.get("segments") or []:
-            n = rec.speaker(sg.get("speaker"))
+        fixes = rec.fixes(t)
+        for k, sg in enumerate(t.get("segments") or []):
+            n = rec.speaker_at(k, sg, fixes)
             if n is not None and sg.get("text"):
                 secs[n] = secs.get(n, 0.0) + float(sg.get("end", 0)) - float(sg.get("start", 0))
         named = rec.meta.speakers
@@ -1400,8 +1405,8 @@ class TranscriptPanel(QWidget):
         """A few seconds of the asked speaker: the start of their longest passage."""
         if self.player is None or self._ask is None or self.rec is None:
             return
-        segs = [s for s in (self.rec.transcript() or {}).get("segments") or []
-                if self.rec.speaker(s.get("speaker")) == self._ask and s.get("text")]
+        segs = [s for k, s in enumerate((self.rec.transcript() or {}).get("segments") or [])
+                if self.rec.speaker_at(k, s) == self._ask and s.get("text")]
         if not segs:
             return
         sg = max(segs, key=lambda s: float(s.get("end", 0)) - float(s.get("start", 0)))
@@ -1464,8 +1469,8 @@ class TranscriptPanel(QWidget):
             return []
         suggested = info.get("suggested") or {}
         out, last = [], None
-        for a, _b, k in self._passages:
-            n = rec.speaker(self._segments[k].get("speaker"))  # merged speakers are one
+        for a, _b, _k, who in self._pieces:
+            n = rec.speaker(who)  # the user's fixes are in the pieces; merged speakers are one
             if n is None or n == last:
                 continue
             last = n
@@ -1521,11 +1526,11 @@ class TranscriptPanel(QWidget):
         m.exec(pos)
 
     def _speakers_shown(self) -> list[int]:
-        """The shown recording's speakers after merges, in order of first appearance."""
+        """The shown recording's speakers after fixes and merges, in order of first appearance."""
         rec = self.rec
         out: list[int] = []
-        for sg in ((rec.transcript() or {}).get("segments") or []) if rec else []:
-            n = rec.speaker(sg.get("speaker"))
+        for *_x, who in (self._pieces if rec else []):
+            n = rec.speaker(who)
             if n is not None and n not in out:
                 out.append(n)
         return out
@@ -1859,6 +1864,7 @@ class TranscriptPanel(QWidget):
         return next((e for a, b, e in self._corrections if a <= pos <= b), None)
 
     def _menu_hook(self, menu, pos: int):
+        self._speaker_menu_items(menu, pos)
         edit = self._correction_at(pos)
         if edit is None or (self.rec is None and self.linked is None):
             return
@@ -1868,6 +1874,165 @@ class TranscriptPanel(QWidget):
         menu.insertAction(first, act)
         if first is not None:
             menu.insertSeparator(first)
+
+    # ---- correcting who said what ----
+    def _speaker_menu_items(self, menu, pos: int):
+        """Said by, undoing a fix and joining paragraphs, at the top of the editor's menu."""
+        rec = self.rec
+        if self.linked is not None or rec is None or rec.meta.speakers_off \
+                or not (rec.transcript() or {}).get("speakers"):
+            return
+        self._align_now()
+        if not self._pieces:
+            return
+        cur = self.editor.textCursor()
+        sel = (cur.selectionStart(), cur.selectionEnd()) if cur.hasSelection() else None
+        if sel and not sel[0] <= pos <= sel[1]:
+            sel = None  # the click was outside the selection: the paragraph under it
+        first = menu.actions()[0] if menu.actions() else None
+        said = QMenu("Said by", menu)
+        said.setIcon(icon("users"))
+        said.setToolTip("Who said the selected words, or this paragraph")
+        for n in self._speakers_shown():
+            said.addAction(self._speaker_title(rec, n), lambda n=n: self.said_by(n, sel, pos))
+        said.addSeparator()
+        said.addAction("Someone else…", lambda: self._said_by_someone_else(sel, pos))
+        menu.insertMenu(first, said)
+        if self._fix_at(pos) is not None:
+            act = QAction(icon("revert"), "Back to the speaker Echo found", menu)
+            act.triggered.connect(lambda: self.unfix_at(pos))
+            menu.insertAction(first, act)
+        if self._break_before(pos) is not None:
+            act = QAction(icon("collapse"), "Join with the paragraph above", menu)
+            act.triggered.connect(lambda: self.join_above(pos))
+            menu.insertAction(first, act)
+        if first is not None:
+            menu.insertSeparator(first)
+
+    def _passage_span(self, idx: int) -> tuple[int, int, int]:
+        """A passage's span without the whitespace around it, and its segment index."""
+        a, b, k = self._passages[idx]
+        text = self.editor.toPlainText()
+        while a < b and text[a].isspace():
+            a += 1
+        while b > a and text[b - 1].isspace():
+            b -= 1
+        return a, b, k
+
+    def said_by(self, n: int, sel: tuple[int, int] | None, pos: int):
+        """`n` said the selection (or the paragraph at `pos`): whole passages are relabeled, words in
+        part of a passage are split off into a paragraph of their own."""
+        rec = self.rec
+        if rec is None:
+            return
+        self._align_now()  # the text may have changed since the last alignment (it waits for a pause)
+        if not self._passages:
+            return
+        if sel is None:
+            idx = self._passage_at(pos)
+            if idx is None:
+                return
+            sel = self._passage_span(idx)[:2]
+        text = self.editor.toPlainText()
+        cuts = []
+        for idx in range(len(self._passages)):
+            pa, pb, k = self._passage_span(idx)
+            lo, hi = max(pa, sel[0]), min(pb, sel[1])
+            while lo < hi and text[lo].isspace():
+                lo += 1
+            while hi > lo and text[hi - 1].isspace():
+                hi -= 1
+            if lo >= hi:
+                continue
+            if lo <= pa and hi >= pb:
+                rec.fix_speaker(k, n)
+            else:
+                seg = self._segments[k]
+                t0, t1 = float(seg.get("start", 0.0)), float(seg.get("end", 0.0))
+                at = lambda x: round(t0 + (t1 - t0) * (x - pa) / max(1, pb - pa), 2)  # noqa: E731
+                rec.fix_speaker(k, n, text[lo:hi], at(lo), at(hi))
+                cuts.append((lo, hi))
+        if cuts:
+            self._break_around(cuts)  # a text edit: the passages' text moves, the fixes find their words
+        self._align_now()
+        self._update_status(rec)
+        self.changed.emit(rec.id)
+
+    def _break_around(self, cuts: list[tuple[int, int]]):
+        """Paragraph breaks before and after each cut, as one undoable edit."""
+        text = self.editor.toPlainText()
+        cur = self.editor.textCursor()
+        cur.beginEditBlock()
+        for lo, hi in sorted(cuts, reverse=True):
+            for at, after in ((hi, True), (lo, False)):
+                a = b = at
+                while a > 0 and text[a - 1] in " \t":
+                    a -= 1
+                while b < len(text) and text[b] in " \t":
+                    b += 1
+                if a == 0 or b == len(text) or "\n" in (text[a - 1], text[b]):
+                    continue  # already at a paragraph's edge
+                cur.setPosition(a)
+                cur.setPosition(b, QTextCursor.MoveMode.KeepAnchor)
+                cur.insertText("\n\n")
+        cur.endEditBlock()
+
+    def _said_by_someone_else(self, sel, pos: int):
+        from PySide6.QtWidgets import QInputDialog
+
+        rec = self.rec
+        if rec is None:
+            return
+        n = max(rec.speaker_numbers() + [0]) + 1
+        people = [e.name for e in dictionary.current().entries if e.kind == dictionary.PEOPLE]
+        name, ok = QInputDialog.getItem(self, "Said by someone else", "Who said it?", people, -1, True)
+        if not ok:
+            return
+        self.said_by(n, sel, pos)
+        if name.strip():
+            self.name_speaker(n, name.strip())
+
+    def _fix_at(self, pos: int) -> tuple[int, str | None] | None:
+        """(segment, words or None) of the user's fix at `pos`, if there is one."""
+        rec, piece = self.rec, self._piece_at(pos)
+        if rec is None or piece is None:
+            return None
+        s, e, k, _who = piece
+        text = self.editor.toPlainText()
+        fixes = [f for f in rec.fixes() if f.get("segment") == k]
+        words = next((f["text"] for f in fixes if f.get("text") == text[s:e]), None)
+        if words:
+            return k, words
+        return (k, None) if any(not f.get("text") for f in fixes) else None
+
+    def unfix_at(self, pos: int):
+        self._align_now()
+        fix = self._fix_at(pos)
+        if fix is None or self.rec is None:
+            return
+        self.rec.unfix_speaker(*fix)
+        self._align_now()
+        self._update_status(self.rec)
+        self.changed.emit(self.rec.id)
+
+    def _break_before(self, pos: int) -> tuple[int, int] | None:
+        """The blank line(s) before the paragraph at `pos`, as a span, if there is text above it."""
+        text = self.editor.toPlainText()
+        start = self.editor.document().findBlock(pos).position()
+        a = start
+        while a > 0 and text[a - 1].isspace():
+            a -= 1
+        return (a, start) if 0 < a < start and "\n" in text[a:start] else None
+
+    def join_above(self, pos: int):
+        span = self._break_before(pos)
+        if span is None:
+            return
+        language = ((self.rec.transcript() if self.rec else None) or {}).get("language", "es")
+        cur = self.editor.textCursor()
+        cur.setPosition(span[0])
+        cur.setPosition(span[1], QTextCursor.MoveMode.KeepAnchor)
+        cur.insertText(" " if align.separator(language) else "")
 
     def _undo_correction(self, edit: dict):
         rec = self.rec if self.linked is None else getattr(self, "_correction_part", {}).get(id(edit))
@@ -2085,8 +2250,19 @@ class TranscriptPanel(QWidget):
         k = self._passage_at(pos)
         if k is None or k >= len(self._passages):
             return None
-        n = self._segments[self._passages[k][2]].get("speaker")
+        piece = self._piece_at(pos)
+        n = piece[3] if piece else self._segments[self._passages[k][2]].get("speaker")
         return self.rec.speaker(n) if self.rec is not None else n
+
+    def _piece_at(self, pos: int):
+        """The speaker piece (start, end, segment, speaker) at a text position, or the one before it."""
+        best = None
+        for p in self._pieces:
+            if p[0] <= pos:
+                best = p
+            else:
+                break
+        return best
 
     def _find_step(self, direction: int):
         n = len(self._find_matches)

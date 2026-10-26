@@ -31,6 +31,10 @@ tag.
 - "Same person as…" on a speaker's name joins two speakers Echo told apart wrongly into one,
   for that recording: labels, the naming bar, exports, search and profiles follow, and naming
   them teaches Echo both parts of the voice. "Separate again" undoes it.
+- "Said by" in the transcript's right-click menu: give a paragraph to the right speaker, or
+  select an interruption to split it off as its own paragraph with its own speaker. Undo it,
+  join paragraphs, or add someone new. Fixes are kept with their times as data for improving
+  speaker labeling.
 
 ## 1.1.0 - 2026-10-25
 

@@ -189,6 +189,12 @@ Model versions are pinned, and only weights and configuration are downloaded, ne
   When Echo finds one person twice, click either name and choose "Same person as…" and the
   other: they become one speaker in that recording (exports, search and their profile follow),
   and "Separate again" undoes it. Transcribing again finds the speakers afresh.
+  To fix a single paragraph, right-click it and choose Said by → the right person (or "Someone
+  else…"). For someone cutting in mid-paragraph, select their words first: they become a
+  paragraph of their own with their name, timed from where they fall in the passage (to a second
+  or two). "Back to the speaker Echo found" undoes a fix, and "Join with the paragraph above"
+  removes a break. Fixes are kept with the recording, also after transcribing again, as examples
+  for improving speaker labeling later.
   Exports carry the names. Monologues are left alone, and ⋯ → Label speakers turns it off for a
   recording. Voices are kept as numbers in `~/.config/echo/voices.json`, on this computer only.
   This needs a small extra download (27 MB), offered under Help → Transcription model.

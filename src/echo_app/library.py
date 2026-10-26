@@ -120,6 +120,8 @@ class Meta:
     speakers_off: bool = False  # no speaker labels for this recording (a monologue)
     naming_dismissed: bool = False  # "Not now" on the naming bar: do not ask about its speakers again
     speaker_merges: dict[str, int] = field(default_factory=dict)  # speaker -> the speaker it is the same person as
+    # "Said by": [{transcript, segment, speaker, name} + {text, start, end} for words split off a passage]
+    speaker_fixes: list[dict[str, Any]] = field(default_factory=list)
     extracted_from: dict[str, Any] | None = None  # source video: name, sha256, size, track, method
     tracks: list[str] | None = None  # what each channel is, for a call: ["mic", "computer"]; None = one source
 
@@ -184,6 +186,54 @@ class Recording:
     def merged_into(self, number: int) -> list[int]:
         """The speakers merged into `number`, itself not included."""
         return sorted(int(k) for k in self.meta.speaker_merges if self.speaker(int(k)) == number and int(k) != number)
+
+    def fixes(self, transcript: dict | None = None) -> list[dict[str, Any]]:
+        """The user's "Said by" fixes for the current transcript (older ones are kept, not applied)."""
+        created = (transcript if transcript is not None else self.transcript() or {}).get("created")
+        return [f for f in self.meta.speaker_fixes if f.get("transcript") == created]
+
+    def speaker_at(self, k: int, segment: dict, fixes: list[dict] | None = None) -> int | None:
+        """Passage k's speaker: the user's fix for the whole passage, else the model's; after merges."""
+        n = segment.get("speaker")
+        for f in self.fixes() if fixes is None else fixes:
+            if f.get("segment") == k and not f.get("text"):
+                n = f["speaker"]
+        return self.speaker(n)
+
+    def fix_speaker(self, segment: int, speaker: int, text: str | None = None,
+                    start: float | None = None, end: float | None = None) -> None:
+        """Record that passage `segment` (or the words `text` in it) was said by `speaker`. A
+        whole-passage fix replaces an earlier one for that passage; words replace a fix of the
+        same words. Name and times are kept with it, as data for tuning the labeling later."""
+        t = self.transcript() or {}
+        created = t.get("created")
+        fix: dict[str, Any] = {"transcript": created, "segment": segment, "speaker": int(speaker),
+                               "name": self.meta.speakers.get(str(self.speaker(int(speaker)))) or ""}
+        if text:
+            fix.update(text=text, start=start, end=end)
+        keep = [f for f in self.meta.speaker_fixes
+                if not (f.get("transcript") == created and f.get("segment") == segment
+                        and (f.get("text") or None) == (text or None))]
+        self.update(speaker_fixes=keep + [fix])
+
+    def unfix_speaker(self, segment: int, text: str | None = None) -> bool:
+        """Drop the current transcript's fix of passage `segment` (or of the words `text` in it)."""
+        created = (self.transcript() or {}).get("created")
+        keep = [f for f in self.meta.speaker_fixes
+                if not (f.get("transcript") == created and f.get("segment") == segment
+                        and (f.get("text") or None) == (text or None))]
+        if len(keep) == len(self.meta.speaker_fixes):
+            return False
+        self.update(speaker_fixes=keep)
+        return True
+
+    def speaker_numbers(self) -> list[int]:
+        """Every speaker of the recording after merges: the model's and any the user added."""
+        t = self.transcript() or {}
+        count = int((t.get("speakers") or {}).get("count", 0))
+        nums = {self.speaker(i) for i in range(1, count + 1)}
+        nums |= {self.speaker(int(f["speaker"])) for f in self.fixes(t)}
+        return sorted(n for n in nums if n is not None)
 
     def merge_speakers(self, source: int, target: int) -> None:
         """`source` is the same person as `target`: it takes target's number and name, or gives target

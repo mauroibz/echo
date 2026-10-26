@@ -235,8 +235,8 @@ class PeopleDialog(QDialog):
             rec = self.library.get(r["id"])
             if rec is None or rec.audio_path is None:
                 continue
-            segs = [s for s in (rec.transcript() or {}).get("segments") or []
-                    if rec.speaker(s.get("speaker")) == r["number"] and s.get("text")]
+            segs = [s for i, s in enumerate((rec.transcript() or {}).get("segments") or [])
+                    if rec.speaker_at(i, s) == r["number"] and s.get("text")]
             if not segs:
                 continue
             sg = max(segs, key=lambda s: float(s.get("end", 0)) - float(s.get("start", 0)))
