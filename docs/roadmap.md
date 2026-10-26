@@ -315,6 +315,9 @@ local summaries have no folder yet; they wait for the dictionary to be in daily 
 | 5 | `add-playback-volume` | product | archived |
 | 6 | `add-call-recording` | product | done; a real call with headphones and an output switch are open |
 | 6 | `add-speaker-naming` | AI | done; a check with real recordings of the user is open |
+| 7 | `add-tag-categories` | product | planned |
+| 7 | `add-speaker-search` | product | planned |
+| 7 | `add-people-profiles` | product | planned |
 
 The open items are listed under "Blocked" in each change's `tasks.md`, with what a person has
 to run and look for.
@@ -329,3 +332,4 @@ case: long meetings recorded as screen recordings, transcribed from the window o
 `add-speaker-labels` before `add-call-recording` (speakers are clustered per track); its code is
 in, so this does not wait for its archive. `add-call-recording` before `add-speaker-naming`
 (the microphone track names the user).
+`add-speaker-search` before `add-people-profiles` (a person's recordings come from its speakers table).
