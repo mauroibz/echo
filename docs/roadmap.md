@@ -314,6 +314,7 @@ local summaries have no folder yet; they wait for the dictionary to be in daily 
 | 5 | `add-agent-cli` | product | archived |
 | 5 | `add-playback-volume` | product | archived |
 | 6 | `add-call-recording` | product | done; a real call with headphones and an output switch are open |
+| 6 | `add-speaker-naming` | AI | planned |
 
 The open items are listed under "Blocked" in each change's `tasks.md`, with what a person has
 to run and look for.
@@ -326,4 +327,5 @@ Dependencies: `refactor-recorder-portability` before `add-windows-support` and `
 `add-video-import` before `add-agent-cli` (meeting videos as inputs). Both serve the main use
 case: long meetings recorded as screen recordings, transcribed from the window or by an agent.
 `add-speaker-labels` before `add-call-recording` (speakers are clustered per track); its code is
-in, so this does not wait for its archive.
+in, so this does not wait for its archive. `add-call-recording` before `add-speaker-naming`
+(the microphone track names the user).
