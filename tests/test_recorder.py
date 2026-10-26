@@ -237,7 +237,8 @@ def test_commands_are_files_and_none_is_lost(lib):
     recorder.send_command(s.rec, "resume")
     assert wait_for(lambda: len([g for g in (recorder.load_session(s.rec) or {}).get("events", [])
                                  if g["kind"] == "pause"]) == 1)
-    assert s.status()["state"] == recorder.S_RECORDING
+    # The pause is noted just before the new take starts and the status says so.
+    assert wait_for(lambda: s.status()["state"] == recorder.S_RECORDING)
     assert not list((s.rec.takes_dir / recorder.COMMANDS).iterdir())  # consumed
     assert s.stop(wait=20) == "ready"
 

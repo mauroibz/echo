@@ -355,18 +355,15 @@ def test_meter_runs_under_welcome_and_stops_when_minimized(window, monkeypatch):
     w = WelcomeDialog(panel, window)
     w.show()
     w.activateWindow()
-    pump(200)
-    assert panel._want_monitor()  # the welcome meter mirrors this one
+    # Window state changes arrive as events, later on a loaded CI runner: wait for them.
+    assert wait_until(panel._want_monitor, 5)  # the welcome meter mirrors this one
     monkeypatch.setattr(panel, "_silence_hint", lambda db: "No sound from this input for 4 seconds.")
-    pump(150)
-    assert w.hint.isVisibleTo(w) and "No sound" in w.hint.text()
+    assert wait_until(lambda: w.hint.isVisibleTo(w) and "No sound" in w.hint.text(), 5)
     w.done(0)
     window.showMinimized()
-    pump(200)
-    assert not panel._want_monitor()
+    assert wait_until(lambda: not panel._want_monitor(), 5)
     window.showNormal()
-    pump(200)
-    assert panel._want_monitor()
+    assert wait_until(panel._want_monitor, 5)
 
 
 def test_theme_switches_live_and_icons_follow(qapp, window):

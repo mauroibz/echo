@@ -190,11 +190,21 @@ def read_status(rec: Recording) -> dict[str, Any] | None:
         return None
 
 
+_sent = 0  # commands sent by this process, so two in the same clock tick keep their order
+
+
 def send_command(rec: Recording, command: str) -> None:
-    """Queue a command for the supervisor: one line in its own file, so none overwrites another."""
+    """Queue a command for the supervisor: one line in its own file, so none overwrites another.
+
+    Files are read in name order. The clock can give two commands the same reading (CI runners
+    did, and a note was applied before its marker existed), so a counter follows it.
+    """
+    global _sent
+    _sent += 1
     d = rec.takes_dir / COMMANDS
     d.mkdir(exist_ok=True)
-    atomic_write_json(d / f"{time.time_ns():020d}-{secrets.token_hex(2)}.cmd", {"command": command})
+    name = f"{time.time_ns():020d}-{_sent:08d}-{secrets.token_hex(2)}.cmd"
+    atomic_write_json(d / name, {"command": command})
 
 
 def read_commands(rec: Recording) -> list[str]:
