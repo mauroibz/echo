@@ -7,7 +7,8 @@ Three processes, each able to die alone without losing captured audio:
   takes, flushes them to disk every two seconds, restarts capture after interruptions and
   finalizes into verified FLAC on stop;
 * the capture (``pw-record`` through the audio backend), which writes raw PCM to
-  ``takes/take-NNN.raw``.
+  ``takes/take-NNN.raw``. A call recording has a second capture of the computer audio writing
+  ``takes/out-NNN.raw``; the two start and stop together, as a pair (see audio/tracks.py).
 
 Both the supervisor and the capture run in their own sessions, so closing the window or the
 terminal does not reach them. The window and the CLI find a running recording from its files
@@ -33,7 +34,7 @@ from pathlib import Path
 from typing import Any
 
 from . import features, locks, selfcmd
-from .audio import backend, ffmpeg
+from .audio import backend, ffmpeg, tracks
 from .audio.backend import Source
 from .fsutil import atomic_write_json, free_bytes, fsync_dir, fsync_path, read_json
 from .library import NEEDS_FINALIZE, READY, RECORDING, Library, Recording
@@ -231,9 +232,15 @@ def take_files(rec: Recording) -> list[Path]:
     return sorted(rec.takes_dir.glob("take-*.raw"))
 
 
-def recorded_bytes(rec: Recording) -> int:
+def out_files(rec: Recording) -> list[Path]:
+    """The computer-audio takes of a call recording."""
+    return sorted(rec.takes_dir.glob("out-*.raw"))
+
+
+def recorded_bytes(rec: Recording, files: list[Path] | None = None) -> int:
+    """Bytes of input audio so far (elapsed time and markers count the input alone)."""
     total = 0
-    for p in take_files(rec):
+    for p in take_files(rec) if files is None else files:
         try:
             total += p.stat().st_size
         except FileNotFoundError:
@@ -265,6 +272,8 @@ class Supervisor:
         self.adopt = adopt
         self.session: dict[str, Any] = {}
         self.capture: backend.Capture | None = None
+        self.out: backend.Capture | None = None  # the computer audio of a call recording
+        self.take_file: str | None = None  # the current pair's input take, which names it in session.json
         self.source: Source | None = None
         self.backend = backend.get()
         self.token = secrets.token_hex(8)
@@ -274,6 +283,9 @@ class Supervisor:
         self._take_started = 0.0
         self._last_size = -1
         self._last_growth = 0.0
+        self._out_last_size = -1
+        self._out_last_growth = 0.0
+        self._out_warned = False
         self._fails = 0
         self._source_missing = False
         self._next_retry = 0.0
@@ -351,6 +363,10 @@ class Supervisor:
     def bps(self) -> int:
         return self.rate * self.channels * 2
 
+    @property
+    def computer_audio(self) -> bool:
+        return bool(self.session.get("computer_audio"))
+
     def elapsed(self) -> float:
         return recorded_bytes(self.rec) / self.bps
 
@@ -366,6 +382,8 @@ class Supervisor:
         cur = self.capture.path.name if self.capture else None
         _write_status(self.rec, {
             "state": self.state, "elapsed": round(self.elapsed(), 2), "take": cur,
+            "out_take": self.out.path.name if self.out else None,
+            "tracks": tracks.TRACKS if self.computer_audio else None,
             "rate": self.rate, "channels": self.channels, "warning": self.warning,
             "source": self.session.get("source_label"), "supervisor_pid": os.getpid(),
             "token": self.token, "updated": time.time(),
@@ -375,7 +393,7 @@ class Supervisor:
     def _start_take(self) -> bool:
         n = len(take_files(self.rec)) + 1
         path = self.rec.takes_dir / f"take-{n:03d}.raw"
-        while path.exists():
+        while path.exists() or (self.rec.takes_dir / f"out-{n:03d}.raw").exists():
             n += 1
             path = self.rec.takes_dir / f"take-{n:03d}.raw"
         path.touch()
@@ -405,9 +423,12 @@ class Supervisor:
                 self.capture = None
                 self.warning = "The input changed its sample rate; pick it again or restart the recording."
                 return False
-        self.session.setdefault("takes", []).append({
-            "file": path.name, "pid": self.capture.pid, "started": _now_iso(),
-            "source": self.source.name if self.source else None, "ended": None, "end_reason": None})
+        entry = {"file": path.name, "pid": self.capture.pid, "started": _now_iso(),
+                 "source": self.source.name if self.source else None, "ended": None, "end_reason": None}
+        if self.computer_audio:
+            self._start_out(n, entry)
+        self.session.setdefault("takes", []).append(entry)
+        self.take_file = path.name
         fsync_dir(self.rec.takes_dir)
         now = time.monotonic()
         self._take_started = now
@@ -416,32 +437,67 @@ class Supervisor:
         self._save_session()
         return True
 
-    def _end_take(self, reason: str):
-        if not self.capture:
-            return
-        self.capture.stop()
-        path = self.capture.path
-        fsync_path(path)
-        takes = self.session.get("takes", [])
-        empty = path.exists() and path.stat().st_size == 0
-        if empty:
-            # A take that never produced audio carries nothing; keep its error in the log only.
-            logf = path.with_suffix(".log")
-            try:
-                err = logf.read_text(errors="replace").strip()
-            except OSError:
-                err = ""
-            if err:
-                log.warning("%s: capture produced no audio: %s", self.rec.id, err[-500:])
+    def _start_out(self, n: int, entry: dict[str, Any]) -> None:
+        """The computer-audio half of a pair. If it cannot start, the input records on alone."""
+        path = self.rec.takes_dir / f"out-{n:03d}.raw"
+        path.touch()
+        logf = open(path.with_suffix(".log"), "ab")
+        try:
+            self.out = self.backend.start_capture(backend.DEFAULT_OUTPUT, self.rate, self.channels, path, logf)
+        except Exception as e:  # noqa: BLE001 - the input is the half that must not be lost
+            self.out = None
             path.unlink(missing_ok=True)
-            logf.unlink(missing_ok=True)
-            self.session["takes"] = [t for t in takes if t["file"] != path.name]
-        else:
-            for t in reversed(takes):
-                if t["file"] == path.name:
-                    t["ended"], t["end_reason"] = _now_iso(), reason
-                    break
+            self.warning = f"Computer audio is not being recorded: {e}"
+            self._warning_expires = 0.0
+            if not self._out_warned:
+                self._out_warned = True
+                self._note(f"Could not record the computer audio: {e}")
+            return
+        finally:
+            logf.close()
+        entry["out"] = {"file": path.name, "pid": self.out.pid}
+        self._out_last_size = 0
+        self._out_last_growth = time.monotonic()
+
+    def _end_take(self, reason: str):
+        if not self.capture and not self.out:
+            return
+        # Both stopped by us while both ran: the pair ends on the same sample (see audio/tracks.py).
+        together = (reason in ("paused", "stopped") and self.capture is not None and self.out is not None
+                    and self.capture.alive() and self.out.alive())
+        caps = [c for c in (self.capture, self.out) if c is not None]
+        backend.stop_together(caps)
+        takes = self.session.get("takes", [])
+        entry = next((t for t in reversed(takes) if t["file"] == self.take_file), None)
+        kept = False
+        for c in caps:
+            path = c.path
+            fsync_path(path)
+            if path.exists() and path.stat().st_size == 0:
+                # A take that never produced audio carries nothing; keep its error in the log only.
+                logf = path.with_suffix(".log")
+                try:
+                    err = logf.read_text(errors="replace").strip()
+                except OSError:
+                    err = ""
+                if err:
+                    log.warning("%s: capture produced no audio: %s", self.rec.id, err[-500:])
+                path.unlink(missing_ok=True)
+                logf.unlink(missing_ok=True)
+                if entry is not None and c is self.out:
+                    entry.pop("out", None)
+            elif path.exists():
+                kept = True
+        if entry is not None:
+            if kept:
+                entry["ended"], entry["end_reason"] = _now_iso(), reason
+                if together:
+                    entry["align"] = "end"
+            else:
+                self.session["takes"] = [t for t in takes if t is not entry]
         self.capture = None
+        self.out = None
+        self.take_file = None
         self._save_session()
 
     def _restart(self, cause: str):
@@ -498,6 +554,22 @@ class Supervisor:
                 self._restart("")
         elif now - self._take_started > START_GRACE and now - self._last_growth > STALL_AFTER:
             self._restart("Capture stalled; restarted" if self._last_size > 0 else "")
+        elif self.out is not None:
+            self._check_out(now)
+
+    def _check_out(self, now: float):
+        """Either half of a pair failing restarts both, so the pairs stay aligned (audio/tracks.py)."""
+        try:
+            size = self.out.path.stat().st_size
+        except FileNotFoundError:
+            size = 0
+        if size != self._out_last_size:
+            self._out_last_size = size
+            self._out_last_growth = now
+        if not self.out.alive():
+            self._restart("Computer audio capture stopped unexpectedly; restarted")
+        elif now - self._take_started > START_GRACE and now - self._out_last_growth > STALL_AFTER:
+            self._restart("Computer audio capture stalled; restarted")
 
     def _check_source(self):
         if backend.is_fake() or self.source is None:
@@ -515,11 +587,12 @@ class Supervisor:
     def _check_disk(self) -> bool:
         """Return False when recording must stop for lack of space."""
         free = free_bytes(self.lib.data_dir)
-        reserve = int(recorded_bytes(self.rec) * FLAC_RATIO) + DISK_MARGIN
+        captured = recorded_bytes(self.rec) + recorded_bytes(self.rec, out_files(self.rec))
+        reserve = int(captured * FLAC_RATIO) + DISK_MARGIN
         if free < reserve:
             self._note("Disk almost full; recording stopped")
             return False
-        minutes_left = (free - reserve) / self.bps / 60
+        minutes_left = (free - reserve) / (self.bps * (2 if self.computer_audio else 1)) / 60
         if minutes_left < 10:
             self.warning = f"Disk space low: about {minutes_left:.0f} minutes of recording left"
         return True
@@ -555,14 +628,24 @@ class Supervisor:
         self.source = self.backend.find(name) if name else None
         last = (self.session.get("takes") or [None])[-1]
         if last and last.get("ended") is None:
+            now = time.monotonic()
+            self._take_started = now
+            self.take_file = last["file"]
             path = self.rec.takes_dir / last["file"]
             capture = AdoptedCapture(last.get("pid"), path)
             if last.get("pid") is not None and capture.alive():
                 self.capture = capture
-                now = time.monotonic()
-                self._take_started = now
                 self._last_size = path.stat().st_size if path.exists() else 0
                 self._last_growth = now
+            out = last.get("out") or {}
+            out_cap = AdoptedCapture(out.get("pid"), self.rec.takes_dir / out["file"]) if out.get("file") else None
+            if out_cap is not None and out.get("pid") is not None and out_cap.alive():
+                self.out = out_cap
+                self._out_last_size = out_cap.path.stat().st_size if out_cap.path.exists() else 0
+                self._out_last_growth = now
+            if self.computer_audio and (self.capture is None) != (self.out is None):
+                # One half of the pair died with the supervisor: a new pair brings both back.
+                self._end_take("interrupted")
         self._note("Recorder restarted after a crash; capture continued", kind="info")
 
     def run(self) -> int:
@@ -619,6 +702,8 @@ class Supervisor:
                 self._check_capture(now)
                 if now - last_fsync >= FSYNC_EVERY and self.capture:
                     fsync_path(self.capture.path)
+                    if self.out:
+                        fsync_path(self.out.path)
                     last_fsync = now
                 if now - last_source >= SOURCE_CHECK_EVERY:
                     self._check_source()
@@ -680,8 +765,16 @@ def finalize(rec: Recording, recovered: bool = False, before_cleanup=None) -> st
     rate = session.get("rate") or rec.meta.sample_rate or 48000
     channels = session.get("channels") or rec.meta.channels or 1
     takes = take_files(rec)
-    frame = 2 * channels
-    total = sum(p.stat().st_size // frame * frame for p in takes)
+    two = bool(session.get("computer_audio")) or bool(out_files(rec))
+    if two:
+        # A call: the pairs become one file with the input on channel 1, the computer audio on 2.
+        aligned = {t["file"] for t in session.get("takes", []) if t.get("align") == "end"}
+        pairs = tracks.pairs(rec.takes_dir, aligned)
+        total = sum(p.length() for p in pairs)
+        channels = 2
+    else:
+        frame = 2 * channels
+        total = sum(p.stat().st_size // frame * frame for p in takes)
     if total == 0:
         log.info("%s: no audio captured, removing", rec.id)
         cleanup(rec.folder)
@@ -692,7 +785,10 @@ def finalize(rec: Recording, recovered: bool = False, before_cleanup=None) -> st
     partial = rec.folder / "audio.flac.partial"
     final = rec.folder / "audio.flac"
     try:
-        frames = ffmpeg.encode_flac_verified(takes, rate, channels, partial)
+        if two:
+            frames = ffmpeg.encode_pcm_flac_verified(tracks.interleave(pairs), rate, channels, partial)
+        else:
+            frames = ffmpeg.encode_flac_verified(takes, rate, channels, partial)
         fsync_path(partial)
         os.replace(partial, final)
         fsync_dir(rec.folder)
@@ -702,11 +798,18 @@ def finalize(rec: Recording, recovered: bool = False, before_cleanup=None) -> st
                    channels=channels)
         return "failed"
     events = session.get("events", [])
-    markers = sorted({(m["at"], m.get("note", "")): m for m in [*rec.meta.markers, *session.get("markers", [])]}
+    new_markers = session.get("markers", [])
+    if two:
+        # Markers and notes were placed on the input alone; silence added to it moves them along.
+        at = tracks.time_map(pairs, rate)
+        events = [{**e, "at": at(e["at"])} for e in events]
+        new_markers = [{**m, "at": at(m["at"])} for m in new_markers]
+    markers = sorted({(m["at"], m.get("note", "")): m for m in [*rec.meta.markers, *new_markers]}
                      .values(), key=lambda m: m["at"])
     rec.update(state=READY, audio=final.name, sha256=ffmpeg.sha256_file(final), markers=markers,
                duration=round(frames / rate, 3), sample_rate=rate, channels=channels,
-               recovered=recovered or rec.meta.recovered, gaps=events, error=None)
+               recovered=recovered or rec.meta.recovered, gaps=events, error=None,
+               tracks=tracks.TRACKS if two else None)
     cleanup(rec.takes_dir)
     fsync_dir(rec.folder)
     log.info("%s: finalized %.1f s", rec.id, frames / rate)
@@ -831,8 +934,13 @@ def active(lib: Library) -> Session | None:
 
 
 def start(lib: Library, source: str = "", rate: int = 48000, channels: int = 1,
-          title: str | None = None, timeout: float = 5.0, quick_note: bool = False) -> Session:
-    """Start a detached supervisor for a new recording and wait until it is capturing."""
+          title: str | None = None, timeout: float = 5.0, quick_note: bool = False,
+          computer_audio: bool = False) -> Session:
+    """Start a detached supervisor for a new recording and wait until it is capturing.
+
+    With `computer_audio`, the default output is recorded as a second track next to the input; each
+    track is mono, whatever `channels` says.
+    """
     if (s := active(lib)) is not None:
         raise RecorderError(f"Already recording \"{s.rec.meta.title}\". Stop it first.")
     lock = try_lock(lib)
@@ -846,6 +954,13 @@ def start(lib: Library, source: str = "", rate: int = 48000, channels: int = 1,
     if not backend.is_fake():
         src, _ = backend.get().resolve(source)
         label = src.label if src else "System default input"
+        if computer_audio and src is not None and src.kind != backend.INPUT:
+            raise RecorderError("The source is already the computer audio; choose a microphone to add it to.")
+    if computer_audio:
+        if not backend.get().records_outputs:
+            raise RecorderError("This audio system cannot record the computer audio.")
+        channels = 1
+        label = f"{label or 'Default input'} + computer audio"
     now = datetime.now()
     rec = lib.create(title or f"Recording {now:%Y-%m-%d %H:%M}", "recorded", state=RECORDING,
                      source=label, sample_rate=rate, channels=channels, title_auto=not title,
@@ -853,6 +968,7 @@ def start(lib: Library, source: str = "", rate: int = 48000, channels: int = 1,
     rec.takes_dir.mkdir()
     atomic_write_json(session_path(rec), {"version": 1, "rate": rate, "channels": channels,
                                           "source": source or None, "state": S_STARTING,
+                                          "computer_audio": computer_audio,
                                           "events": [], "takes": [], "created": _now_iso()})
     _spawn_supervisor(rec)
     sess = Session(rec)
@@ -910,6 +1026,15 @@ def _starting(rec: Recording) -> bool:
     return -5 <= age < STARTING_GRACE
 
 
+def _capture_left(rec: Recording, take: dict[str, Any]) -> bool:
+    """A capture of this take, the input's or the computer audio's, is still writing it."""
+    out = take.get("out") or {}
+    for pid, name in ((take.get("pid"), take.get("file")), (out.get("pid"), out.get("file"))):
+        if pid is not None and name and AdoptedCapture(pid, rec.takes_dir / name).alive():
+            return True
+    return False
+
+
 def recover_one(lib: Library, rec: Recording) -> str | None:
     if _starting(rec):
         return "live"
@@ -939,8 +1064,7 @@ def recover_one(lib: Library, rec: Recording) -> str | None:
     session = load_session(rec) or {}
     last = (session.get("takes") or [None])[-1]
     # Only a capture process can outlive its supervisor; an in-process stream (PortAudio) died with it.
-    if last and last.get("ended") is None and last.get("pid") is not None \
-            and AdoptedCapture(last["pid"], rec.takes_dir / last["file"]).alive():
+    if last and last.get("ended") is None and _capture_left(rec, last):
         _spawn_supervisor(rec, adopt=True)
         deadline = time.monotonic() + 5
         while time.monotonic() < deadline and not sess.alive():

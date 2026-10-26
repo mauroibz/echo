@@ -2,10 +2,10 @@
 
 ## 1. Capture
 
-- [ ] 1.1 `pipewire.DEFAULT_OUTPUT`, a monitor source with no target (captures the default output and follows it); `Backend.records_outputs` decides whether it is offered; tests on the `pw-record` command; a PipeWire integration test (under `ECHO_PIPEWIRE_TESTS`) that a tone played to the default output is captured
-- [ ] 1.2 Paired takes in the supervisor: `out-NNN.raw` next to `take-NNN.raw`, started and stopped together; either capture dying or stalling ends both and starts a new pair; a computer-audio capture that cannot start leaves the input recording with a warning and a note; the take entry in `session.json` carries `out` (file, pid); elapsed time stays the input's; tests with the fake capture (kill the out capture, stall it, pause and resume)
-- [ ] 1.3 Adoption and recovery of pairs: a supervisor killed with both captures alive adopts both; with the out capture dead, adopts the input and ends the out take; with everything dead, finalizes; tests for each
-- [ ] 1.4 Two-channel finalize: paired takes interleaved into the verified FLAC (input on channel 1, computer audio on channel 2); a pair the supervisor stopped together (`"align": "end"` in its take entry) is aligned at the end, any other at the start; a missing or empty out take is silence; `meta.json` gets `channels: 2` and `tracks: ["mic", "computer"]`; tests on content and alignment; measure interleaving an hour of audio and record the time
+- [x] 1.1 `pipewire.DEFAULT_OUTPUT`, a monitor source with no target (captures the default output and follows it); `Backend.records_outputs` decides whether it is offered; tests on the `pw-record` command; a PipeWire integration test (under `ECHO_PIPEWIRE_TESTS`) that a tone played to the default output is captured
+- [x] 1.2 Paired takes in the supervisor: `out-NNN.raw` next to `take-NNN.raw`, started and stopped together; either capture dying or stalling ends both and starts a new pair; a computer-audio capture that cannot start leaves the input recording with a warning and a note; the take entry in `session.json` carries `out` (file, pid); elapsed time stays the input's; tests with the fake capture (kill the out capture, stall it, pause and resume)
+- [x] 1.3 Adoption and recovery of pairs: a supervisor killed with both captures alive adopts both; with the out capture dead, adopts the input and ends the out take; with everything dead, finalizes; tests for each
+- [x] 1.4 Two-channel finalize: paired takes interleaved into the verified FLAC (input on channel 1, computer audio on channel 2); a pair the supervisor stopped together (`"align": "end"` in its take entry) is aligned at the end, any other at the start; a missing or empty out take is silence; `meta.json` gets `channels: 2` and `tracks: ["mic", "computer"]`; tests on content and alignment; measure interleaving an hour of audio and record the time
 
 ## 2. Listening and transcription
 

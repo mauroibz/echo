@@ -20,9 +20,10 @@ from pathlib import Path
 from typing import BinaryIO, Protocol
 
 from . import pipewire
-from .pipewire import INPUT, MONITOR, Source
+from .pipewire import DEFAULT_OUTPUT, INPUT, MONITOR, Source
 
-__all__ = ["Backend", "Capture", "BackendMissing", "INPUT", "MONITOR", "Source", "get"]
+__all__ = ["Backend", "Capture", "BackendMissing", "DEFAULT_OUTPUT", "INPUT", "MONITOR", "Source", "get",
+           "stop_together"]
 
 
 class BackendMissing(RuntimeError):
@@ -107,6 +108,21 @@ class ProcessCapture:
                 return
             except subprocess.TimeoutExpired:
                 continue
+
+
+def stop_together(captures: list) -> None:
+    """Stop captures at the same moment, so the takes of a pair end on the same sample.
+
+    Each `stop` signals and then waits; stopping them one after another would end the second take
+    as much later as the first took to exit.
+    """
+    import threading
+
+    threads = [threading.Thread(target=c.stop, daemon=True) for c in captures]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
 
 
 def detached_popen(cmd: list[str], **kw) -> subprocess.Popen:
@@ -205,7 +221,8 @@ class PipeWireBackend:
 class CommandBackend(PipeWireBackend):
     """PipeWire with the capture command replaced (ECHO_CAPTURE_CMD, used by the tests).
 
-    The template gets {path} and {bps}; sources are a single test input.
+    The template gets {path} and {bps}; sources are a single test input. ECHO_CAPTURE_OUT_CMD, if
+    set, replaces it for the computer audio of a call recording.
     """
 
     name = "command"
@@ -234,7 +251,10 @@ class CommandBackend(PipeWireBackend):
 
     def capture_cmd(self, source, rate, channels, path):
         bps = rate * channels * 2
-        return [part.format(path=str(path), bps=bps) for part in shlex.split(self.template)]
+        template = self.template
+        if source is DEFAULT_OUTPUT:
+            template = os.environ.get("ECHO_CAPTURE_OUT_CMD") or template
+        return [part.format(path=str(path), bps=bps) for part in shlex.split(template)]
 
 
 _backend: Backend | None = None

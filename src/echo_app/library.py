@@ -112,6 +112,7 @@ class Meta:
     speakers: dict[str, str] = field(default_factory=dict)  # speaker number -> the name the user gave
     speakers_off: bool = False  # no speaker labels for this recording (a monologue)
     extracted_from: dict[str, Any] | None = None  # source video: name, sha256, size, track, method
+    tracks: list[str] | None = None  # what each channel is, for a call: ["mic", "computer"]; None = one source
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "Meta":

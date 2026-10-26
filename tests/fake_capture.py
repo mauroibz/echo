@@ -1,8 +1,9 @@
 """Stand-in for pw-record in tests: writes a known PCM pattern at real-time speed.
 
-Usage: fake_capture.py PATH BYTES_PER_SECOND
+Usage: fake_capture.py PATH BYTES_PER_SECOND [negative]
 FAKE_MODE env: "" (normal), "die:<sec>" (exit abruptly), "stall:<sec>" (stop writing, stay alive)
-Each take writes 16-bit samples counting up from FAKE_START (default 0), so content is checkable.
+Each take writes 16-bit samples counting up from 0, so content is checkable; with "negative" they
+count down from -1 instead, so the computer audio of a call is told apart from the input.
 """
 
 import os
@@ -12,6 +13,7 @@ import sys
 import time
 
 path, bps = sys.argv[1], int(sys.argv[2])
+negative = sys.argv[3:4] == ["negative"]
 mode = os.environ.get("FAKE_MODE", "")
 marker = os.environ.get("FAKE_MODE_ONCE")  # file: apply mode only if marker does not exist yet
 if marker:
@@ -46,7 +48,8 @@ while not stop:
         if kind == "stall":
             time.sleep(0.05)
             continue
-    data = struct.pack(f"<{chunk_frames}h", *[(counter + i) % 32768 for i in range(chunk_frames)])
+    values = [(counter + i) % 32768 for i in range(chunk_frames)]
+    data = struct.pack(f"<{chunk_frames}h", *([-1 - v for v in values] if negative else values))
     counter += chunk_frames
     os.write(fd, data)
     n += 1

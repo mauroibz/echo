@@ -66,3 +66,11 @@ def test_tail_peak_reads_only_the_end(tmp_path):
     f.write_bytes(pcm([32000] * 48000) + pcm([100] * 2400) + b"\x01")  # loud, then quiet tail, odd byte
     db, clip = levels.tail_peak(f, 48000, 1, 0.05)
     assert db < -40 and not clip
+
+
+def test_default_output_capture_has_no_target():
+    """The computer-audio track follows the default output: no --target, so WirePlumber links and moves it."""
+    cmd = pipewire.record_cmd(pipewire.DEFAULT_OUTPUT, 48000, 1, "/x.raw")
+    assert "--target" not in cmd
+    assert "stream.capture.sink=true" in cmd[cmd.index("-P") + 1]
+    assert pipewire.DEFAULT_OUTPUT.kind == pipewire.MONITOR

@@ -33,6 +33,11 @@ class Source:
         return f"Computer audio: {d}" if self.kind == MONITOR else d
 
 
+# The second track of a call recording: whatever the default output plays. No target, so WirePlumber
+# links the capture to the current default output's monitor and moves it when the default changes.
+DEFAULT_OUTPUT = Source("", "Default output", MONITOR, None, True)
+
+
 def _pw_dump() -> list[dict]:
     out = subprocess.run(["pw-dump"], capture_output=True, text=True, timeout=10, check=True).stdout
     return json.loads(out)
@@ -144,7 +149,7 @@ def set_volume(node: int, value: float) -> bool:
 
 
 def _target_args(source: Source | None) -> list[str]:
-    return ["--target", source.name] if source is not None else []
+    return ["--target", source.name] if source is not None and source.name else []
 
 
 def _props(source: Source | None, role: str) -> str:

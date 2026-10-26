@@ -8,7 +8,7 @@ import os
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Iterable
 
 CHUNK = 1 << 20
 
@@ -184,14 +184,8 @@ def encode_flac_verified(takes: list[Path], rate: int, channels: int, out: Path)
     Returns the number of frames. Raises FFmpegError (and removes `out`) on any mismatch.
     """
     frame = 2 * channels
-    fmt = ["-f", "s16le", "-ar", str(rate), "-ac", str(channels)]
-    enc = subprocess.Popen(
-        ["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y", *fmt, "-i", "pipe:0",
-         "-c:a", "flac", "-compression_level", "5", "-f", "flac", str(out)],
-        stdin=subprocess.PIPE, stderr=subprocess.PIPE)
-    h_in = hashlib.sha256()
-    total = 0
-    try:
+
+    def chunks():
         for take in takes:
             usable = os.path.getsize(take)
             usable -= usable % frame
@@ -202,9 +196,26 @@ def encode_flac_verified(takes: list[Path], rate: int, channels: int, out: Path)
                     if not chunk:
                         break
                     remaining -= len(chunk)
-                    h_in.update(chunk)
-                    total += len(chunk)
-                    enc.stdin.write(chunk)
+                    yield chunk
+
+    return encode_pcm_flac_verified(chunks(), rate, channels, out)
+
+
+def encode_pcm_flac_verified(chunks: Iterable[bytes], rate: int, channels: int, out: Path) -> int:
+    """Encode raw s16le PCM, given in whole frames, into FLAC at `out` and verify it as above."""
+    frame = 2 * channels
+    fmt = ["-f", "s16le", "-ar", str(rate), "-ac", str(channels)]
+    enc = subprocess.Popen(
+        ["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y", *fmt, "-i", "pipe:0",
+         "-c:a", "flac", "-compression_level", "5", "-f", "flac", str(out)],
+        stdin=subprocess.PIPE, stderr=subprocess.PIPE)
+    h_in = hashlib.sha256()
+    total = 0
+    try:
+        for chunk in chunks:
+            h_in.update(chunk)
+            total += len(chunk)
+            enc.stdin.write(chunk)
         enc.stdin.close()
         err = enc.stderr.read().decode(errors="replace")
         if enc.wait() != 0:

@@ -50,3 +50,23 @@ def test_kill_everything_but_capture_then_recover(tmp_path, monkeypatch):
     probe = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0",
                             str(sess.rec.audio_path)], capture_output=True, text=True).stdout
     assert abs(float(probe) - m.duration) < 0.05
+
+
+def test_default_output_capture_hears_what_plays(tmp_path):
+    """A capture of pipewire.DEFAULT_OUTPUT records a quiet tone played to the default output."""
+    from echo_app.audio import levels, pipewire
+
+    tone = tmp_path / "tone.raw"
+    subprocess.run(["ffmpeg", "-loglevel", "error", "-f", "lavfi", "-i", "sine=f=1000:d=0.4,volume=0.03",
+                    "-ac", "2", "-ar", "48000", "-f", "s16le", str(tone)], check=True)
+    out = tmp_path / "out.raw"
+    cap = subprocess.Popen(pipewire.record_cmd(pipewire.DEFAULT_OUTPUT, 48000, 1, str(out)))
+    time.sleep(0.8)
+    subprocess.run(["pw-play", "--raw", "--rate", "48000", "--channels", "2", "--format", "s16", str(tone)],
+                   check=True)
+    time.sleep(0.3)
+    cap.send_signal(signal.SIGINT)
+    cap.wait(timeout=5)
+    assert out.stat().st_size > 48000 * 2  # at least a second, silence included
+    db, _ = levels.peak(out.read_bytes())
+    assert db > -45, db
