@@ -387,6 +387,16 @@ user gave. Other people stay suggestions the user confirms: a name written silen
 into a transcript costs more than a click, and the 0.85 threshold was measured on audiobook
 readers. The speakers record in the transcript notes `me` and, for calls, each speaker's `tracks`.
 
+"Same person as…" stores a merge in `meta.json` (`speaker_merges`, a speaker's number to the one
+it was merged into), and `Recording.speaker()` resolves every passage's number through it:
+exports (through `speaker_name`), the index, the margin, find, the naming bar and the People
+window all ask it, so `transcript.json` stays the model's output and a merge is undone by
+dropping an entry. The kept speaker's name wins, or takes the folded one's if it had none.
+Naming a merged speaker folds the average of its parts' voices into the person's, once. The
+paragraph breaks the worker made at the speaker change stay, since removing them would rewrite
+the shown text that the editor and an edited copy are aligned to. A new transcription numbers
+speakers afresh, so the worker drops the merges.
+
 ### Audio backends
 
 All device access goes through `audio/backend.py`. PipeWire (its command-line tools) is used

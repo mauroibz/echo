@@ -119,6 +119,7 @@ class Meta:
     speakers: dict[str, str] = field(default_factory=dict)  # speaker number -> the name the user gave
     speakers_off: bool = False  # no speaker labels for this recording (a monologue)
     naming_dismissed: bool = False  # "Not now" on the naming bar: do not ask about its speakers again
+    speaker_merges: dict[str, int] = field(default_factory=dict)  # speaker -> the speaker it is the same person as
     extracted_from: dict[str, Any] | None = None  # source video: name, sha256, size, track, method
     tracks: list[str] | None = None  # what each channel is, for a call: ["mic", "computer"]; None = one source
 
@@ -171,6 +172,39 @@ class Recording:
         self.save()
 
     # ---- transcript ---------------------------------------------------------
+    # ---- speakers ------------------------------------------------------------
+    def speaker(self, number: int | None) -> int | None:
+        """A passage's speaker after the user's merges: the speaker it is the same person as."""
+        seen: set[int] = set()
+        while number is not None and str(number) in self.meta.speaker_merges and number not in seen:
+            seen.add(number)
+            number = int(self.meta.speaker_merges[str(number)])
+        return number
+
+    def merged_into(self, number: int) -> list[int]:
+        """The speakers merged into `number`, itself not included."""
+        return sorted(int(k) for k in self.meta.speaker_merges if self.speaker(int(k)) == number and int(k) != number)
+
+    def merge_speakers(self, source: int, target: int) -> None:
+        """`source` is the same person as `target`: it takes target's number and name, or gives target
+        its name when target had none. The model's transcript is not touched."""
+        source, target = self.speaker(source), self.speaker(target)
+        if source is None or target is None or source == target:
+            return
+        merges = {k: (target if v == source else v) for k, v in self.meta.speaker_merges.items()}
+        merges[str(source)] = target
+        names = dict(self.meta.speakers)
+        moved = names.pop(str(source), None)
+        if moved and str(target) not in names:
+            names[str(target)] = moved
+        self.update(speaker_merges=merges, speakers=names)
+
+    def separate_speakers(self, target: int) -> list[int]:
+        """Undo every merge into `target`; the separated speakers are unnamed. Returns them."""
+        parts = self.merged_into(target)
+        self.update(speaker_merges={k: v for k, v in self.meta.speaker_merges.items() if int(k) not in parts})
+        return parts
+
     def transcript_status(self) -> str:
         if self.path(REQUESTED).exists():
             return T_RUNNING if self.path(PROGRESS).exists() else T_QUEUED

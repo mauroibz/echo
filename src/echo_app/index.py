@@ -300,6 +300,7 @@ def _named_speech(rec: Recording) -> dict[int, tuple[str, str, float]]:
     except (OSError, ValueError):
         return {}
     for start, end, text, _para, who in cues:
+        who = rec.speaker(who)  # merged speakers are one
         name = names.get(str(who)) if who is not None else None
         if name:
             entry = out.setdefault(int(who), [name, [], 0.0])

@@ -84,6 +84,7 @@ def speaker_name(rec: Recording, number: int | None) -> str | None:
     """The name for a speaker number: the user's, else "Speaker N"; None when speakers are off."""
     if number is None or rec.meta.speakers_off or not (rec.transcript() or {}).get("speakers"):
         return None
+    number = rec.speaker(number)
     return rec.meta.speakers.get(str(number)) or f"Speaker {number}"
 
 
@@ -166,7 +167,8 @@ def to_json(rec: Recording, items) -> str:
 def _names(rec: Recording) -> dict | None:
     if not has_speakers(rec):
         return None
-    return {n: speaker_name(rec, n) for n in range(1, int(rec.transcript()["speakers"].get("count", 0)) + 1)}
+    count = int(rec.transcript()["speakers"].get("count", 0))
+    return {n: speaker_name(rec, n) for n in sorted({rec.speaker(i) for i in range(1, count + 1)})}
 
 
 def render_transcript(rec: Recording, fmt: str) -> str:

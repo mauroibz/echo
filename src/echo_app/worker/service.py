@@ -426,6 +426,8 @@ class Worker:
                   "suggested": suggestions, "model": f"{models.SPEAKER.repo}@{models.SPEAKER.revision}"}
         if tracks is not None:
             record["tracks"] = tracks
+        if rec.reload().meta.speaker_merges:
+            rec.update(speaker_merges={})  # new labels are numbered afresh: old merges would join strangers
         me = name_user(rec, record)
         if me is not None:
             record["me"] = me

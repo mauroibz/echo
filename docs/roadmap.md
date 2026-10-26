@@ -318,6 +318,7 @@ local summaries have no folder yet; they wait for the dictionary to be in daily 
 | 7 | `add-tag-categories` | product | archived |
 | 7 | `add-speaker-search` | product | archived |
 | 7 | `add-people-profiles` | product | archived |
+| 7 | `add-speaker-merge` | AI | archived |
 
 The open items are listed under "Blocked" in each change's `tasks.md`, with what a person has
 to run and look for.

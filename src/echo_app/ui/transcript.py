@@ -1224,7 +1224,7 @@ class TranscriptPanel(QWidget):
         self.act_speakers.blockSignals(False)
         self.act_speakers.setEnabled(labeled or rec.meta.speakers_off)
         if labeled and not rec.meta.speakers_off and not rec.is_edited():
-            n = int(t["speakers"].get("count", 0))
+            n = len({rec.speaker(i) for i in range(1, int(t["speakers"].get("count", 0)) + 1)})
             self.status.setText(self.status.text() + f" · {n} speakers")
         self._update_flag_count()
 
@@ -1352,7 +1352,7 @@ class TranscriptPanel(QWidget):
             return None
         secs: dict[int, float] = {}
         for sg in t.get("segments") or []:
-            n = sg.get("speaker")
+            n = rec.speaker(sg.get("speaker"))
             if n is not None and sg.get("text"):
                 secs[n] = secs.get(n, 0.0) + float(sg.get("end", 0)) - float(sg.get("start", 0))
         named = rec.meta.speakers
@@ -1401,7 +1401,7 @@ class TranscriptPanel(QWidget):
         if self.player is None or self._ask is None or self.rec is None:
             return
         segs = [s for s in (self.rec.transcript() or {}).get("segments") or []
-                if s.get("speaker") == self._ask and s.get("text")]
+                if self.rec.speaker(s.get("speaker")) == self._ask and s.get("text")]
         if not segs:
             return
         sg = max(segs, key=lambda s: float(s.get("end", 0)) - float(s.get("start", 0)))
@@ -1465,7 +1465,7 @@ class TranscriptPanel(QWidget):
         suggested = info.get("suggested") or {}
         out, last = [], None
         for a, _b, k in self._passages:
-            n = self._segments[k].get("speaker")
+            n = rec.speaker(self._segments[k].get("speaker"))  # merged speakers are one
             if n is None or n == last:
                 continue
             last = n
@@ -1480,7 +1480,7 @@ class TranscriptPanel(QWidget):
             sg = self._segments[k]
             rec = self._parts[sg["_part"]].rec
             info = (rec.transcript() or {}).get("speakers") or {}
-            n = sg.get("speaker")
+            n = rec.speaker(sg.get("speaker"))
             key = (sg["_part"], n)
             if rec.meta.speakers_off or not info or n is None or key == last:
                 continue
@@ -1508,9 +1508,68 @@ class TranscriptPanel(QWidget):
         if current:
             m.addAction(icon("users"), f"Open {current}'s profile", lambda: self.profile_requested.emit(current))
             m.addAction(icon("clear"), "Forget this name", lambda: self.name_speaker(n, ""))
+        others = [o for o in self._speakers_shown() if o != n]
+        if others:
+            same = m.addMenu(icon("link"), "Same person as")
+            same.setToolTip("Speaker labeling found one person twice: make them one speaker in this recording")
+            for o in others:
+                same.addAction(self._speaker_title(rec, o), lambda o=o: self.merge_speaker(n, o))
+        if rec.merged_into(n):
+            m.addAction(icon("unlink"), "Separate again", lambda: self.separate_speaker(n))
         m.addSeparator()
         m.addAction(icon("users"), "No speaker labels for this recording", lambda: self.set_speakers_off(True))
         m.exec(pos)
+
+    def _speakers_shown(self) -> list[int]:
+        """The shown recording's speakers after merges, in order of first appearance."""
+        rec = self.rec
+        out: list[int] = []
+        for sg in ((rec.transcript() or {}).get("segments") or []) if rec else []:
+            n = rec.speaker(sg.get("speaker"))
+            if n is not None and n not in out:
+                out.append(n)
+        return out
+
+    @staticmethod
+    def _speaker_title(rec: Recording, n: int) -> str:
+        name = rec.meta.speakers.get(str(n))
+        return f"{name} (speaker {n})" if name else f"Speaker {n}"
+
+    def merge_speaker(self, source: int, target: int):
+        """The user says `source` is `target`: one speaker in this recording from now on."""
+        rec = self.rec
+        if rec is None:
+            return
+        rec.merge_speakers(source, target)
+        name = rec.meta.speakers.get(str(rec.speaker(target)))
+        if name:
+            self._remember_voice(rec, rec.speaker(target), name)
+        self.message.emit(f"Speaker {source} is now {name or f'speaker {target}'}. "
+                          "“Separate again” on the name undoes it.")
+        self._update_margin()
+        self._update_status(rec)
+        self.changed.emit(rec.id)
+
+    def separate_speaker(self, n: int):
+        rec = self.rec
+        if rec is None:
+            return
+        parts = rec.separate_speakers(n)
+        self.message.emit("Separated speaker " + ", ".join(str(p) for p in parts) + ".")
+        self._update_margin()
+        self._update_status(rec)
+        self.changed.emit(rec.id)
+
+    @staticmethod
+    def _remember_voice(rec: Recording, n: int, name: str):
+        """Fold the speaker's voice into the person's: the average of its merged parts, once."""
+        centroids = (((rec.transcript() or {}).get("speakers") or {}).get("centroids") or {})
+        parts = [centroids[str(k)] for k in [n, *rec.merged_into(n)] if centroids.get(str(k))]
+        if not parts:
+            return
+        mean = [sum(v) / len(parts) for v in zip(*parts)]
+        person = dictionary.current().find(name)
+        dictionary.remember_voice(person.name if person else name, mean)
 
     def _ask_speaker_name(self, n: int):
         from PySide6.QtWidgets import QInputDialog
@@ -1535,9 +1594,7 @@ class TranscriptPanel(QWidget):
             if dictionary.current().find(name) is None and \
                     not self._dict_update(lambda d: d.add(dictionary.PEOPLE, name)):
                 return
-            centroid = (((rec.transcript() or {}).get("speakers") or {}).get("centroids") or {}).get(str(n))
-            if centroid:
-                dictionary.remember_voice(dictionary.current().find(name).name, centroid)
+            self._remember_voice(rec, n, name)
         else:
             names.pop(str(n), None)
         rec.update(speakers=names)
@@ -2028,7 +2085,8 @@ class TranscriptPanel(QWidget):
         k = self._passage_at(pos)
         if k is None or k >= len(self._passages):
             return None
-        return self._segments[self._passages[k][2]].get("speaker")
+        n = self._segments[self._passages[k][2]].get("speaker")
+        return self.rec.speaker(n) if self.rec is not None else n
 
     def _find_step(self, direction: int):
         n = len(self._find_matches)

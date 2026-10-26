@@ -28,6 +28,9 @@ tag.
   and tags for each person, every recording they speak in with their speaking time, a sample of
   their voice, and "Forget voice". A person's tags find their recordings in search. Profiles
   are files in the data folder's `people/`; `echo-app people [--json]` lists them.
+- "Same person as…" on a speaker's name joins two speakers Echo told apart wrongly into one,
+  for that recording: labels, the naming bar, exports, search and profiles follow, and naming
+  them teaches Echo both parts of the voice. "Separate again" undoes it.
 
 ## 1.1.0 - 2026-10-25
 

@@ -186,6 +186,9 @@ Model versions are pinned, and only weights and configuration are downloaded, ne
   text can still be clicked. Answer "It's me" once (Echo asks your name, kept under Settings →
   Your name) and from then on Echo names you itself, wherever it recognizes your voice and on the
   microphone side of every recorded call; other people are always suggested for you to confirm.
+  When Echo finds one person twice, click either name and choose "Same person as…" and the
+  other: they become one speaker in that recording (exports, search and their profile follow),
+  and "Separate again" undoes it. Transcribing again finds the speakers afresh.
   Exports carry the names. Monologues are left alone, and ⋯ → Label speakers turns it off for a
   recording. Voices are kept as numbers in `~/.config/echo/voices.json`, on this computer only.
   This needs a small extra download (27 MB), offered under Help → Transcription model.
