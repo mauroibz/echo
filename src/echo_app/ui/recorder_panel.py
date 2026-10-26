@@ -1,4 +1,4 @@
-"""Recorder controls: source, level meter, listen, record / pause / stop, elapsed time."""
+"""Recorder controls: source, level meter, listen, computer audio, record / pause / stop, elapsed time."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (QComboBox, QGraphicsDropShadowEffect, QHBoxLayout
 
 from .. import recorder, settings
 from ..audio import backend, levels, monitor
-from ..audio.backend import INPUT, Source
+from ..audio.backend import DEFAULT_OUTPUT, INPUT, Source
 from ..library import Library
 from . import theme
 from .common import Wordmark, dot_icon, fmt_duration, icon, run_task
@@ -118,6 +118,7 @@ class RecorderPanel(QWidget):
         self.session: recorder.Session | None = None
         self._sources: list[Source] = []
         self._monitor: monitor.LevelMonitor | None = None
+        self._out_monitor: monitor.LevelMonitor | None = None  # the computer audio, when it is recorded too
         self._listener = monitor.Listener()
         self._busy = False
         self._window_shown = True
@@ -202,6 +203,31 @@ class RecorderPanel(QWidget):
         self.gain_row.hide()
         lay.addWidget(self.gain_row)
         self._gain_timer = QTimer(self, singleShot=True, interval=60, timeout=self._apply_gain)
+
+        # A call: what the computer plays, recorded as a second track next to the microphone.
+        self.computer_row = QWidget()
+        cl = QHBoxLayout(self.computer_row)
+        cl.setContentsMargins(0, 0, 0, 0)
+        cl.setSpacing(8)
+        self.computer = QToolButton()
+        self.computer.setCheckable(True)
+        self.computer.setIcon(icon("volume", "on_deep"))
+        self.computer.setIconSize(QSize(16, 16))
+        self.computer.setText("Computer audio")
+        self.computer.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.computer.setToolTip("Also record what the computer plays, such as the other side of a call, as a "
+                                 "second track. The call app keeps its microphone and sound. Use headphones.")
+        self.computer.setAccessibleName("Also record computer audio")
+        self.computer.setChecked(settings.load()[0].computer_audio)
+        self.computer.toggled.connect(self._toggle_computer)
+        cl.addWidget(self.computer, 0, Qt.AlignmentFlag.AlignLeft)
+        self.out_meter = LevelMeter()
+        self.out_meter.setToolTip("Computer audio level: what the default output is playing.")
+        self.out_meter.setAccessibleName("Computer audio level")
+        self.out_meter.setVisible(self.computer.isChecked())
+        cl.addWidget(self.out_meter, 1)
+        self.computer_row.hide()
+        lay.addWidget(self.computer_row)
 
         ctl = QHBoxLayout()
         ctl.setSpacing(8)
@@ -318,6 +344,7 @@ class RecorderPanel(QWidget):
         self.source.setCurrentIndex(max(0, idx))
         self.source.blockSignals(False)
         self._sources_loaded = True
+        self._show_computer_row()
         self._restart_monitor()
         self._load_gain()
 
@@ -333,10 +360,31 @@ class RecorderPanel(QWidget):
         s = self.current_source()
         cfg.source = "" if (s is None or (s.is_default and s.kind == INPUT)) else s.name
         settings.save(cfg)
+        self._show_computer_row()
         self._restart_monitor()
         self._load_gain()
         if self.listen.isChecked():
             self._listener.start(self.current_source())
+
+    # ---- computer audio ----
+    def _show_computer_row(self):
+        """Offered for an input on a backend that records outputs; a monitor is already the computer audio."""
+        try:
+            records = backend.get().records_outputs
+        except backend.BackendMissing:
+            records = False
+        s = self.current_source()
+        self.computer_row.setVisible(records and (s is None or s.kind == INPUT))
+
+    def computer_audio_on(self) -> bool:
+        return self.computer.isChecked() and not self.computer_row.isHidden()
+
+    def _toggle_computer(self, on: bool):
+        cfg, _ = settings.load()
+        cfg.computer_audio = on
+        settings.save(cfg)
+        self.out_meter.setVisible(on)
+        self._restart_monitor()
 
     # ---- gain ----
     def _load_gain(self):
@@ -396,12 +444,22 @@ class RecorderPanel(QWidget):
         return self.session is None and self._sources_loaded and (self._window_shown or self.listen.isChecked())
 
     def _restart_monitor(self):
-        if self._monitor:
-            self._monitor.stop()
-            self._monitor = None
+        for m in (self._monitor, self._out_monitor):
+            if m:
+                m.stop()
+        self._monitor = self._out_monitor = None
         if self._want_monitor():
             self._monitor = monitor.LevelMonitor(self.current_source())
             self._monitor.start()
+            if self.computer_audio_on():
+                self._out_monitor = monitor.LevelMonitor(DEFAULT_OUTPUT)
+                self._out_monitor.start()
+
+    def _stop_monitors(self):
+        for m in (self._monitor, self._out_monitor):
+            if m:
+                m.stop()
+        self._monitor = self._out_monitor = None
 
     def _toggle_listen(self, on: bool):
         if on:
@@ -417,12 +475,15 @@ class RecorderPanel(QWidget):
         self.session = sess
         if sess is None:
             self._close_note()
-        if sess is not None and self._monitor:
-            self._monitor.stop()
-            self._monitor = None
+        if sess is not None:
+            self._stop_monitors()
         if sess is None and was:
             self._restart_monitor()
         self.source.setEnabled(sess is None and bool(self._sources))
+        self.computer.setEnabled(sess is None)
+        # A recording started elsewhere (the CLI, a shortcut) shows what it records.
+        two = sess is not None and bool((recorder.load_session(sess.rec) or {}).get("computer_audio"))
+        self.out_meter.setVisible(two if sess is not None else self.computer.isChecked())
         self._update_buttons()
         self.recording_changed.emit(sess is not None)
 
@@ -438,15 +499,14 @@ class RecorderPanel(QWidget):
         cfg, _ = settings.load()
         s = self.current_source()
         source = "" if s is None or (s.is_default and s.kind == INPUT) else s.name
-        if self._monitor:
-            self._monitor.stop()
-            self._monitor = None
+        computer_audio = self.computer_audio_on() and not quick_note  # a quick note is the user alone
+        self._stop_monitors()
         self._busy = True
         self._update_buttons()
 
         def go():
             return recorder.start(self.library, source=source, rate=cfg.sample_rate, channels=cfg.channels,
-                                  quick_note=quick_note)
+                                  quick_note=quick_note, computer_audio=computer_audio)
 
         def ok(sess):
             self._busy = False
@@ -572,6 +632,11 @@ class RecorderPanel(QWidget):
                 self.meter.set_level(db, clip)
             else:
                 self.meter.set_level(FLOOR_DB)
+            out = st.get("out_take")
+            if out and not paused:
+                self.out_meter.set_level(*levels.tail_peak(sess.rec.takes_dir / out, st.get("rate", 48000), 1))
+            else:
+                self.out_meter.set_level(FLOOR_DB)
             self._show_warning(st.get("warning") or self._silence_hint(db))
         else:
             self._state = ""
@@ -583,6 +648,10 @@ class RecorderPanel(QWidget):
                     self._wake_waves()
             else:
                 self.meter.set_level(FLOOR_DB)
+            if self._out_monitor and self._out_monitor.running():
+                self.out_meter.set_level(self._out_monitor.level, self._out_monitor.take_clip())
+            else:
+                self.out_meter.set_level(FLOOR_DB)
             self._show_warning(self._silence_hint(db))
 
     def _silence_hint(self, db: float | None) -> str:
@@ -603,7 +672,6 @@ class RecorderPanel(QWidget):
 
     def shutdown(self):
         self._timer.stop()
-        if self._monitor:
-            self._monitor.stop()
+        self._stop_monitors()
         self._listener.stop()
 

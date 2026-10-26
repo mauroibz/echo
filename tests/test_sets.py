@@ -252,7 +252,7 @@ class _FakeInner:
         self.path, self.speed, self.error = None, 1.0, None
         self.calls, self._pos, self._end, self.playing, self._ended = [], 0.0, None, False, False
 
-    def load(self, path, duration):
+    def load(self, path, duration, mix=False):
         self.path, self.playing, self._pos = path, False, 0.0
 
     def seek(self, sec):

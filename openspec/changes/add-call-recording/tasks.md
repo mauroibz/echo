@@ -18,7 +18,7 @@
 
 ## 4. Window
 
-- [ ] 4.1 The toggle under the source (shown when the source is an input and the backend records outputs, disabled while recording), saved in settings; a second slim meter for the computer audio, from an idle monitor before recording and from the tail of the current out take while recording; offscreen tests: toggle shown and hidden by source, record with it on gives a two-channel recording, the second meter moves
+- [x] 4.1 The toggle under the source (shown when the source is an input and the backend records outputs, disabled while recording), saved in settings; a second slim meter for the computer audio, from an idle monitor before recording and from the tail of the current out take while recording; offscreen tests: toggle shown and hidden by source, record with it on gives a two-channel recording, the second meter moves
 
 ## 5. Docs
 
