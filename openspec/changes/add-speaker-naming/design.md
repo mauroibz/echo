@@ -54,3 +54,16 @@ The transcript's `speakers` record gains `tracks` (speaker number to 0 for the m
 the computer audio, by where most of the speaker's passages are) for calls, and `me` (the number
 the worker named as the user). The bar does not ask about `me`, and offers "It's me" only while
 nobody in the recording is the user.
+
+## Decisions made while implementing
+
+- **At the top of the transcript,** under its header, as the user asked; the dictionary chip
+  stays at the bottom, where it follows the typing that produced it.
+- **The bar is refreshed on every refresh of the panel,** not only when the transcript is
+  reloaded, so names given in the margin, from another window or by the worker are reflected
+  without reselecting the recording.
+- **A suggestion that is the user, or someone already named in this recording,** is not offered;
+  the bar asks for a name instead.
+- **"Someone else…" and the name field** use the dictionary's people as completions, as the
+  margin's naming dialog does.
+

@@ -14,6 +14,10 @@ tag.
   keep you (speaker 1) apart from the people in the call. A second meter shows the computer
   audio. From the command line: `echo-app record --computer-audio`; `info --json` reports
   `tracks`.
+- Naming speakers without hunting for it. A bar over the transcript asks about one unnamed
+  speaker at a time, with a few seconds of them to hear: a known voice in one click, anyone else
+  by typing their name, or "Not now". Answer "It's me" once and Echo names you itself from then
+  on, by your voice and on the microphone side of recorded calls. "Your name" is in Settings.
 
 ## 1.1.0 - 2026-10-25
 

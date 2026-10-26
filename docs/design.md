@@ -350,6 +350,18 @@ within each track. A voice in the room and a voice in the call are never one spe
 alike they sound, and the microphone's speakers are numbered first, so the user is speaker 1.
 This assumes headphones: with speakers the microphone also hears the call.
 
+Naming happens in a bar over the transcript, one unnamed speaker at a time, most speech first,
+with 6 s of their longest passage to hear; asking per speaker is what makes a sample possible,
+and naming a voice unheard is guessing. It waits while the dictionary's suggestion chip is shown
+and never takes focus. "Not now" is stored as `naming_dismissed` in `meta.json`. The user's own
+name is a setting (`your_name`) and their voice an ordinary `voices.json` entry. The worker names
+the user, and only the user, in `meta.json`: in a call the one speaker on the microphone track
+(certain, so that centroid is folded into the voice), otherwise the speaker it suggests as the
+user (not folded back, so one wrong match cannot drift the voice). It never replaces a name the
+user gave. Other people stay suggestions the user confirms: a name written silently and wrongly
+into a transcript costs more than a click, and the 0.85 threshold was measured on audiobook
+readers. The speakers record in the transcript notes `me` and, for calls, each speaker's `tracks`.
+
 ### Audio backends
 
 All device access goes through `audio/backend.py`. PipeWire (its command-line tools) is used

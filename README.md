@@ -179,11 +179,16 @@ Model versions are pinned, and only weights and configuration are downloaded, ne
   Japanese, Korean, Polish, Portuguese and Vietnamese too; the Spanish adapter is used for
   Spanish only.
 - **Who said what.** In interviews and meetings Echo tells the speakers apart and starts a new
-  paragraph when the speaker changes; their names show beside the text. Click "Speaker 1" to
-  name them; a name you give is remembered, and the next recording with that voice suggests it
-  ("Ana?"), which one click confirms. Exports carry the names. Monologues are left alone, and
-  ⋯ → Label speakers turns it off for a recording. This needs a small extra download (27 MB),
-  offered under Help → Transcription model.
+  paragraph when the speaker changes; their names show beside the text. A bar over the
+  transcript asks about one unnamed speaker at a time, whoever speaks most first: ▶ plays a few
+  seconds of them, then type a name and press Enter, or click "Yes, Ana" when the voice matches
+  someone you named before. "Not now" stops asking about that recording; the names beside the
+  text can still be clicked. Answer "It's me" once (Echo asks your name, kept under Settings →
+  Your name) and from then on Echo names you itself, wherever it recognizes your voice and on the
+  microphone side of every recorded call; other people are always suggested for you to confirm.
+  Exports carry the names. Monologues are left alone, and ⋯ → Label speakers turns it off for a
+  recording. Voices are kept as numbers in `~/.config/echo/voices.json`, on this computer only.
+  This needs a small extra download (27 MB), offered under Help → Transcription model.
 - **Names and terms.** When you correct a name in a transcript ("zurus" to "Surus"), a small
   suggestion under the text offers to add it to the dictionary; one click, and Echo spells it
   that way in new transcripts and fixes the old spelling in existing ones. Corrections Echo

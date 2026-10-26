@@ -314,7 +314,7 @@ local summaries have no folder yet; they wait for the dictionary to be in daily 
 | 5 | `add-agent-cli` | product | archived |
 | 5 | `add-playback-volume` | product | archived |
 | 6 | `add-call-recording` | product | done; a real call with headphones and an output switch are open |
-| 6 | `add-speaker-naming` | AI | planned |
+| 6 | `add-speaker-naming` | AI | done; a check with real recordings of the user is open |
 
 The open items are listed under "Blocked" in each change's `tasks.md`, with what a person has
 to run and look for.
