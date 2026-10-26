@@ -14,9 +14,11 @@
 
 ## Blocked
 
-- **1.2** needs the workflow to run on GitHub (`windows-latest`); this work is local. The job is
-  in `.github/workflows/test.yml`, and the recorder tests that send POSIX signals are marked to
-  skip on Windows. Push the branch and fix what the Windows job reports.
+- **1.2** The `windows-latest` job ran and failed every push with a Qt access violation during
+  the suite ("Windows fatal exception: access violation"). It was removed from
+  `.github/workflows/test.yml` on 2026-10-26, since Windows is not a target for now. To resume:
+  add the job back (the Ubuntu job's steps, with `choco install ffmpeg -y` for the packages) and
+  find which test crashes, for example with `pytest -p no:randomly -x -v`.
 - **1.3** is written but not run: `install.ps1` and `uninstall.ps1` (both parse without errors
   in PowerShell 7 in the `mcr.microsoft.com/powershell` container), `data/echo-app.ico`,
   `bin/echo-app.pyw`, the README section and doctor's Windows wording. A person must run

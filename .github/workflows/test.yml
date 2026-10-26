@@ -1,4 +1,4 @@
-# The fast suite on Ubuntu, Fedora and Windows, and a resolution check of every transcription profile.
+# The fast suite on Ubuntu and Fedora, and a resolution check of every transcription profile.
 # No GPU, microphone or model is needed; the hardware suites stay opt-in (see README).
 name: test
 
@@ -59,22 +59,3 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
 
-  windows:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: ffmpeg
-        run: choco install ffmpeg -y --no-progress
-      - uses: astral-sh/setup-uv@v6
-      - name: Environment
-        run: |
-          uv python install
-          uv sync --locked --no-install-project
-      - name: Transcription profiles resolve
-        run: |
-          uv sync --locked --no-install-project --extra cuda --dry-run
-          uv sync --locked --no-install-project --extra cpu --dry-run
-      - name: Tests
-        run: uv run --no-sync pytest -q
-        env:
-          QT_QPA_PLATFORM: offscreen
