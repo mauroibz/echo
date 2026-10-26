@@ -9,6 +9,7 @@ on:
 jobs:
   ubuntu:
     runs-on: ubuntu-latest
+    timeout-minutes: 20  # the suite takes about 5; a hang must not hold the runner for 6 hours
     steps:
       - uses: actions/checkout@v4
       - name: System packages
@@ -29,12 +30,13 @@ jobs:
             uv sync --locked --no-install-project --extra "$profile" --dry-run
           done
       - name: Tests
-        run: uv run --no-sync pytest -q
+        run: uv run --no-sync pytest -q -o faulthandler_timeout=300
         env:
           QT_QPA_PLATFORM: offscreen
 
   fedora:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     container: fedora:latest
     steps:
       - name: System packages
@@ -55,7 +57,7 @@ jobs:
             uv sync --locked --no-install-project --extra "$profile" --dry-run
           done
       - name: Tests
-        run: uv run --no-sync pytest -q
+        run: uv run --no-sync pytest -q -o faulthandler_timeout=300
         env:
           QT_QPA_PLATFORM: offscreen
 
