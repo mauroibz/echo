@@ -22,9 +22,28 @@
 
 ## 5. Docs
 
-- [ ] 5.1 README (recording a call, headphones versus speakers, the two-channel file, the CLI flag), `docs/design.md` (paired takes, alignment and drift measurements, mixing, speakers per track), CHANGELOG, roadmap table
+- [x] 5.1 README (recording a call, headphones versus speakers, the two-channel file, the CLI flag), `docs/design.md` (paired takes, alignment and drift measurements, mixing, speakers per track), CHANGELOG, roadmap table
 
 ## 6. On a real call
 
-- [ ] 6.1 Record a 10-minute Meet, Teams or Zoom call with headphones and another with speakers (needs hardware: a microphone and a real call): the call app works normally during both; both sides are heard in playback; the transcript has both sides and attributes them; with speakers, note how much of the call the microphone picks up and whether transcription suffers
+- [ ] 6.1 Record a 10-minute Meet, Teams or Zoom call with headphones (needs hardware: a microphone and a real call): the call app works normally throughout; both sides are heard in playback; the transcript has both sides and the user is speaker 1
 - [ ] 6.2 Switch the default output (for example to headphones) in the middle of a two-track recording (needs hardware: a second output device in use): the computer audio follows to the new output with no gap longer than two seconds
+
+## Blocked
+
+Both open tasks need a person, a microphone and a real call; everything else is done and tested
+with the fake capture, and the default-output capture was checked against real PipeWire
+(`ECHO_PIPEWIRE_TESTS=1 pytest tests/test_pipewire_integration.py`).
+
+- **6.1** With headphones on, select the microphone, turn on "Computer audio", join a Meet,
+  Teams or Zoom call with one other person, press Record and talk for about 10 minutes, then
+  Stop. Look for: the call app's microphone and sound work normally the whole time; both meters
+  move (the second one when the other person speaks); playback has both voices in both ears at
+  similar levels; `echo-app info <id> --json` shows `"tracks": ["mic", "computer"]`; after
+  transcription, your passages are speaker 1 and theirs speaker 2, with no passage of theirs
+  given to you. Note any misattributed passages in `design.md`.
+- **6.2** During a two-track recording, change the default output (plug or unplug headphones,
+  or pick another output in the desktop's sound settings) while the other side is talking.
+  Look for: the computer-audio meter keeps moving within two seconds, and the finished
+  recording has the other side before and after the switch with no gap over two seconds.
+

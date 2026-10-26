@@ -3,6 +3,18 @@
 Notable changes to Echo. Versions are git tags (`vX.Y.Z`); `main` may be ahead of the latest
 tag.
 
+## Unreleased
+
+### Added
+
+- Record both sides of a call. With a microphone selected, "Computer audio" also records what
+  the default output plays, as a second track, without taking the microphone or the sound from
+  the call app. The recording is one lossless FLAC with your microphone on channel 1 and the
+  call on channel 2; it plays, draws and transcribes as one conversation, and speaker labels
+  keep you (speaker 1) apart from the people in the call. A second meter shows the computer
+  audio. From the command line: `echo-app record --computer-audio`; `info --json` reports
+  `tracks`.
+
 ## 1.1.0 - 2026-10-25
 
 ### Added

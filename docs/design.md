@@ -108,6 +108,47 @@ takes node ids, which change when a device returns, so the id is looked up by no
 looked up again if setting fails. Monitors ("Computer audio") get no slider: their volume is the
 speakers'. Up to 150%, PipeWire's software boost; past it there is mostly noise and clipping.
 
+### Recording a call
+
+With "Computer audio" on, the supervisor runs a second `pw-record` with no `--target` and
+`stream.capture.sink=true`, which WirePlumber links to the default output's monitor and moves
+when the default output changes. Reading a source or a monitor takes nothing from other
+programs, so the call app keeps its microphone and its sound. The two captures form a pair of
+takes, `take-NNN.raw` (the input) and `out-NNN.raw`, started together and stopped together
+(signalled at the same moment from two threads). If either dies or stalls, both end and a new
+pair starts, and the gap is noted once; restarting only the failed one would leave the other
+running across the gap with nothing to align it by. If the computer audio cannot start at all,
+the input records alone with a warning. A crash adopts whichever captures still run; if only
+one half survived, it is stopped and a new pair started. Elapsed time and markers keep counting
+the input alone.
+
+Measured on the development machine:
+
+- Two captures on different devices (a USB microphone, a webcam microphone, the USB output's
+  monitor and an HDMI output's monitor) grew by exactly the same number of samples over 300 s,
+  47,998.27 per second each: PipeWire runs all streams on one graph clock and resamples each
+  device into it. There is no drift to correct.
+- The start can differ: a device woken from suspend began 299 ms after the others. Two captures
+  started back to back on one output landed a click on the same sample in three runs of five
+  and one 512-frame quantum (10.7 ms) apart in two, and in every run the files differed in
+  length by exactly that offset, because SIGINT stops both in the same quantum.
+- An idle output's monitor still delivers continuous silence, so the stall check works as is.
+
+So a pair the supervisor stopped together (pause or stop, both running; marked `"align":
+"end"` in `session.json`) is aligned at its end, which is exact whatever the startup delays
+were; any other pair (one capture died first, or a crash) is aligned at its start, off by at most
+the startup delay. The shorter take of a pair gets silence; nothing captured is trimmed. When
+that silence goes on the input, markers and gap notes move with it.
+
+Finalize interleaves the pairs into one two-channel FLAC (the input on channel 1, the computer
+audio on 2) with `array` slices, an hour in 1.0 s, and verifies it as any recording: the hash of
+the PCM fed to the encoder must match the decoded file. One file keeps crop, export, hashing and
+"originals are never altered" unchanged. `meta.json` gets `channels: 2` and `tracks: ["mic",
+"computer"]`; a two-channel file without `tracks` (an imported stereo file) is one source.
+Playback, the waveform and the worker mix a call by summing the channels (`pan`), not by
+ffmpeg's `-ac 1`, which averages them and would put each side 6 dB below its recorded level;
+playback sends the sum to both ears through the limiter already used for the volume boost.
+
 ## Import
 
 Files are probed with ffprobe, copied to a staging file, verified by hash and renamed into a new
@@ -299,6 +340,13 @@ measured 0.956 or more between centroids, different readers 0.72 at most. Embedd
 about 120× real time on a 6-core CPU. Labels are per passage, so a passage that straddles a turn
 (the planner joins speech across pauses under 2 s) gets one speaker: in a two-reader test with
 quick turns that was 27 s of 165 s.
+
+A recorded call has its sides on separate channels, so each passage first goes to the track
+that is louder over it (RMS, from the two channels decoded at 4 kHz, which is enough for
+loudness and keeps an hour at 57 MB instead of 230 MB at 16 kHz), and voices are clustered
+within each track. A voice in the room and a voice in the call are never one speaker, however
+alike they sound, and the microphone's speakers are numbered first, so the user is speaker 1.
+This assumes headphones: with speakers the microphone also hears the call.
 
 ### Audio backends
 

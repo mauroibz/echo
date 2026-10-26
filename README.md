@@ -26,6 +26,10 @@ voice notes.
   to disk every two seconds. Closing the window, a crash or a power cut loses nothing that
   reached the disk, and the next start recovers the recording by itself. Finished recordings
   are lossless FLAC, kept only after Echo checks they decode to exactly what was captured.
+- **Records both sides of a call.** Turn on "Computer audio" and Echo records your microphone
+  and what the computer plays (Meet, Teams, Zoom) at the same time, as two tracks of one
+  recording. The call app keeps its microphone and sound as usual, and the transcript knows
+  which side said what.
 - **Transcribes long recordings well.** Speech is split at natural pauses into passages and
   paragraphs with timing, punctuation and accents. A recent graphics card transcribes an hour of
   audio in about a minute; a recent desktop processor in five to ten.
@@ -126,6 +130,15 @@ Model versions are pinned, and only weights and configuration are downloaded, ne
   input's gain, also while recording: keep the loudest parts out of the red (double-click for
   100%). It is the same setting as the desktop's sound settings, so it stays with the
   microphone; with PortAudio (no PipeWire) it is hidden and those settings set it.
+- **Record a call.** With a microphone selected, turn on "Computer audio" under the gain
+  slider: Echo also records what the default output plays, and a second meter shows it. Start
+  the call, then Record. Wear headphones: with speakers the microphone hears the call too.
+  Echo only listens, so the call app keeps its microphone and sound, and if you switch outputs
+  (headphones in, headphones out) the recording follows the default output. The recording is
+  one FLAC file with two channels, your microphone on the first and the call on the second;
+  Echo plays and transcribes them together, and speaker labels never mix you up with someone
+  in the call (you are speaker 1). An exported file keeps the two channels. The choice is
+  remembered; quick notes always record the microphone alone.
 - **Record from anywhere.** With Echo running (also in the tray), Ctrl+Alt+R starts or stops a
   recording from any application, and Ctrl+Alt+N records a quick note: press it again to stop,
   and when the text is ready it is on your clipboard. The first time, your desktop asks you to
@@ -219,7 +232,7 @@ Every core action also works from a terminal:
 
 ```text
 echo-app                          open the window (files given are imported)
-echo-app record [--wait] [--source NODE] [--title T]
+echo-app record [--wait] [--source NODE] [--title T] [--computer-audio | --no-computer-audio]
 echo-app record --toggle          start a recording, or stop the active one
 echo-app record --quick-note [--wait]   the same for a quick note; --wait prints its text
 echo-app pause | resume | stop | status
@@ -341,6 +354,9 @@ PulseAudio still owns audio, and X11 sessions missing `libxcb-cursor0`).
 - **The meter does not move.** Pick another input. If Echo says no sound is arriving, check the
   cable, the mute switch and the input gain (the slider under the meter, or a knob on your
   audio interface).
+- **A recorded call has only my side.** Echo records the default output. Check that the call
+  app plays to it (its audio settings, or "Same as system"), or make the call's device the
+  default in the desktop's sound settings; the computer-audio meter moves when it is right.
 - **Old voice notes (`.amr`) do not import.** Fedora's `ffmpeg-free` lacks the AMR decoder;
   install `ffmpeg` from RPM Fusion. Doctor lists the missing decoders.
 - **Transcription is slower than expected.** With less than about 5 GB of graphics memory free

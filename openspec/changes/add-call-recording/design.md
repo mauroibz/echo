@@ -91,9 +91,8 @@ catches it. The waveform and the worker use the same sum.
 The channels say who is where, so speaker labels use them: each passage goes to the track that
 is louder over it (RMS), and passages are clustered within each track. A voice on the
 microphone and a voice in the call are never merged, which the embedding alone could do with
-similar voices; the microphone's speakers come first, so the user is speaker 1. With speakers
-instead of headphones the microphone also hears the call, but quieter than the call's own track,
-so the louder-track rule still holds; this is checked on a real call.
+similar voices; the microphone's speakers come first, so the user is speaker 1. This assumes
+headphones (see "Decisions made while implementing").
 
 ### The default output, followed
 
@@ -107,3 +106,28 @@ settings already cover.
 The toggle is a setting (`computer_audio`), like the remembered source, and the CLI follows it
 unless `--computer-audio` or `--no-computer-audio` is given, so the record shortcut and the
 window record the same thing.
+
+## Decisions made while implementing
+
+- **Headphones are assumed.** The user records calls with headphones, so the microphone hears
+  only the room. Attributing a passage to the louder track relies on that; behavior with
+  speakers was not measured and is not a goal. The README tells the user to wear headphones.
+- **Padding, never trimming.** When the input is the shorter take of a pair, it gets the
+  silence, and `tracks.time_map` moves markers and gap notes by it, so no captured sample of
+  either track is dropped.
+- **A pair with one half alive after a crash** is stopped and a new pair started, rather than
+  carrying on with one track until the next pause.
+- **An empty input take with a non-empty computer-audio take** keeps the latter; finalize builds
+  pairs by take number from the files on disk, and a missing half is silence. Take numbers skip
+  any number used by either half.
+- **Loudness per passage** is measured on the two channels decoded at 4 kHz (57 MB for an hour
+  instead of 230 MB at 16 kHz).
+- **The command line follows the window's choice** unless `--computer-audio` or
+  `--no-computer-audio` is given; the remembered choice is dropped silently where it cannot
+  apply (a monitor source, PortAudio), while the explicit flag is an error there. Quick notes
+  always record the input alone.
+- **Playback of a call always goes through the limiter,** not only above 100% volume, since the
+  sum of two sides can exceed full scale.
+- **The toggle is a checkable button** under the gain slider, with the second meter beside it
+  while it is on; it is disabled while recording.
+
