@@ -36,6 +36,43 @@ def _fmt_dur(sec) -> str:
     return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
 
 
+def _cmd_people(args) -> int:
+    """Everyone Echo knows: recordings they speak in, aliases, tags and notes."""
+    from . import dictionary, people
+    from .index import Index
+    from .library import Library
+    from .settings import load
+
+    cfg, _ = load()
+    lib = Library(cfg.data_path)
+    idx = Index(lib)
+    try:
+        idx.sync()
+        d = dictionary.current()
+        out = []
+        for p in people.everyone(lib, idx):
+            entry = d.find(p.name)
+            prof = p.profile or people.Profile(p.name)
+            out.append({"name": p.name, "aliases": list(entry.aliases) if entry else [], "tags": prof.tags,
+                        "notes": prof.notes, "voice": p.has_voice,
+                        "recordings": [{"id": r["id"], "title": r["title"], "seconds": r["seconds"]}
+                                       for r in people.recordings_of(idx, p.name)]})
+    finally:
+        idx.close()
+    if args.json:
+        import json
+
+        print(json.dumps({"people": out}, ensure_ascii=False, indent=2))
+        return 0
+    for p in out:
+        spoken = sum(r["seconds"] for r in p["recordings"])
+        extra = "  " + " ".join(f"#{t}" for t in p["tags"]) if p["tags"] else ""
+        print(f"{p['name']}  ({len(p['recordings'])} recordings, {_fmt_dur(spoken).strip()} spoken){extra}")
+        if p["notes"]:
+            print("    " + " ".join(p["notes"].split()))
+    return 0
+
+
 def _cmd_list(args) -> int:
     from .index import Index
     from .library import Library
@@ -224,6 +261,9 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("files", nargs="*")
     s.set_defaults(func=_cmd_gui)
 
+    s = sub.add_parser("people", help="everyone Echo knows: their recordings, aliases, tags and notes")
+    s.add_argument("--json", action="store_true", help="print one JSON document")
+    s.set_defaults(func=_cmd_people)
     s = sub.add_parser("list", help="list recordings")
     s.add_argument("query", nargs="?", help="search titles, notes and transcripts; #word is a tag, @name a speaker "
                                                    "(@name words: only what they said)")

@@ -211,6 +211,14 @@ Model versions are pinned, and only weights and configuration are downloaded, ne
   `@ana precio` finds only what Ana said: each result shows her words under its title, and
   opening it highlights them in her passages only. Typing `@` offers the names. Speakers you
   have not named are not people yet, so they are not found this way.
+- **People.** View → People (Ctrl+Shift+P), or "Open profile" on a speaker's name, lists
+  everyone Echo knows: people in the dictionary and everyone you named as a speaker. A profile
+  keeps notes about them, their aliases (other spellings transcription corrects to their name),
+  and tags; lists every recording they speak in with how long they spoke (double-click to open
+  it); plays a few seconds of their voice; and forgets a voice Echo learned wrong. A person's
+  tags count for their recordings in search: tag Ana `client:Acme` and `#client:acme` also finds
+  every call she is in. Profiles are files in the data folder (`people/`), so they are backed up
+  and synced with your recordings.
 - **Linked recordings.** Voice notes that are one long message (WhatsApp cuts them every few
   minutes), or a recording you stopped and started again, can be linked into a set without
   merging any audio. Select them (Ctrl+click or Shift+click) and press Link in the bar under
@@ -262,6 +270,7 @@ echo-app cancel ID
 echo-app list [QUERY] [--tag T] [--json]   list or search recordings (#word in QUERY is a tag,
                                   #category: any tag of a category, @name a speaker)
 echo-app tag ID [+TAG ...] [-TAG ...]   show, add or remove tags
+echo-app people [--json]          everyone Echo knows: recordings, aliases, tags and notes
 echo-app link ID ID... [--title T]   link recordings into a set (a set id among them: add to it)
 echo-app unlink ID                a set id dissolves the set; a recording id takes it out of its set
 echo-app export ID [--format txt|md|srt|vtt|json] [--out PATH]   (ID may be a set's)
@@ -347,6 +356,8 @@ git fetch --tags && git checkout "$(git describe --tags --abbrev=0 origin/main)"
 | Recordings and transcripts | `~/.local/share/echo/recordings/`, one folder per recording |
 | Settings | `~/.config/echo/settings.toml` |
 | Dictionary of names and terms | `~/.config/echo/glossary.toml` |
+| People's profiles (notes, tags) | `~/.local/share/echo/people/`, one file per person |
+| Learned voices | `~/.config/echo/voices.json` |
 | Logs | `~/.local/state/echo/` |
 | Waveform cache | `~/.cache/echo/` |
 | Models | `~/.cache/huggingface/hub/` |

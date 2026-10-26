@@ -291,6 +291,11 @@ def recognize(centroid, similarity, threshold: float) -> str | None:
     return best
 
 
+def forget_voice(name: str) -> None:
+    """Drop a person's voice (learned wrong); naming them again teaches it anew."""
+    _rename_voice(name, None)
+
+
 def rename_voice(old: str, new: str) -> None:
     """Keep a voice under a new name (the user changed their own name in Settings)."""
     _rename_voice(old, new)

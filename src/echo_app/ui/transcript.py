@@ -479,6 +479,7 @@ class TranscriptPanel(QWidget):
     changed = Signal(str)  # recording id whose files changed
     timestamps_toggled = Signal(bool)
     marker_clicked = Signal(float)
+    profile_requested = Signal(str)  # a person's name: open their profile
 
     def __init__(self, library: Library, parent=None):
         super().__init__(parent)
@@ -1505,6 +1506,7 @@ class TranscriptPanel(QWidget):
         m.addAction(icon("rename"), f"Name speaker {n}…" if not current else f"Rename {current}…",
                     lambda: self._ask_speaker_name(n))
         if current:
+            m.addAction(icon("users"), f"Open {current}'s profile", lambda: self.profile_requested.emit(current))
             m.addAction(icon("clear"), "Forget this name", lambda: self.name_speaker(n, ""))
         m.addSeparator()
         m.addAction(icon("users"), "No speaker labels for this recording", lambda: self.set_speakers_off(True))

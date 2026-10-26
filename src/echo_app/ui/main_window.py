@@ -243,6 +243,8 @@ class MainWindow(QMainWindow):
         self.player.export_requested.connect(self.export_audio)
         self.transcript = TranscriptPanel(self.library)
         self.transcript.message.connect(self.show_message)
+        self.transcript.profile_requested.connect(self.open_people)
+        self._people_dialog = None
         self.transcript.seek_requested.connect(self._seek_and_play)
         self.transcript.download_requested.connect(self.show_model_dialog)
         self.transcript.changed.connect(self.model.reload)
@@ -340,6 +342,8 @@ class MainWindow(QMainWindow):
         self.a_times.setCheckable(True)
         self.a_times.setChecked(self.transcript.show_timestamps)
         self.transcript.timestamps_toggled.connect(self.a_times.setChecked)
+        v.addSeparator()
+        self._act(v, "P&eople…", self.open_people, "Ctrl+Shift+P", "users")
 
         r = mb.addMenu("&Recording")
         self.a_record = self._act(r, "&Record", self.recorder_panel.toggle_record, "Ctrl+R")
@@ -634,6 +638,30 @@ class MainWindow(QMainWindow):
         self.list.viewport().update()
         if self.current_key() != self._last_selected:
             self._selection_changed(self.list.currentIndex(), None)
+
+    def open_people(self, name: str | None = None):
+        """The People window, one for the session; with a name, at that person's profile."""
+        from .people import PeopleDialog
+
+        if self._people_dialog is None:
+            self._people_dialog = PeopleDialog(self.library, self)
+            self._people_dialog.open_recording.connect(self._open_from_people)
+        dlg = self._people_dialog
+        if name:
+            dlg.select(name)
+        else:
+            dlg.reload()
+        dlg.show()
+        dlg.raise_()
+        dlg.activateWindow()
+
+    def _open_from_people(self, rid: str):
+        if self.model.row_of(rid) < 0 and self.search.text():
+            self.search.clear()  # the search hid it
+            self._run_search()
+        self._select(rid)
+        self.raise_()
+        self.activateWindow()
 
     def _select(self, rid: str):
         self.model.refresh()

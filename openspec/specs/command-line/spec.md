@@ -85,3 +85,11 @@ timeout, and SHALL list the exit codes.
 #### Scenario: An agent looks for what Ana said
 - **WHEN** a script runs `echo-app list "@ana precio" --json`
 - **THEN** only the recordings where Ana said "precio" are listed
+
+### Requirement: People from the command line
+`echo-app people` SHALL list each person with the recordings they speak in, their tags and
+notes; with `--json` as one JSON document.
+
+#### Scenario: An agent prepares for a call
+- **WHEN** a script runs `echo-app people --json`
+- **THEN** each person has their name, aliases, tags, notes and a list of recording ids with seconds spoken

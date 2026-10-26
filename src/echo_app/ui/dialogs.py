@@ -767,6 +767,7 @@ SHORTCUTS = [
     ("Export transcript", "Ctrl+E"),
     ("Import audio", "Ctrl+O"),
     ("Search all recordings (titles, notes, transcripts)", "Ctrl+Shift+F or Ctrl+K"),
+    ("People: profiles, their recordings and voices", "Ctrl+Shift+P"),
     ("Select several recordings", "Ctrl+click, Shift+click"),
     ("Link the selected recordings into a set", "Ctrl+L, or drag one onto another"),
     ("Show or hide a set's parts", "→ / ← (list), or click its arrow"),

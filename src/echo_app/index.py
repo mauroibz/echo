@@ -12,7 +12,7 @@ import sqlite3
 
 from .library import Library, Recording, fold_tag
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS recordings (
@@ -40,6 +40,8 @@ CREATE TABLE IF NOT EXISTS speakers (
     seconds REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS speakers_folded ON speakers (name_folded);
+-- Tags on people (their profiles): a recording where a tagged person speaks matches the tag too.
+CREATE TABLE IF NOT EXISTS person_tags (name_folded TEXT NOT NULL, tag_folded TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS sets (
     id TEXT PRIMARY KEY,
     title TEXT NOT NULL,
@@ -63,7 +65,8 @@ class Index:
         if version != SCHEMA_VERSION:
             db.executescript("DROP TABLE IF EXISTS recordings; DROP TABLE IF EXISTS search; "
                              "DROP TABLE IF EXISTS tags; DROP TABLE IF EXISTS sets; "
-                             "DROP TABLE IF EXISTS spoken; DROP TABLE IF EXISTS speakers;")
+                             "DROP TABLE IF EXISTS spoken; DROP TABLE IF EXISTS speakers; "
+                             "DROP TABLE IF EXISTS person_tags;")
             db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
         db.executescript(_SCHEMA)
         return db
@@ -123,6 +126,7 @@ class Index:
             self.remove(rid)
             changed += 1
         self._sync_sets()
+        self._sync_people()
         return changed
 
     def _sync_sets(self) -> None:
@@ -138,6 +142,15 @@ class Index:
         with self.db:
             self.db.execute("DELETE FROM sets")
             self.db.executemany("INSERT INTO sets VALUES (?,?,?,?)", rows)
+
+    def _sync_people(self) -> None:
+        """Profiles are a few small files too: their tags are read each time."""
+        from . import people
+
+        rows = [(fold_tag(p.name), fold_tag(t)) for p in people.profiles(self.library) for t in p.tags]
+        with self.db:
+            self.db.execute("DELETE FROM person_tags")
+            self.db.executemany("INSERT INTO person_tags VALUES (?,?)", rows)
 
     def sets(self) -> list[dict]:
         """Sets with two or more present members: {"id", "title", "members", "newest"}."""
@@ -177,13 +190,15 @@ class Index:
             where.append("search MATCH ?")
             args.append(_match(words))
         for t in tags:
+            # The recording's own tags, or a tag of someone who speaks in it.
             ft = fold_tag(t)
             if ft.endswith(":") and len(ft) > 1:  # "#client:": any value of the category
-                where.append("r.id IN (SELECT id FROM tags WHERE substr(tag_folded, 1, ?) = ?)")
-                args += [len(ft), ft]
+                test, targs = "substr({}tag_folded, 1, ?) = ?", [len(ft), ft]
             else:
-                where.append("r.id IN (SELECT id FROM tags WHERE tag_folded = ?)")
-                args.append(ft)
+                test, targs = "{}tag_folded = ?", [ft]
+            where.append(f"(r.id IN (SELECT id FROM tags WHERE {test.format('')}) OR r.id IN (SELECT s.id FROM "
+                         f"speakers s JOIN person_tags p ON p.name_folded = s.name_folded WHERE {test.format('p.')}))")
+            args += targs + targs
         if where:
             sql += " WHERE " + " AND ".join(where)
         return self.db.execute(sql + " ORDER BY r.created DESC", args).fetchall()

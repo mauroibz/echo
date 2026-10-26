@@ -9,19 +9,23 @@ special feature. This page says what to copy and what to leave out.
 |---|---|---|
 | Recordings, transcripts, tags, markers | `~/.local/share/echo/recordings/` | `Documents\Echo\recordings\` |
 | Linked sets (which recordings belong together, in order) | `~/.local/share/echo/sets/` | `Documents\Echo\sets\` |
+| People's profiles (notes, tags) | `~/.local/share/echo/people/` | `Documents\Echo\people\` |
 | The search index | `library.sqlite` next to `recordings/` | the same |
 | Settings | `~/.config/echo/settings.toml` | `%APPDATA%\Echo\settings.toml` |
 | Dictionary of names and terms | `~/.config/echo/glossary.toml` | `%APPDATA%\Echo\glossary.toml` |
+| Learned voices | `~/.config/echo/voices.json` | `%APPDATA%\Echo\voices.json` |
 
 Each recording is one folder: its audio, `meta.json`, and its transcripts. Copying the folder is
 enough to move a recording. A linked set is one small file in `sets/` naming its recordings; a
 set whose recordings are not all there yet shows the ones that are, and the others rejoin it
-when they arrive. If a set is changed on two computers at once, the newer file wins.
+when they arrive. If a set is changed on two computers at once, the newer file wins. A person's
+profile is one small file in `people/`, so editing different people on two computers never
+conflicts.
 
 ## Backups and sync
 
-- **A backup** is a copy of the data folder (and, if you want your settings and dictionary,
-  of the settings folder). Any backup tool works; nothing needs Echo to be closed, although a
+- **A backup** is a copy of the data folder (and, if you want your settings, dictionary and learned
+  voices, of the settings folder). Any backup tool works; nothing needs Echo to be closed, although a
   recording in progress is only complete once it is stopped.
 - **Syncing between computers** with Syncthing, Nextcloud or a shared drive works the same way.
   Exclude `library.sqlite`, `library.sqlite-wal` and `library.sqlite-shm`: the index is a cache

@@ -336,6 +336,16 @@ words must match `spoken` rows of those people, and FTS5's `snippet()` gives the
 each result. The window passes the speaker numbers to the transcript, whose find keeps only
 matches inside their passages. Only named speakers are indexed: "Speaker 2" is not a person.
 
+People are everyone in the dictionary's people, everyone with a profile and every name given to
+a speaker. A profile (notes and tags) is a file per person in the data folder's `people/`, since
+notes about a person are the user's content and belong with the recordings they describe; one
+file each keeps two machines editing different people apart, and an empty profile has no file.
+Aliases stay in the dictionary, where transcription reads them, and voices in `voices.json`; the
+People window edits all three. The index reads the profiles' tags into `person_tags` (schema 5)
+on every sync, as it does the few set files, and a tag filter matches a recording that carries
+the tag or where someone who carries it speaks. The voice sample plays the person's longest
+passage in their latest recording through a `Playback` of the window's own.
+
 ### Speakers
 
 After recognition the worker labels passages by speaker, on the processor: a voice embedding per

@@ -24,6 +24,10 @@ tag.
 - Search by speaker. `@ana` lists the recordings where Ana speaks; `@ana precio` finds only what
   she said, shows her words under each result, and highlights them in her passages. Typing `@`
   offers the names. Works in `echo-app list` too.
+- People. View → People (Ctrl+Shift+P), or "Open profile" on a speaker's name: notes, aliases
+  and tags for each person, every recording they speak in with their speaking time, a sample of
+  their voice, and "Forget voice". A person's tags find their recordings in search. Profiles
+  are files in the data folder's `people/`; `echo-app people [--json]` lists them.
 
 ## 1.1.0 - 2026-10-25
 
