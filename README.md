@@ -171,8 +171,8 @@ Model versions are pinned, and only weights and configuration are downloaded, ne
   to the next passage to check. While a passage plays, typing pauses it, and a second after you
   stop it plays again from its start (Settings → Editing turns this off).
 - **Check what matters.** Passages Echo is unsure of are shaded, with the reason on hover
-  ("very few words for 12 s of speech", "the model was unsure of it"); the status line and the
-  list count them. Editing a passage clears its mark.
+  ("very few words for 12 s of speech", "the model was unsure of it", "the model repeated itself
+  here"); the status line and the list count them. Editing a passage clears its mark.
 - **Other languages.** Spanish is the default. The transcript's menu (⋯ → Language) sets a
   recording's language and transcribes it again; Settings → Transcription language changes the
   default. The model handles Arabic, Chinese, Dutch, English, French, German, Greek, Italian,

@@ -81,7 +81,8 @@ def flag_reason(flag: str, seg: dict) -> str:
     seconds = max(0, round(float(seg.get("end", 0)) - float(seg.get("start", 0))))
     return {"short": f"very few words for {seconds} s of speech",
             "retried": "transcribed a second time because the first try came back too short",
-            "low": "the model was unsure of it"}.get(flag, flag)
+            "low": "the model was unsure of it",
+            "loop": "the model repeated itself here; listen to it"}.get(flag, flag)
 
 
 def _html(text: str) -> str:

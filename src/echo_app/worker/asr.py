@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from typing import Callable
 
 import numpy as np
@@ -56,6 +57,22 @@ RETRY_BELOW_LOGPROB = -0.5
 def min_words(seconds: float) -> int:
     """Fewest words a passage of speech this long should produce (very conservative)."""
     return 1 if seconds < 2.5 else int(seconds * 0.4)
+
+
+# The same one to three words said six or more times running: the model stuck in a loop. Seen
+# 2026-10-28 in a meeting: one word and a period forty times, where another run wrote the
+# sentence it began; and an unsure passage retried into "Y, y, y, y, …", which the retry kept for being more
+# confident and no shorter. Real speech repeats less ("sí, sí, sí", "no, no, no, no").
+LOOP = re.compile(r"((?:\b\w+\b[\s,.;:!?¿¡…-]*){1,3}?)\1{5,}", re.IGNORECASE)
+
+
+def looping(text: str) -> bool:
+    return LOOP.search(text) is not None
+
+
+def unloop(text: str) -> str:
+    """A loop cut down to two of its repetitions."""
+    return LOOP.sub(lambda m: m.group(0)[:2 * len(m.group(1))], text).strip()
 
 
 class ModelsMissing(RuntimeError):
@@ -351,7 +368,8 @@ class Engine:
         texts = [t for t, _lp in results]
         logprobs = [lp for _t, lp in results]
         flags: list[list[str]] = [[] for _ in clips]
-        short = [i for i, (c, t) in enumerate(zip(clips, texts)) if words(t) < min_words(len(c) / SAMPLE_RATE)]
+        short = [i for i, (c, t) in enumerate(zip(clips, texts))
+                 if words(t) < min_words(len(c) / SAMPLE_RATE) or looping(t)]
         for fallback in ((None, False), (None, True)) if short else ():
             extra, bare = fallback
             if not short:
@@ -359,17 +377,21 @@ class Engine:
             retry = self._transcribe_batch([clips[i] for i in short], adapter, extra, bare=bare, language=language)
             still = []
             for i, (t, lp) in zip(short, retry):
-                if words(t) > words(texts[i]):
+                if not looping(t) and (words(t) > words(texts[i]) or looping(texts[i])):
                     log.info("passage retried with %s context: %d -> %d words", "no" if bare else "style-only",
                              words(texts[i]), words(t))
                     texts[i], logprobs[i] = t, lp
                     if "retried" not in flags[i]:
                         flags[i].append("retried")
-                if words(texts[i]) < min_words(len(clips[i]) / SAMPLE_RATE):
+                if words(texts[i]) < min_words(len(clips[i]) / SAMPLE_RATE) or looping(texts[i]):
                     still.append(i)
             short = still
         for i in short:
-            flags[i].append("short")
+            if looping(texts[i]):
+                texts[i] = unloop(texts[i])
+                flags[i].append("loop")
+            if words(texts[i]) < min_words(len(clips[i]) / SAMPLE_RATE):
+                flags[i].append("short")
         # A passage the model was very unsure of may be a fragment the context sentence caused,
         # with enough words to pass the check above: it gets the same retries, and the more
         # confident text is kept.
@@ -380,7 +402,7 @@ class Engine:
             retry = self._transcribe_batch([clips[i] for i in unsure], adapter, extra, bare=bare, language=language)
             still = []
             for i, (t, lp) in zip(unsure, retry):
-                if lp is not None and lp > logprobs[i] and words(t) >= words(texts[i]):
+                if lp is not None and lp > logprobs[i] and words(t) >= words(texts[i]) and not looping(t):
                     log.info("unsure passage retried with %s context: %.2f -> %.2f", "no" if bare else "style-only",
                              logprobs[i], lp)
                     texts[i], logprobs[i] = t, lp

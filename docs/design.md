@@ -232,11 +232,15 @@ speech. The same happens when the model was very unsure of a passage (mean token
 below -0.5; ordinary passages measured -0.01 to -0.17): with the dictionary's sentence in the
 context, one 8-second passage came back as a confident-sounding fragment ("Debido a que no se
 puede", -1.17) that had enough words to pass the first check, and the retry recovered the
-sentence. The more confident text is kept.
+sentence. The more confident text is kept, unless it is a loop: the same one to three words six
+or more times running. A meeting on 2026-10-28 had one word and a period forty times where
+another run wrote the sentence, and an unsure passage whose retry, "Y, y, y, y, …", won for being more
+confident and no shorter. A loop is retried like a short passage, a retry that loops is never
+kept, and one that stays is cut down to two repetitions and flagged `loop`.
 
 Each passage in `transcript.json` (version 2) carries `flags` and its `logprob`: `retried`
-(the kept text came from a retry), `short` (still short after the retries) and `low` (more than
-1.5 standard deviations below the recording's mean log-probability, computed when the job ends;
+(the kept text came from a retry), `short` (still short after the retries), `loop` (see above)
+and `low` (more than 1.5 standard deviations below the recording's mean log-probability, computed when the job ends;
 fixed thresholds do not carry over between microphones). Asking `generate` for the scores cost
 1.3% of GPU time on a 20-minute recording. The editor shades a flagged passage while its text is
 still the model's, using the same alignment as the margin, so editing it clears the mark.

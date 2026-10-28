@@ -74,6 +74,10 @@ tag.
 
 - Pieces under 1.5 s cut out of a passage for an interruption often came back from the model as
   "Gracias."; that text is no longer shown.
+- The model sometimes got stuck repeating a word ("por. por. por. …"), and the retry of an
+  unsure passage could even prefer such a loop. A loop is now transcribed again, never kept from
+  a retry, and if it stays it is cut to two repetitions and marked "the model repeated itself
+  here".
 
 ## 1.0.1 - 2026-10-24
 
