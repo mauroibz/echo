@@ -322,7 +322,8 @@ class WelcomeDialog(FittedDialog):
         m = self._panel.meter
         self.meter._level, self.meter._hold, self.meter._clip_until = m._level, m._hold, m._clip_until
         self.meter.update()
-        hint = self._panel.warning.text() if self._panel.warning.isVisibleTo(self._panel) else ""
+        hint = (self._panel.warning.text() if self._panel.warning.isVisibleTo(self._panel) else "") \
+            or self._panel.silence
         if hint != self.hint.text() or bool(hint) != self.hint.isVisibleTo(self):
             self.hint.setText(hint)
             self.hint.setVisible(bool(hint))

@@ -28,6 +28,9 @@ NOTE_IDLE_MS = 10_000  # the marker note field closes after this long without ty
 GAIN_MAX_PCT = 150  # pipewire.GAIN_MAX
 SILENT_HINT = ("No sound from this input for {s} seconds. Check that the microphone is connected, "
                "not muted and its gain is up, or pick another input.")
+# In the sidebar the hint is a word on the empty meter: a noise gate makes exact silence between
+# sentences all the time, and a line of text coming and going there moved the controls under it.
+SILENT_NOTE = "No sound for {s} s"
 
 
 class LevelMeter(QWidget):
@@ -43,6 +46,7 @@ class LevelMeter(QWidget):
         self._hold = FLOOR_DB
         self._hold_t = 0.0
         self._clip_until = 0.0
+        self._note = ""
         self.setToolTip("Input level. Keep the loudest parts out of the red.")
         self.setAccessibleName("Input level")
 
@@ -55,6 +59,13 @@ class LevelMeter(QWidget):
         if clipped:
             self._clip_until = now + 2.0
         self.update()
+
+    def set_note(self, text: str, tip: str = "") -> None:
+        """A few words drawn on the bar while it is empty (the input is silent); `tip` explains them."""
+        if text != self._note:
+            self._note = text
+            self.setToolTip(tip or "Input level. Keep the loudest parts out of the red.")
+            self.update()
 
     def sizeHint(self) -> QSize:
         return QSize(200, 14)
@@ -87,6 +98,14 @@ class LevelMeter(QWidget):
             hx = r.left() + r.width() * self._frac(self._hold)
             p.setBrush(theme.color("on_deep" if self.on_deep else "ink", 0.9))
             p.drawRoundedRect(QRectF(hx - 1, r.top() - 2, 2, r.height() + 4), 1, 1)
+        if self._note:
+            f = p.font()
+            f.setPixelSize(max(9, h - 3))
+            p.setFont(f)
+            p.setPen(QColor(t.amber))
+            p.drawText(r.adjusted(4, -6, 0, 6), int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter),
+                       self._note)
+            p.setPen(Qt.PenStyle.NoPen)
         clipping = time.monotonic() < self._clip_until
         p.setBrush(QColor(t.coral_deep) if clipping else theme.color(ground, 0.18))
         p.drawEllipse(QRectF(self.width() - lamp, (h - lamp) / 2, lamp, lamp))
@@ -123,6 +142,7 @@ class RecorderPanel(QWidget):
         self._busy = False
         self._window_shown = True
         self._silent_since: float | None = None
+        self.silence = ""  # the silent-input hint, shown in full on the welcome screen
         self._state = ""
         self._phase, self._swell, self._wave_t = 0.0, 0.0, time.monotonic()
         self._wave_timer = QTimer(self, interval=33, timeout=self._animate)
@@ -637,7 +657,8 @@ class RecorderPanel(QWidget):
                 self.out_meter.set_level(*levels.tail_peak(sess.rec.takes_dir / out, st.get("rate", 48000), 1))
             else:
                 self.out_meter.set_level(FLOOR_DB)
-            self._show_warning(st.get("warning") or self._silence_hint(db))
+            self._show_warning(st.get("warning") or "")
+            self._show_silence(self._silence_hint(db))
         else:
             self._state = ""
             db = None
@@ -652,7 +673,8 @@ class RecorderPanel(QWidget):
                 self.out_meter.set_level(self._out_monitor.level, self._out_monitor.take_clip())
             else:
                 self.out_meter.set_level(FLOOR_DB)
-            self._show_warning(self._silence_hint(db))
+            self._show_warning("")
+            self._show_silence(self._silence_hint(db))
 
     def _silence_hint(self, db: float | None) -> str:
         """A hint once the input has been exactly silent for a while; None level = not measuring."""
@@ -664,6 +686,11 @@ class RecorderPanel(QWidget):
             self._silent_since = now
         secs = now - self._silent_since
         return SILENT_HINT.format(s=int(secs)) if secs >= SILENT_AFTER_S else ""
+
+    def _show_silence(self, hint: str):
+        self.silence = hint
+        secs = int(time.monotonic() - self._silent_since) if hint and self._silent_since is not None else 0
+        self.meter.set_note(SILENT_NOTE.format(s=secs) if hint else "", hint)
 
     def _show_warning(self, text: str):
         if text != self.warning.text():

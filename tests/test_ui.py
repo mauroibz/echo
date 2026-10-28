@@ -348,6 +348,24 @@ def test_silent_input_shows_hint(window, monkeypatch):
     assert panel._silence_hint(None) == ""  # not measuring
 
 
+def test_silent_input_is_a_note_on_the_meter(window, monkeypatch):
+    """A noise gate makes exact silence often: the sidebar says so on the meter, not in a line
+    of text that would push the controls under it."""
+    from echo_app.ui import recorder_panel as rp
+    panel = window.recorder_panel
+    now = [1000.0]
+    monkeypatch.setattr(rp.time, "monotonic", lambda: now[0])
+    panel._silent_since = None
+    panel._show_silence(panel._silence_hint(-90.0))
+    now[0] += 12
+    panel._show_silence(panel._silence_hint(-90.0))
+    assert panel.meter._note == "No sound for 12 s" and "microphone" in panel.meter.toolTip()
+    assert not panel.warning.isVisibleTo(panel) and "12 seconds" in panel.silence
+    panel.meter.grab()  # paints with the note
+    panel._show_silence(panel._silence_hint(-40.0))
+    assert panel.meter._note == "" and panel.silence == "" and "Input level" in panel.meter.toolTip()
+
+
 def test_meter_runs_under_welcome_and_stops_when_minimized(window, monkeypatch):
     from echo_app.ui.dialogs import WelcomeDialog
 
