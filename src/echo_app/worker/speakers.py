@@ -208,9 +208,9 @@ def local_activity(window, samples: np.ndarray) -> np.ndarray:
     return total
 
 
-def interruptions(activity: np.ndarray, start: float) -> list[tuple[float, float]]:
+def interruptions(activity: np.ndarray, start: float, min_turn: float = MIN_TURN) -> list[tuple[float, float]]:
     """Spans (seconds) where someone other than the main voice of a passage starting at `start`
-    speaks for at least MIN_TURN, including over the main voice; spans closer than JOIN are one."""
+    speaks for at least `min_turn`, including over the main voice; spans closer than JOIN are one."""
     if not len(activity):
         return []
     act = activity >= SEG_ACTIVE
@@ -225,7 +225,7 @@ def interruptions(activity: np.ndarray, start: float) -> list[tuple[float, float
         j = i
         while j < len(other) and other[j]:
             j += 1
-        if (j - i) * SEG_STEP / SAMPLE_RATE >= MIN_TURN:
+        if (j - i) * SEG_STEP / SAMPLE_RATE >= min_turn:
             s = start + (i * SEG_STEP + SEG_HALF) / SAMPLE_RATE
             e = start + (j * SEG_STEP + SEG_HALF) / SAMPLE_RATE
             if spans and s - spans[-1][1] < JOIN:
@@ -234,6 +234,114 @@ def interruptions(activity: np.ndarray, start: float) -> list[tuple[float, float
                 spans.append((s, e))
         i = j
     return spans
+
+
+# ---- calls -----------------------------------------------------------------------------------------
+# A call has the user alone on the microphone and everyone else on the computer audio, and with
+# headphones each track hears only its side, so a change of side needs no model: it is where the
+# other track speaks. Frames of TURN_FRAME; a track speaks in a frame above TRACK_FLOOR (int16
+# RMS; a gate's silence and a quiet line are below), however loud the other one is: requiring it
+# to be twice as loud found 27 of 56 interruptions said over someone on the synthetic calls,
+# against 55 of 56 without (add-call-turns design.md). A run of the main side's speech shorter
+# than TURN_HOLD inside the other side's does not end it.
+TURN_FRAME = 0.05
+TRACK_FLOOR = 100.0
+TURN_HOLD = 0.2
+# In a call only turns of a second or more are cut out, on either track. On a real 20-minute
+# call, cutting from 0.4 s made 276 passages of the 60 uncut ones, 115 of them under 1.5 s and 25
+# heard as "Gracias." (backchannels, breaths and the line's noise are turns too); from 1 s, 122
+# passages, 6 under 1.5 s, 1 "Gracias.". On the synthetic calls it catches fewer interruptions
+# under a second (add-call-turns design.md).
+CALL_MIN_TURN = 1.0
+
+
+def _speaks(part: np.ndarray, rate: int) -> np.ndarray:
+    """Per TURN_FRAME frame of (N, 2) samples, whether each track speaks: (frames, 2) bools."""
+    n = max(1, int(TURN_FRAME * rate))
+    f = len(part) // n
+    x = part[:f * n].astype(np.float64).reshape(f, n, -1)
+    return np.sqrt((x ** 2).mean(axis=1)) > TRACK_FLOOR
+
+
+# A call whose two tracks are the same sound (both captures ended up on the microphone, see
+# audio/pipewire.py): in two such real calls 54% and 100% of the frames with speech had the
+# tracks within 12% of each other, against under 1% in two calls recorded right.
+SAME_LEVEL = 0.12  # in log10, about 1 dB
+SAME_TRACKS = 0.3  # share of speech frames at the same level above which the tracks are one
+
+
+def tracks_differ(stereo: np.ndarray, rate: int) -> bool:
+    """Whether a call's tracks hold different sides, rather than one sound recorded twice."""
+    on = _speaks(stereo, rate)
+    n = max(1, int(TURN_FRAME * rate))
+    f = len(on)
+    if not f or not on.any():
+        return True
+    rms = np.sqrt((stereo[:f * n].astype(np.float64).reshape(f, n, 2) ** 2).mean(axis=1))
+    ratio = np.abs(np.log10(np.maximum(rms[:, 0], 1.0) / np.maximum(rms[:, 1], 1.0)))
+    speech = on.any(axis=1)
+    return float((ratio[speech] < SAME_LEVEL).mean()) < SAME_TRACKS
+
+
+def track_turns(stereo: np.ndarray, rate: int, start: float, end: float,
+                min_turn: float = MIN_TURN) -> list[tuple[float, float]]:
+    """Spans (seconds) of a call's passage from `start` to `end` where the side that is not the
+    passage's main one speaks for at least `min_turn`; `stereo` is (N, 2) at `rate`."""
+    on = _speaks(stereo[int(start * rate):int(end * rate)], rate)
+    if not len(on):
+        return []
+    main = int(on[:, 1].sum() > on[:, 0].sum())
+    mine, other = on[:, main], on[:, 1 - main]
+    runs: list[list[int]] = []  # [first frame, end frame, frames of the other side]
+    i, f = 0, len(on)
+    while i < f:
+        if not other[i]:
+            i += 1
+            continue
+        j = i
+        while j < f and other[j]:
+            j += 1
+        if runs and (i - runs[-1][1]) * TURN_FRAME < JOIN and mine[runs[-1][1]:i].sum() * TURN_FRAME < TURN_HOLD:
+            runs[-1][1] = j
+            runs[-1][2] += j - i
+        else:
+            runs.append([i, j, j - i])
+        i = j
+    return [(start + a * TURN_FRAME, start + b * TURN_FRAME) for a, b, frames in runs
+            if frames * TURN_FRAME >= min_turn]
+
+
+TURN_SHARE = 0.3  # an interrupting piece is the other side's when that side speaks in this much of it
+
+
+def interrupting_sides(stereo: np.ndarray, rate: int, spans: Sequence[tuple[float, float]], sides: Sequence[int],
+                       interrupting: Sequence[bool]) -> list[int]:
+    """Sides of a call's passages with the interruptions corrected: talking over someone, the
+    interrupter is often the quieter track, but a piece cut out of a passage where the other side
+    speaks is that side's (on the synthetic calls this took interruptions said over someone shown
+    as someone else, cut from the mix, from 32 of 56 to 46). The voice around a piece is the
+    passage before it (after it, at the start)."""
+    out = list(sides)
+    for i, (start, end) in enumerate(spans):
+        if not interrupting[i]:
+            continue
+        host = next((sides[j] for j in range(i - 1, -1, -1) if not interrupting[j]),
+                    next((sides[j] for j in range(i + 1, len(spans)) if not interrupting[j]), sides[i]))
+        on = _speaks(stereo[int(start * rate):int(end * rate)], rate)
+        if len(on) and on[:, 1 - host].mean() >= TURN_SHARE:
+            out[i] = 1 - host
+    return out
+
+
+def split_spans(spans: Sequence[tuple[float, float]]) -> list[tuple[float, float]]:
+    """Overlapping spans as adjacent ones, cut at every edge: a change between two people on the
+    computer audio inside the call's turn keeps its own piece."""
+    edges = sorted({x for s in spans for x in s})
+    out: list[tuple[float, float]] = []
+    for a, b in zip(edges, edges[1:]):
+        if any(s <= a and b <= e for s, e in spans):
+            out.append((a, b))
+    return out
 
 
 # ---- clustering ---------------------------------------------------------------------------------

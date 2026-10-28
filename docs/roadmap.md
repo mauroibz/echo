@@ -323,6 +323,7 @@ local summaries have no folder yet; they wait for the dictionary to be in daily 
 | 7 | `add-speaker-turns` | AI | done; a check on real meetings with interruptions is open |
 | 7 | `add-speaker-relabel` | AI | done; a check on a real meeting is open |
 | 7 | `change-silence-note` | product | archived |
+| 7 | `add-call-turns` | AI | done; a check on a real call is open |
 
 The open items are listed under "Blocked" in each change's `tasks.md`, with what a person has
 to run and look for.

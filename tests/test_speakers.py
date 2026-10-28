@@ -366,9 +366,9 @@ def _segmenter(monkeypatch, spans_s):
 
     real = speakers.interruptions
 
-    def interruptions(activity, start):
+    def interruptions(activity, start, min_turn=speakers.MIN_TURN):
         end = start + (len(activity) * speakers.SEG_STEP + speakers.SEG_HALF) / 16000
-        return [(a, b) for a, b in spans_s if start <= a < end] + real(activity, start)
+        return [(a, b) for a, b in spans_s if start <= a < end] + real(activity, start, min_turn)
 
     monkeypatch.setattr(speakers, "Segmenter", Segmenter)
     monkeypatch.setattr(speakers, "local_activity", local_activity)
@@ -463,3 +463,36 @@ def test_resume_keeps_the_cuts_and_old_partials_stay_uncut(tmp_path, monkeypatch
     rec.path(PARTIAL).write_text(json.dumps(partial))
     Worker(lib_, VoiceEngine()).process(rec)
     assert [s["text"] for s in rec.reload().transcript()["segments"]] == ["hecho"]
+
+
+def _tones(spans_by_track, seconds=10.0, rate=4000):
+    """(N, 2) call samples: a tone on each track during its (start, end) spans, silence elsewhere."""
+    st = np.zeros((int(seconds * rate), 2), dtype=np.int16)
+    t = np.arange(len(st)) / rate
+    for track, spans in enumerate(spans_by_track):
+        for a, b in spans:
+            m = (t >= a) & (t < b)
+            st[m, track] = (np.sin(t[m] * 2 * np.pi * (180 + 70 * track)) * 3000).astype(np.int16)
+    return st
+
+
+def test_a_call_cuts_where_the_other_side_speaks():
+    # The user talks 0-10 s; the call says something at 4-5.5 s, over them, and coughs at 8 s.
+    st = _tones([[(0, 10)], [(4, 5.5), (8, 8.2)]])
+    assert speakers.track_turns(st, 4000, 0, 10) == pytest.approx([(4.0, 5.5)], abs=0.05)
+    assert speakers.track_turns(st, 4000, 0, 10, min_turn=speakers.CALL_MIN_TURN) == pytest.approx([(4.0, 5.5)], abs=0.05)
+    assert speakers.track_turns(_tones([[(0, 10)], [(4, 4.8)]]), 4000, 0, 10, min_turn=1.0) == []
+    # The piece goes to the call's track even where the user is the louder one.
+    sides = speakers.interrupting_sides(st, 4000, [(0, 4), (4, 5.5), (5.5, 10)], [0, 0, 0], [False, True, False])
+    assert sides == [0, 1, 0]
+    # A change between two people of the call inside the call's turn keeps its own piece.
+    assert speakers.split_spans([(4.0, 7.0), (5.0, 6.0)]) == [(4.0, 5.0), (5.0, 6.0), (6.0, 7.0)]
+    assert speakers.split_spans([(1.0, 2.0), (3.0, 4.0)]) == [(1.0, 2.0), (3.0, 4.0)]
+
+
+def test_a_call_recorded_twice_on_one_track_is_one_microphone():
+    st = _tones([[(0, 4), (6, 9)], [(4, 6)]])
+    assert speakers.tracks_differ(st, 4000)
+    same = st.copy()
+    same[:, 1] = same[:, 0]
+    assert not speakers.tracks_differ(same, 4000)

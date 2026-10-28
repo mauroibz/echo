@@ -109,6 +109,16 @@ def decode_tracks(rec: Recording) -> np.ndarray:
     return np.frombuffer(r.stdout, dtype=np.int16).reshape(-1, 2)
 
 
+def decode_track(rec: Recording, track: int) -> np.ndarray:
+    """One track of a call's crop span alone, 16 kHz mono int16 (1 the computer audio)."""
+    start, end = rec.effective_span()
+    r = subprocess.run(ffmpeg.decode_cmd(rec.audio_path, SAMPLE_RATE, 1, start or None, end, track=track),
+                       capture_output=True, timeout=3600)
+    if r.returncode != 0:
+        raise RuntimeError(f"could not decode the audio: {r.stderr.decode(errors='replace').strip()[-300:]}")
+    return np.frombuffer(r.stdout, dtype=np.int16)
+
+
 def _speaker_tracks(labels, sides, spans) -> dict[str, int]:
     """Each speaker's track in a call (0 the microphone, 1 the computer audio): where most of their speech is."""
     secs: dict[int, list[float]] = {}
@@ -246,6 +256,7 @@ class Worker:
         adapter = bool(req.get("adapter", True)) and language == "es"  # the adapter is Spanish only
         context = req.get("context") or None
         started = time.time()
+        self._stereo = None  # a call's tracks, decoded once per job (the crop may have changed)
         try:
             self._progress(rec, "loading", 0, 1, None, started)
             self.engine.load()
@@ -405,6 +416,22 @@ class Worker:
     def _labels_speakers(self, rec: Recording) -> bool:
         return not rec.meta.speakers_off and getattr(self.engine, "labels_speakers", True)
 
+    def _call_tracks(self, rec: Recording) -> np.ndarray | None:
+        """A call's two tracks at TRACKS_RATE, or None for one source, or for a call whose tracks
+        are one sound recorded twice: it is then labeled like a single microphone."""
+        if not rec.meta.tracks:
+            return None
+        cached = getattr(self, "_stereo", None)
+        if cached is None or cached[0] != rec.id:
+            from . import speakers
+
+            stereo = decode_tracks(rec)
+            if not speakers.tracks_differ(stereo, TRACKS_RATE):
+                log.warning("%s: both tracks hold the same sound; labeled as one microphone", rec.id)
+                stereo = None
+            cached = self._stereo = (rec.id, stereo)
+        return cached[1]
+
     def _turns(self, rec: Recording, requested_at, passages, audio, started) -> list[list[float]]:
         """Spans where someone interrupts a passage's main voice, found before recognition so
         that each becomes a passage of its own (speakers.interruptions). None without both
@@ -417,11 +444,22 @@ class Worker:
             return []
         seg = getattr(self, "_segmenter", None) or speakers.Segmenter()
         self._segmenter = seg
+        # A call: the change of side is where the other track speaks, and segmentation listens to
+        # the computer audio alone, where everyone but the user is. On the mix it found pauses
+        # full of "people" (pieces the model heard as "Gracias.") and missed half of what was
+        # said over someone.
+        stereo = self._call_tracks(rec)
+        source = decode_track(rec, 1) if stereo is not None else audio
         spans: list[list[float]] = []
         last = 0.0
         for i, p in enumerate(passages):
-            clip = audio[int(p.start * SAMPLE_RATE):int(p.end * SAMPLE_RATE)]
-            for s, e in speakers.interruptions(speakers.local_activity(seg.window, clip), p.start):
+            clip = source[int(p.start * SAMPLE_RATE):int(p.end * SAMPLE_RATE)]
+            least = speakers.MIN_TURN if stereo is None else speakers.CALL_MIN_TURN
+            found = speakers.interruptions(speakers.local_activity(seg.window, clip), p.start, least)
+            if stereo is not None:
+                sides = speakers.track_turns(stereo, TRACKS_RATE, p.start, p.end, least)
+                found = speakers.split_spans(sides + found)
+            for s, e in found:
                 spans.append([round(s, 3), round(e, 3)])
             if time.monotonic() - last > 1.0:
                 last = time.monotonic()
@@ -464,8 +502,13 @@ class Worker:
                 self._check(rec, requested_at)
                 self._progress(rec, "speakers", i, len(passages), None, started)
         spans = [(p.start, p.end) for p in passages]
-        sides = speakers.louder_track(decode_tracks(rec), spans, TRACKS_RATE) if rec.meta.tracks else None
         interrupting = [p.interrupting for p in passages] if any(p.interrupting for p in passages) else None
+        sides = None
+        stereo = self._call_tracks(rec)
+        if stereo is not None:
+            sides = speakers.louder_track(stereo, spans, TRACKS_RATE)
+            if interrupting:
+                sides = speakers.interrupting_sides(stereo, TRACKS_RATE, spans, sides, interrupting)
         labels, centroids = speakers.label(spans, embs, tracks=sides, interrupting=interrupting,
                                            glimpses=glimpses)
         tracks = _speaker_tracks(labels, sides, spans) if sides is not None else None

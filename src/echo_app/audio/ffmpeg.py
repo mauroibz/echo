@@ -250,13 +250,15 @@ MIX_MONO = "pan=mono|c0=c0+c1"
 
 
 def decode_cmd(path: Path, rate: int, channels: int = 1, start: float | None = None,
-               end: float | None = None, mix: bool = False) -> list[str]:
-    """Command that decodes any audio file to raw s16le on stdout; `mix` sums a call's two tracks."""
+               end: float | None = None, mix: bool = False, track: int | None = None) -> list[str]:
+    """Command that decodes any audio file to raw s16le on stdout; `mix` sums a call's two tracks,
+    `track` takes one of them alone."""
     cmd = ["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error"]
     if start:
         cmd += ["-ss", f"{start:.3f}"]
     cmd += ["-i", str(path)]
     if end is not None:
         cmd += ["-t", f"{max(0.0, end - (start or 0.0)):.3f}"]
-    return cmd + ["-vn", *(["-af", MIX_MONO] if mix else []), "-f", "s16le", "-ac", str(channels),
+    af = MIX_MONO if mix else f"pan=mono|c0=c{track}" if track is not None else None
+    return cmd + ["-vn", *(["-af", af] if af else []), "-f", "s16le", "-ac", str(channels),
                   "-ar", str(rate), "pipe:1"]

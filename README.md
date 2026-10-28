@@ -137,8 +137,11 @@ Model versions are pinned, and only weights and configuration are downloaded, ne
   (headphones in, headphones out) the recording follows the default output. The recording is
   one FLAC file with two channels, your microphone on the first and the call on the second;
   Echo plays and transcribes them together, and speaker labels never mix you up with someone
-  in the call (you are speaker 1). An exported file keeps the two channels. The choice is
-  remembered; quick notes always record the microphone alone.
+  in the call (you are speaker 1). When someone cuts in for a second or more, on either side,
+  that becomes a paragraph of its own with their name. An exported file keeps the two channels.
+  The choice is remembered; quick notes always record the microphone alone. A noise gate or
+  other effect chosen for Echo's microphone in the sound settings (Easy Effects, for example)
+  applies to the microphone only.
 - **Record from anywhere.** With Echo running (also in the tray), Ctrl+Alt+R starts or stops a
   recording from any application, and Ctrl+Alt+N records a quick note: press it again to stop,
   and when the text is ready it is on your clipboard. The first time, your desktop asks you to
@@ -402,6 +405,10 @@ PulseAudio still owns audio, and X11 sessions missing `libxcb-cursor0`).
 - **A recorded call has only my side.** Echo records the default output. Check that the call
   app plays to it (its audio settings, or "Same as system"), or make the call's device the
   default in the desktop's sound settings; the computer-audio meter moves when it is right.
+- **A recorded call labels everyone as one side.** If both meters move together while only you
+  speak, the computer audio is recording your microphone: in the desktop's sound settings, while
+  recording, set "Echo computer audio" back to the default output's monitor. Echo transcribes
+  such a call as from one microphone.
 - **Old voice notes (`.amr`) do not import.** Fedora's `ffmpeg-free` lacks the AMR decoder;
   install `ffmpeg` from RPM Fusion. Doctor lists the missing decoders.
 - **Transcription is slower than expected.** With less than about 5 GB of graphics memory free

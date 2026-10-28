@@ -139,6 +139,10 @@ Measured on the development machine:
   and one 512-frame quantum (10.7 ms) apart in two, and in every run the files differed in
   length by exactly that offset, because SIGINT stops both in the same quantum.
 - An idle output's monitor still delivers continuous silence, so the stall check works as is.
+- WirePlumber remembers where the user moved a stream, keyed by its application name, and moves
+  later streams of that name there. Both captures were "Echo", so moving the microphone to a noise
+  gate's virtual source moved the computer audio there too and a call's tracks became one.
+  The computer-audio capture is "Echo computer audio" (node `echo-recorder-computer`).
 
 So a pair the supervisor stopped together (pause or stop, both running; marked `"align":
 "end"` in `session.json`) is aligned at its end, which is exact whatever the startup delays
@@ -408,6 +412,19 @@ conversations; at 0.35, in one. Twenty six-minute monologues, clean and through 
 channel, stayed one speaker at 0.35. Larger embedding models (WeSpeaker ResNet293, CAM++) were
 no better there. Segmentation and embeddings together run at about 78× real time on a 6-core
 CPU. Details in `openspec/changes/add-speaker-turns/design.md`.
+
+In a call the cuts come from the tracks instead (`speakers.track_turns`): with headphones each
+track hears one side, so where the track other than a passage's main one has sound (RMS above
+100 in 50 ms frames) for a second or more is a change of side, and the segmentation model runs
+on the computer audio alone for changes between the people on the call; the two sets of spans
+are cut at each other's edges. A piece cut out where the other track speaks takes that track,
+even if the voice it interrupted was louder. Only turns of a second or more are cut in a call:
+on a real 20-minute call, 0.4 s made 276 passages of 60, 115 under 1.5 s and 25 heard as
+"Gracias." (backchannels, breaths and line noise are turns too), against 122, 6 and 1 from 1 s.
+On synthetic calls with the user behind a gate, the track cuts showed interruptions across sides
+labeled right 58 times of 103 (segmentation on the mix: 54) at 1 s, and 88 at 0.4 s. A call
+whose two tracks are one sound (at the same level in 30% of the speech frames) is labeled as
+from one microphone. Details in `openspec/changes/add-call-turns/design.md`.
 
 A recorded call has its sides on separate channels, so each passage first goes to the track
 that is louder over it (RMS, from the two channels decoded at 4 kHz, which is enough for

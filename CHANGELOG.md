@@ -69,11 +69,18 @@ tag.
   person's profile and named again.
 - The "no sound from this input" hint is a note on the level meter in the sidebar, so a noise
   gate no longer makes the controls jump. The welcome screen keeps the full hint.
+- Calls find speaker changes from their two tracks: where the other side speaks for a second or
+  more is cut out, and people on the call are told apart on the computer audio alone. Real calls
+  had been cut into many short pieces that came back as "Gracias." or half sentences.
 
 ### Fixed
 
 - Pieces under 1.5 s cut out of a passage for an interruption often came back from the model as
   "Gracias."; that text is no longer shown.
+- With a noise gate or another virtual source chosen for Echo's microphone in the desktop's sound
+  settings, recorded calls had the microphone on both tracks: the audio server moved the
+  computer-audio capture along with it. It now keeps to the default output. Calls recorded that
+  way are labeled as from one microphone.
 - The model sometimes got stuck repeating a word ("por. por. por. …"), and the retry of an
   unsure passage could even prefer such a loop. A loop is now transcribed again, never kept from
   a retry, and if it stays it is cut to two repetitions and marked "the model repeated itself
