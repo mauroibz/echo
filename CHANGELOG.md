@@ -3,7 +3,7 @@
 Notable changes to Echo. Versions are git tags (`vX.Y.Z`); `main` may be ahead of the latest
 tag.
 
-## Unreleased
+## 1.2.0 - 2026-10-28
 
 ### Added
 
@@ -35,6 +35,37 @@ tag.
   select an interruption to split it off as its own paragraph with its own speaker. Undo it,
   join paragraphs, or add someone new. Fixes are kept with their times as data for improving
   speaker labeling.
+- Short interruptions are found. When someone cuts into another person's long paragraph for a
+  few words, that becomes its own paragraph with their name, instead of being labeled as the
+  person around it. In a recorded call, the two tracks tell your side from theirs. Speakers are
+  also merged into one less often. Needs a 6 MB download, offered under Help → Transcription
+  model; transcribe a recording again to apply it.
+- "Said by" teaches Echo the voice: after a fix, the other passages that clearly sound like it
+  follow, and "Back to the speakers Echo found" on a name undoes it. Needs a transcript made
+  with this version.
+
+### Changed
+
+- A recording teaches a person's voice once. Naming them again, or transcribing again, replaces
+  what that recording taught instead of adding it again, and renaming a speaker takes back what
+  the wrong name learned. Voices learned wrong this way before are best forgotten in the
+  person's profile and named again.
+- The "no sound from this input" hint is a note on the level meter in the sidebar, so a noise
+  gate no longer makes the controls jump. The welcome screen keeps the full hint.
+- The README is short; the full manual is [docs/guide.md](docs/guide.md).
+
+### Fixed
+
+- With a noise gate or another virtual source chosen for Echo's microphone in the desktop's sound
+  settings, recorded calls had the microphone on both tracks: the audio server moved the
+  computer-audio capture along with it. It now keeps to the default output. Calls recorded that
+  way are labeled as from one microphone.
+- The model sometimes got stuck repeating a word over and over, and the retry of an unsure
+  passage could even prefer such a loop. A loop is now transcribed again, never kept from a
+  retry, and if it stays it is cut to two repetitions and marked "the model repeated itself
+  here".
+- Pieces under 1.5 s cut out of a passage for an interruption often came back from the model as
+  "Gracias."; that text is no longer shown.
 
 ## 1.1.0 - 2026-10-25
 
@@ -54,37 +85,8 @@ tag.
 
 ### Changed
 
-- Short interruptions are found. When someone cuts into another person's long paragraph for a
-  few words, that becomes its own paragraph with their name, instead of being labeled as the
-  person around it. Speakers are also merged into one less often. Needs a 6 MB download,
-  offered under Help → Transcription model; transcribe a recording again to apply it.
 - `echo-app transcribe ID` no longer transcribes again a recording that already has a
   transcript, or one that is queued or running; add `--again` for a new run.
-- "Said by" teaches Echo the voice: after a fix, the other passages that clearly sound like it
-  follow, and "Back to the speakers Echo found" on a name undoes it. Needs a transcript made
-  with this version.
-- A recording teaches a person's voice once. Naming them again, or transcribing again, replaces
-  what that recording taught instead of adding it again, and renaming a speaker takes back what
-  the wrong name learned. Voices learned wrong this way before are best forgotten in the
-  person's profile and named again.
-- The "no sound from this input" hint is a note on the level meter in the sidebar, so a noise
-  gate no longer makes the controls jump. The welcome screen keeps the full hint.
-- Calls find speaker changes from their two tracks: where the other side speaks for a second or
-  more is cut out, and people on the call are told apart on the computer audio alone. Real calls
-  had been cut into many short pieces that came back as "Gracias." or half sentences.
-
-### Fixed
-
-- Pieces under 1.5 s cut out of a passage for an interruption often came back from the model as
-  "Gracias."; that text is no longer shown.
-- With a noise gate or another virtual source chosen for Echo's microphone in the desktop's sound
-  settings, recorded calls had the microphone on both tracks: the audio server moved the
-  computer-audio capture along with it. It now keeps to the default output. Calls recorded that
-  way are labeled as from one microphone.
-- The model sometimes got stuck repeating a word ("por. por. por. …"), and the retry of an
-  unsure passage could even prefer such a loop. A loop is now transcribed again, never kept from
-  a retry, and if it stays it is cut to two repetitions and marked "the model repeated itself
-  here".
 
 ## 1.0.1 - 2026-10-24
 
