@@ -74,3 +74,13 @@ def test_default_output_capture_has_no_target():
     assert "--target" not in cmd
     assert "stream.capture.sink=true" in cmd[cmd.index("-P") + 1]
     assert pipewire.DEFAULT_OUTPUT.kind == pipewire.MONITOR
+
+
+def test_computer_audio_is_not_moved_with_the_microphone():
+    """WirePlumber moves a stream where the user once moved another of the same application name:
+    the computer audio must not follow the microphone to a noise gate's source."""
+    mic = pipewire.record_cmd(pipewire.parse_sources(DUMP)[0], 48000, 1, "/m.raw")
+    call = pipewire.record_cmd(pipewire.DEFAULT_OUTPUT, 48000, 1, "/c.raw")
+    mic_props, call_props = mic[mic.index("-P") + 1], call[call.index("-P") + 1]
+    assert 'application.name="Echo"' in mic_props and 'node.name="echo-recorder"' in mic_props
+    assert 'application.name="Echo computer audio"' in call_props and 'node.name="echo-recorder-computer"' in call_props

@@ -153,10 +153,17 @@ def _target_args(source: Source | None) -> list[str]:
 
 
 def _props(source: Source | None, role: str) -> str:
-    props = [f'node.name="echo-{role}"', f'node.description="Echo {role}"',
-             'application.name="Echo"', 'media.role="Production"']
+    # WirePlumber remembers where the user moved a stream by its application name and moves every
+    # later stream of that name there. Moving Echo's microphone to a noise gate's source then
+    # moved the computer-audio capture there too, and a call's two tracks became one: the
+    # computer audio has a name of its own.
+    app = "Echo"
+    props = []
     if source is not None and source.kind == MONITOR:
+        app, role = "Echo computer audio", f"{role}-computer"
         props.append("stream.capture.sink=true")
+    props = [f'node.name="echo-{role}"', f'node.description="Echo {role}"',
+             f'application.name="{app}"', 'media.role="Production"', *props]
     return "{ " + " ".join(props) + " }"
 
 
