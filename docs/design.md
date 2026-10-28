@@ -240,8 +240,8 @@ kept, and one that stays is cut down to two repetitions and flagged `loop`.
 
 Each passage in `transcript.json` (version 2) carries `flags` and its `logprob`: `retried`
 (the kept text came from a retry), `short` (still short after the retries), `loop` (see above)
-and `low` (more than 1.5 standard deviations below the recording's mean log-probability, computed when the job ends;
-fixed thresholds do not carry over between microphones). Asking `generate` for the scores cost
+and `low` (more than 1.5 standard deviations below the recording's mean log-probability,
+computed when the job ends; fixed thresholds do not carry over between microphones). Asking `generate` for the scores cost
 1.3% of GPU time on a 20-minute recording. The editor shades a flagged passage while its text is
 still the model's, using the same alignment as the margin, so editing it clears the mark.
 
