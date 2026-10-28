@@ -57,6 +57,27 @@ def test_voices_are_remembered_recognized_and_follow_the_dictionary():
     assert dictionary.voices() == {}
 
 
+def test_a_recording_teaches_a_voice_once():
+    """Naming again in the same recording replaces its part: one wrong naming, repeated, used to
+    become the voice."""
+    a, b = list(_voice(1)), list(_voice(2))
+    dictionary.remember_voice("Lucía", a)  # learned before parts were kept: one recording's worth
+    for _ in range(5):
+        dictionary.remember_voice("Lucía", b, "rec-1")
+    entry = dictionary.voices()["Lucía"]
+    assert entry["recordings"] == 2 and set(entry["parts"]) == {"rec-1"}
+    mean = [(x + y) / 2 for x, y in zip(a, b)]
+    assert speakers.similarity(entry["voice"], mean) > 0.999
+    dictionary.remember_voice("Lucía", a, "rec-1")  # named right this time
+    assert speakers.similarity(dictionary.voices()["Lucía"]["voice"], a) > 0.999
+    dictionary.forget_voice_part("Lucía", "rec-1")
+    entry = dictionary.voices()["Lucía"]
+    assert entry["recordings"] == 1 and "parts" not in entry and speakers.similarity(entry["voice"], a) > 0.999
+    dictionary.remember_voice("Ana", b, "rec-2")
+    dictionary.forget_voice_part("Ana", "rec-2")
+    assert "Ana" not in dictionary.voices()  # nothing left to recognize them by
+
+
 class VoiceEngine(StubEngine):
     labels_speakers = True
 
@@ -379,11 +400,37 @@ def test_worker_cuts_interruptions_before_recognition(tmp_path, monkeypatch):
     assert [s["speaker"] for s in segs] == [1, 2, 1, 2]
     assert [s["paragraph"] for s in segs] == [True, True, True, True]  # each change of voice
     assert json.loads(rec.path("meta.json").read_text()).get("speakers_off") is not True
+    # The voiceprints the window reassigns passages from, glimpses of interruptions included.
+    vp = json.loads(rec.path("transcript.voices.json").read_text())
+    assert vp["transcript"] == t["created"] and vp["interrupting"] == [1] and set(vp["passages"]) == {"0", "1", "2", "3"}
+    rec.path("transcript.relabeled.json").write_text("{}")
     # Marked as a monologue: no segmentation, no cuts.
     calls = _segmenter(monkeypatch, [(9.0, 10.0)])
     rec.update(speakers_off=True)
     t = _process(lib_, rec)
     assert calls == [] and len(t["segments"]) == 2
+    assert not rec.path("transcript.voices.json").exists() and not rec.path("transcript.relabeled.json").exists()
+
+
+def test_a_short_cut_heard_as_gracias_is_dropped(tmp_path, monkeypatch):
+    """The model's answer for a fragment it cannot make out is not shown as words."""
+    lib_ = Library(tmp_path / "data")
+    rec = importer.import_file(lib_, speechy_wav(tmp_path / "g.wav", [(1, False), (20, True), (1, False)])).recording
+    _segmenter(monkeypatch, [(9.0, 10.0), (14.0, 15.0)])
+    _embedder(monkeypatch, [1, 2])
+
+    class Engine(VoiceEngine):
+        def transcribe(self, clips, adapter=True, context=None, language="es"):
+            return ["Gracias." if len(c) < 1.5 * 16000 else "Bueno, gracias." for c in clips]
+
+    rec.request_transcription()
+    from echo_app.worker.service import Worker
+
+    Worker(lib_, Engine()).process(rec)
+    segs = rec.reload().transcript()["segments"]
+    short = [s for s in segs if s["end"] - s["start"] < 1.5]
+    assert len(short) == 2 and all(s["text"] == "" and s["dropped"] == "Gracias." for s in short)
+    assert "Bueno, gracias." in rec.transcript()["text"] and "Gracias." not in rec.transcript()["text"]
 
 
 def test_resume_keeps_the_cuts_and_old_partials_stay_uncut(tmp_path, monkeypatch):

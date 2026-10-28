@@ -321,6 +321,8 @@ local summaries have no folder yet; they wait for the dictionary to be in daily 
 | 7 | `add-speaker-merge` | AI | archived |
 | 7 | `add-speaker-corrections` | AI | archived |
 | 7 | `add-speaker-turns` | AI | done; a check on real meetings with interruptions is open |
+| 7 | `add-speaker-relabel` | AI | done; a check on a real meeting is open |
+| 7 | `change-silence-note` | product | archived |
 
 The open items are listed under "Blocked" in each change's `tasks.md`, with what a person has
 to run and look for.
@@ -336,3 +338,5 @@ case: long meetings recorded as screen recordings, transcribed from the window o
 in, so this does not wait for its archive. `add-call-recording` before `add-speaker-naming`
 (the microphone track names the user).
 `add-speaker-search` before `add-people-profiles` (a person's recordings come from its speakers table).
+`add-speaker-turns` before `add-speaker-relabel` (it reassigns the cut pieces too); its code is
+in, so this does not wait for its archive.

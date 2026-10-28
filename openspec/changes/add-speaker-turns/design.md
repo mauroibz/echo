@@ -102,3 +102,11 @@ regions; passages are planned from both, so a resumed job transcribes the same p
   resumed from it is finished without cuts rather than recomputed.
 - The progress stage while segmenting is "speakers" ("Telling speakers apart…"), the stage the
   window already shows for the embedding pass.
+- On the first real meeting transcribed with the cuts (an hour, three people), 21 of the 96
+  passages under 1.5 s came back as "Gracias.", with log-probabilities as high as real words
+  (-0.05 to -0.65), against none in the transcripts made before the cuts, which had almost no
+  passages that short. Padding the pieces with 0.5 s of silence brought it to 8 and 1 s to 1, but
+  the model then invented other text instead ("El rey de la República de Chile", "¿Qué es lo
+  que se llama?"); widening them with 0.3 s of the real audio around made it 24. So a passage
+  under 1.5 s whose whole text is "Gracias." is shown without text, the model's words kept in
+  the segment as `dropped`. These pieces had also been labeled as a speaker of their own.

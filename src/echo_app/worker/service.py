@@ -19,7 +19,7 @@ from .. import models
 from ..audio import ffmpeg
 from .. import locks
 from ..fsutil import atomic_write_json, read_json
-from ..library import ERROR, PROGRESS, READY, REQUESTED, TRANSCRIPT, Library, Recording
+from ..library import ERROR, PROGRESS, READY, RELABELED, REQUESTED, TRANSCRIPT, VOICEPRINTS, Library, Recording
 from . import planning
 
 log = logging.getLogger(__name__)
@@ -29,6 +29,12 @@ PARTIAL = "transcript.partial.json"
 POLL = 2.0
 LOW_SD = 1.5  # a passage this many standard deviations below the recording's mean log-probability is "low"
 LOW_MIN_PASSAGES = 5  # fewer passages give no meaningful spread
+# What the model answers for a fragment it cannot make out, said as confidently as real words (its
+# log-probability does not tell them apart). Passages this short only come from cutting out
+# interruptions; in one real meeting 21 of 96 such pieces came back as "Gracias.", against none
+# before the cuts, and padding them with silence only traded it for other inventions.
+HALLUCINATED = {"es": ("gracias",)}
+HALLUCINATED_BELOW = 1.5  # seconds
 
 
 class EngineLike(Protocol):
@@ -138,7 +144,7 @@ def name_user(rec: Recording, record: dict) -> int | None:
     rec.update(speakers={**named, n: name})
     centroid = (record.get("centroids") or {}).get(n)
     if certain and centroid:
-        dictionary.remember_voice(name, centroid)
+        dictionary.remember_voice(name, centroid, rec.id)
     log.info("%s: speaker %s is the user", rec.id, n)
     return int(n)
 
@@ -156,6 +162,10 @@ def quietest_fn(audio: np.ndarray):
         return lo + float(np.argmin(rms)) * frame / SAMPLE_RATE
 
     return quietest
+
+
+def _fold(text: str) -> str:
+    return "".join(c for c in text.lower() if c.isalnum() or c == " ").strip()
 
 
 def mark_low(segments: list[dict]) -> None:
@@ -332,11 +342,13 @@ class Worker:
             r = r if isinstance(r, dict) else {"text": r}  # partial files from before the flags
             seg = {"start": round(p.start + offset, 2), "end": round(p.end + offset, 2), "text": r.get("text", ""),
                    "paragraph": p.paragraph, "flags": list(r.get("flags") or [])}
+            if p.duration < HALLUCINATED_BELOW and _fold(seg["text"]) in HALLUCINATED.get(language, ()):
+                seg["dropped"], seg["text"] = seg["text"], ""  # kept for the record, not shown
             if r.get("logprob") is not None:
                 seg["logprob"] = r["logprob"]
             segments.append(seg)
         mark_low(segments)
-        who = self._speakers(rec, requested_at, passages, audio, segments, started)
+        who, prints = self._speakers(rec, requested_at, passages, audio, segments, started) or (None, None)
         transcript = {
             "version": 2, "language": language,
             "created": datetime.now().astimezone().isoformat(timespec="seconds"),
@@ -350,7 +362,13 @@ class Worker:
             transcript["context"] = context
         if who:
             transcript["speakers"] = who
+        if prints:
+            prints["transcript"] = transcript["created"]
+            atomic_write_json(rec.path(VOICEPRINTS), prints)
+        else:
+            rec.path(VOICEPRINTS).unlink(missing_ok=True)
         atomic_write_json(rec.path(TRANSCRIPT), transcript)
+        rec.path(RELABELED).unlink(missing_ok=True)  # it was for the labels just replaced
         if rec.meta.title_auto:
             from ..library import auto_title
 
@@ -412,13 +430,16 @@ class Worker:
         log.info("%s: %d interruptions cut out of %d passages", rec.id, len(spans), len(passages))
         return spans
 
-    def _speakers(self, rec: Recording, requested_at, passages, audio, segments, started) -> dict | None:
+    def _speakers(self, rec: Recording, requested_at, passages, audio, segments,
+                  started) -> tuple[dict, dict] | None:
         """Label passages by speaker (a separate stage after recognition, on the processor).
 
         Sets `speaker` on each segment and returns the transcript's `speakers` record: the count,
         each speaker's voice centroid (for naming and for recognizing them later) and names
-        suggested from voices the user named before. Skipped without the speaker model, for
-        recordings marked as monologues, and for engines that do not provide it (tests).
+        suggested from voices the user named before; and the passages' voiceprints, which let
+        the window reassign passages from the user's fixes (relabel.py). Skipped without the
+        speaker model, for recordings marked as monologues, and for engines that do not provide
+        it (tests).
         """
         if not self._labels_speakers(rec):
             return None
@@ -473,7 +494,10 @@ class Worker:
         me = name_user(rec, record)
         if me is not None:
             record["me"] = me
-        return record
+        voiced = sorted({**embs, **glimpses}.items())
+        prints = {"passages": {str(k): [round(float(x), 4) for x in v] for k, v in voiced},
+                  "interrupting": [i for i, p in enumerate(passages) if p.interrupting]}
+        return record, prints
 
     @staticmethod
     def _load_partial(rec: Recording, key: dict) -> dict:

@@ -267,16 +267,60 @@ def voices() -> dict[str, dict]:
         return {}
 
 
-def remember_voice(name: str, centroid: list[float]) -> None:
-    """Fold a speaker's centroid into the person's voice (a running mean over recordings)."""
+def remember_voice(name: str, centroid: list[float], recording: str | None = None) -> None:
+    """Fold a speaker's centroid into the person's voice: the mean of one centroid per recording.
+
+    Naming them again in `recording` (after a rename, a merge or a new transcription) replaces that
+    recording's part instead of adding it once more: a recording named five times used to weigh
+    five, and one wrong name, repeated, became the voice.
+    """
     data = voices()
-    old = data.get(name)
-    if old and len(old.get("voice", [])) == len(centroid):
-        n = int(old.get("recordings", 1))
-        voice = [(a * n + b) / (n + 1) for a, b in zip(old["voice"], centroid)]
-        data[name] = {"voice": [round(x, 5) for x in voice], "recordings": n + 1}
+    rest, rest_n, parts = _voice_parts(data.get(name), len(centroid))
+    c = [round(float(x), 5) for x in centroid]
+    if recording:
+        parts[recording] = c
     else:
-        data[name] = {"voice": [round(float(x), 5) for x in centroid], "recordings": 1}
+        rest = [a + b for a, b in zip(rest, c)] if rest else c
+        rest_n += 1
+    _save_voice(data, name, rest, rest_n, parts)
+
+
+def forget_voice_part(name: str, recording: str) -> None:
+    """Take what `recording` taught about `name`'s voice back out (the speaker was named wrong)."""
+    data = voices()
+    if name not in data:
+        return
+    rest, rest_n, parts = _voice_parts(data[name], len(data[name].get("voice") or []))
+    if parts.pop(recording, None) is not None:
+        _save_voice(data, name, rest, rest_n, parts)
+
+
+def _voice_parts(entry: dict | None, size: int) -> tuple[list[float] | None, int, dict[str, list[float]]]:
+    """(sum of the parts not kept by recording, their count, the parts by recording) of a voice.
+    A voice learned before parts were kept is all "rest": its mean times its count."""
+    if not entry or len(entry.get("voice") or []) != size:
+        return None, 0, {}
+    parts = {k: v for k, v in (entry.get("parts") or {}).items() if len(v) == size}
+    n = int(entry.get("recordings", 1))
+    rest_n = max(0, n - len(parts))
+    if not rest_n:
+        return None, 0, parts
+    rest = [x * n - sum(p[i] for p in parts.values()) for i, x in enumerate(entry["voice"])]
+    return rest, rest_n, parts
+
+
+def _save_voice(data: dict, name: str, rest, rest_n: int, parts: dict) -> None:
+    n = rest_n + len(parts)
+    if not n:
+        data.pop(name, None)
+    else:
+        total = list(rest) if rest else [0.0] * len(next(iter(parts.values())))
+        for v in parts.values():
+            total = [a + b for a, b in zip(total, v)]
+        entry: dict[str, Any] = {"voice": [round(x / n, 5) for x in total], "recordings": n}
+        if parts:
+            entry["parts"] = parts
+        data[name] = entry
     atomic_write_json(voices_path(), data, mkdir=True)
 
 

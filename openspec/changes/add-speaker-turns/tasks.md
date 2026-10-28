@@ -5,6 +5,7 @@
 - [x] 1.3 `speakers.Segmenter`, local activity over 10 s windows, `speakers.cuts`; `planning.cut` splits passages at them; tests
 - [x] 1.4 The worker finds the cuts before recognition and keeps them in the partial file; interruptions too short to embed take the nearest other speaker; threshold 0.35; tests
 - [x] 1.5 README, `docs/design.md`, CHANGELOG
+- [x] 1.7 Short cut pieces the model hears as "Gracias." are shown without text (measured on a real meeting); test
 - [ ] 1.6 Check on real meetings with interruptions (needs hardware: real recordings, listened to)
 
 ## Blocked

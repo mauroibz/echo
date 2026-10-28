@@ -196,8 +196,12 @@ Model versions are pinned, and only weights and configuration are downloaded, ne
   else…"). For someone cutting in mid-paragraph, select their words first: they become a
   paragraph of their own with their name, timed from where they fall in the passage (to a second
   or two). "Back to the speaker Echo found" undoes a fix, and "Join with the paragraph above"
-  removes a break. Fixes are kept with the recording, also after transcribing again, as examples
-  for improving speaker labeling later.
+  removes a break. Each fix also teaches Echo that voice: the other paragraphs that clearly
+  sound like it follow (the status bar says how many), and "Back to the speakers Echo found" on
+  a name undoes that. This works on recordings transcribed with this version or later. Fixes are
+  kept with the recording, also after transcribing again, as examples for improving speaker
+  labeling later. Naming someone again in the same recording, or transcribing it again, does not
+  teach Echo their voice twice, and renaming a speaker takes back what the wrong name learned.
   Exports carry the names. Monologues are left alone, and ⋯ → Label speakers turns it off for a
   recording. Voices are kept as numbers in `~/.config/echo/voices.json`, on this computer only.
   This needs a small extra download (33 MB), offered under Help → Transcription model; after
@@ -391,9 +395,10 @@ environment, disk space, the GPU, the Hugging Face login and the model files, an
 command for your distribution that fixes whatever fails (including Ubuntu 22.04, where
 PulseAudio still owns audio, and X11 sessions missing `libxcb-cursor0`).
 
-- **The meter does not move.** Pick another input. If Echo says no sound is arriving, check the
-  cable, the mute switch and the input gain (the slider under the meter, or a knob on your
-  audio interface).
+- **The meter does not move.** Pick another input. If the meter reads "No sound for … s", check
+  the cable, the mute switch and the input gain (the slider under the meter, or a knob on your
+  audio interface). With a noise gate on the microphone that note comes and goes in every
+  pause; that is the gate, and the recording is fine.
 - **A recorded call has only my side.** Echo records the default output. Check that the call
   app plays to it (its audio settings, or "Same as system"), or make the call's device the
   default in the desktop's sound settings; the computer-audio meter moves when it is right.

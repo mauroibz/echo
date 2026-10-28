@@ -53,6 +53,8 @@ POSIX, `msvcrt.locking` on Windows. Every action in the window is also a CLI com
     transcript.json               model output with passage times (replaced per run)
     transcript.corrected.json     the model output with dictionary corrections, each logged
     transcript.edited.txt         the user's text; the transcriber never writes it
+    transcript.voices.json        each passage's voiceprint, for reassigning from "Said by" fixes
+    transcript.relabeled.json     speakers reassigned from the fixes, read over transcript.json
     transcribe.requested          job marker with options
     transcribe.progress.json      written by the worker while it runs
     transcript.partial.json       finished passages, for resuming after a crash
@@ -98,7 +100,9 @@ back to the default input; `stream.capture.sink=true` captures what the computer
 
 Before recording, a low-rate `pw-record` stream drives the level meter while the window is
 shown. After four seconds of exact digital silence Echo says so, because a connected
-microphone with its gain up never produces it.
+microphone with its gain up never produces it: as a note drawn on the empty meter in the
+sidebar, since a noise gate makes that silence in every pause and a line of text appearing
+under the controls moved them; the welcome screen shows the full advice under its meter.
 
 The gain slider sets the source node's own volume through `wpctl` (WirePlumber, installed with
 PipeWire), the value the desktop's sound settings show. Echo does not scale samples itself:
@@ -440,6 +444,32 @@ pieces from the aligned passages and the fixes, finding a split's words inside i
 exports (`align.cues`, hence the index), the margin and find all use it. Splitting inserts
 paragraph breaks around the words as one undoable edit, so the text, its labels and the exports
 agree; if the user later rewrites the split words, the split stops applying rather than guessing.
+
+A fix also reassigns the rest of the recording (`relabel.py`). The worker keeps every passage's
+voiceprint, the embedding it was clustered from, in `transcript.voices.json` (four decimals,
+about 1 MB an hour), so the window can do it at once in pure Python without the audio or the
+model. Each speaker is the mean of its passages as the user has them, fixes applied; each
+passage goes to the nearest speaker, twice, but only moves when it is 0.1 closer to the other
+than to its own, and in a call only to a speaker on its track. Fixed passages never move, and a
+short passage without a voiceprint follows the one before it, as the worker labeled it. The
+result is `transcript.relabeled.json`, which `Recording.transcript()` reads over the model's
+transcript (so everything that reads speakers follows); "Back to the speakers Echo found"
+deletes it and a new transcription removes it. Describing a speaker by its fixed passages alone
+was tried first and was worse: the passages a user fixes are the ones that sounded most like
+someone else. On the synthetic conversations, 3 fixes took speech labeled right from 97.7%
+(fixes alone) to 98.6%; where two voices are too alike for the embeddings, it helps little.
+Details in `openspec/changes/add-speaker-relabel/design.md`.
+
+A person's voice in `voices.json` is the mean of one part per recording (`parts`, by recording
+id). Naming them again in a recording replaces its part, and a rename or a merge that leaves a
+name out of the recording takes its part back, so a recording named five times weighs one and a
+wrong name does not linger. A voice from before parts were kept counts as its mean times its
+recording count.
+
+Pieces under 1.5 s, which only the cuts make, often come back from the model as "Gracias." when
+it cannot make them out, as confidently as real words: 21 of 96 in one real meeting. Padding
+them with silence made the model invent other text instead. Such a passage is kept with no text
+(the words in `dropped`).
 
 ### Audio backends
 

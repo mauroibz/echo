@@ -9,6 +9,8 @@ Layout of one recording folder::
         transcript.json           raw model output, segments with times (immutable per run)
         transcript.corrected.json the model output with dictionary corrections, each logged
         transcript.edited.txt     user edits, never overwritten by the transcriber
+        transcript.voices.json    each passage's voiceprint, for relabeling from the user's fixes
+        transcript.relabeled.json speakers reassigned from the user's fixes, read over transcript.json
         transcribe.requested      job marker: transcription wanted (JSON options)
         transcribe.progress.json  written by the worker while running
         transcribe.error          last failure message
@@ -34,6 +36,8 @@ META = "meta.json"
 TAKES = "takes"
 TRANSCRIPT = "transcript.json"
 CORRECTED = "transcript.corrected.json"
+VOICEPRINTS = "transcript.voices.json"
+RELABELED = "transcript.relabeled.json"
 EDITED = "transcript.edited.txt"
 REQUESTED = "transcribe.requested"
 PROGRESS = "transcribe.progress.json"
@@ -265,10 +269,24 @@ class Recording:
         return T_NONE
 
     def transcript(self) -> dict[str, Any] | None:
+        """The model's transcript, with the speakers the user had reassigned from their fixes."""
         try:
-            return read_json(self.path(TRANSCRIPT))
+            t = read_json(self.path(TRANSCRIPT))
         except (FileNotFoundError, json.JSONDecodeError):
             return None
+        try:
+            r = read_json(self.path(RELABELED))
+        except (FileNotFoundError, json.JSONDecodeError):
+            return t
+        segs, info = t.get("segments") or [], t.get("speakers")
+        if r.get("transcript") != t.get("created") or len(r.get("speakers") or []) != len(segs) or not info:
+            return t  # left over from an earlier model run
+        for seg, n in zip(segs, r["speakers"]):
+            seg["speaker"] = n
+        info.update(centroids=r.get("centroids") or {}, count=r.get("count", info.get("count")), relabeled=True)
+        if r.get("tracks"):
+            info["tracks"] = r["tracks"]
+        return t
 
     def model_text(self) -> str:
         t = self.transcript()

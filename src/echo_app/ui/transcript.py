@@ -13,8 +13,8 @@ from PySide6.QtWidgets import (QApplication, QCompleter, QFileDialog, QFrame, QH
                                QPlainTextEdit, QProgressBar, QPushButton, QStackedWidget, QTextEdit, QToolButton,
                                QVBoxLayout, QWidget)
 
-from .. import align, dictionary, export, features, models, recorder, settings, transcription
-from ..library import (CORRECTED, EDITED, NEEDS_FINALIZE, READY, RECORDING, T_FAILED, T_QUEUED, T_RUNNING,
+from .. import align, dictionary, export, features, models, recorder, relabel, settings, transcription
+from ..library import (CORRECTED, EDITED, RELABELED, NEEDS_FINALIZE, READY, RECORDING, T_FAILED, T_QUEUED, T_RUNNING,
                        TRANSCRIPT, Library, Recording)
 from . import theme
 from .common import fmt_date, fmt_duration, fmt_eta, icon, run_task
@@ -746,7 +746,7 @@ class TranscriptPanel(QWidget):
                 return os.stat(rec.path(name)).st_mtime_ns
             except FileNotFoundError:
                 return None
-        return (rec.id, mt(TRANSCRIPT), rec.is_edited(), mt(CORRECTED))
+        return (rec.id, mt(TRANSCRIPT), rec.is_edited(), mt(CORRECTED), mt(RELABELED))
 
     # ---- a linked set ----
     def _leave_set(self):
@@ -1521,6 +1521,8 @@ class TranscriptPanel(QWidget):
                 same.addAction(self._speaker_title(rec, o), lambda o=o: self.merge_speaker(n, o))
         if rec.merged_into(n):
             m.addAction(icon("unlink"), "Separate again", lambda: self.separate_speaker(n))
+        if relabel.relabeled(rec):
+            m.addAction(icon("revert"), "Back to the speakers Echo found", self.restore_speakers)
         m.addSeparator()
         m.addAction(icon("users"), "No speaker labels for this recording", lambda: self.set_speakers_off(True))
         m.exec(pos)
@@ -1545,8 +1547,11 @@ class TranscriptPanel(QWidget):
         rec = self.rec
         if rec is None:
             return
+        gone = rec.meta.speakers.get(str(rec.speaker(source)))
         rec.merge_speakers(source, target)
         name = rec.meta.speakers.get(str(rec.speaker(target)))
+        if gone and gone != name:
+            self._forget_voice(rec, gone)  # it was someone else's voice: not theirs after all
         if name:
             self._remember_voice(rec, rec.speaker(target), name)
         self.message.emit(f"Speaker {source} is now {name or f'speaker {target}'}. "
@@ -1560,6 +1565,9 @@ class TranscriptPanel(QWidget):
         if rec is None:
             return
         parts = rec.separate_speakers(n)
+        name = rec.meta.speakers.get(str(n))
+        if name:
+            self._remember_voice(rec, n, name)  # without the parts that are someone else
         self.message.emit("Separated speaker " + ", ".join(str(p) for p in parts) + ".")
         self._update_margin()
         self._update_status(rec)
@@ -1567,14 +1575,26 @@ class TranscriptPanel(QWidget):
 
     @staticmethod
     def _remember_voice(rec: Recording, n: int, name: str):
-        """Fold the speaker's voice into the person's: the average of its merged parts, once."""
+        """This recording's part of the person's voice: the average of every speaker they are in it
+        (`n`, others with the same name, and what was merged into them). It replaces the part an
+        earlier naming of this recording gave."""
         centroids = (((rec.transcript() or {}).get("speakers") or {}).get("centroids") or {})
-        parts = [centroids[str(k)] for k in [n, *rec.merged_into(n)] if centroids.get(str(k))]
+        same = {n} | {int(k) for k, v in rec.meta.speakers.items() if v == name}
+        nums = [k for m in sorted(same) for k in [m, *rec.merged_into(m)]]
+        parts = [centroids[str(k)] for k in nums if centroids.get(str(k))]
         if not parts:
             return
         mean = [sum(v) / len(parts) for v in zip(*parts)]
         person = dictionary.current().find(name)
-        dictionary.remember_voice(person.name if person else name, mean)
+        dictionary.remember_voice(person.name if person else name, mean, rec.id)
+
+    @staticmethod
+    def _forget_voice(rec: Recording, name: str):
+        """`name` is no longer anyone in this recording: what it taught their voice is taken back."""
+        if name in rec.meta.speakers.values():
+            return
+        person = dictionary.current().find(name)
+        dictionary.forget_voice_part(person.name if person else name, rec.id)
 
     def _ask_speaker_name(self, n: int):
         from PySide6.QtWidgets import QInputDialog
@@ -1594,6 +1614,7 @@ class TranscriptPanel(QWidget):
         if rec is None:
             return
         names = dict(rec.meta.speakers)
+        before = names.get(str(n))
         if name:
             names[str(n)] = name
             if dictionary.current().find(name) is None and \
@@ -1603,6 +1624,8 @@ class TranscriptPanel(QWidget):
         else:
             names.pop(str(n), None)
         rec.update(speakers=names)
+        if before and before != name:
+            self._forget_voice(rec, before)
         self._update_margin()
         self.changed.emit(rec.id)
 
@@ -1954,6 +1977,36 @@ class TranscriptPanel(QWidget):
                 cuts.append((lo, hi))
         if cuts:
             self._break_around(cuts)  # a text edit: the passages' text moves, the fixes find their words
+        self._relabel(rec, n)
+        self._align_now()
+        self._update_status(rec)
+        self.changed.emit(rec.id)
+
+    def _relabel(self, rec: Recording, n: int | None = None):
+        """The rest of the recording reassigned from the user's fixes (relabel.py): a passage that
+        sounds like a fixed one follows it. A transcript from before voiceprints were kept stays."""
+        moved = relabel.relabel(rec)
+        if moved is None:
+            return
+        self._reload_speakers(rec)
+        if moved:
+            who = rec.meta.speakers.get(str(rec.speaker(n))) if n is not None else None
+            self.message.emit(f"{moved} more passage{'s' if moved != 1 else ''} moved to match"
+                              + (f" what {who} said" if who else " your fix")
+                              + ". “Back to the speakers Echo found” on a name undoes it.")
+
+    def _reload_speakers(self, rec: Recording):
+        self._segments = shown_segments(rec)
+        self._shown_signature = self._signature(rec)  # the same text: no reload of the editor
+        for k, name in rec.meta.speakers.items():  # their voice in this recording, as it now is
+            if rec.speaker(int(k)) == int(k):
+                self._remember_voice(rec, int(k), name)
+
+    def restore_speakers(self):
+        rec = self.rec
+        if rec is None or not relabel.restore(rec):
+            return
+        self._reload_speakers(rec)
         self._align_now()
         self._update_status(rec)
         self.changed.emit(rec.id)
@@ -2011,6 +2064,7 @@ class TranscriptPanel(QWidget):
         if fix is None or self.rec is None:
             return
         self.rec.unfix_speaker(*fix)
+        self._relabel(self.rec)
         self._align_now()
         self._update_status(self.rec)
         self.changed.emit(self.rec.id)

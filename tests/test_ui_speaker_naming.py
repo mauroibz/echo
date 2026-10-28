@@ -119,3 +119,17 @@ def test_your_name_in_settings_keeps_the_voice(qapp):
     assert settings.load()[0].your_name == "Sofía Paz"
     assert list(dictionary.voices()) == ["Sofía Paz"]
     d.deleteLater()
+
+
+def test_renaming_takes_the_wrong_part_back(window, lib, tmp_path):
+    """Named wrong, then right: the first name keeps nothing from this recording."""
+    rec, tp = _show(window, lib, tmp_path)
+    dictionary.remember_voice("Lucía", [0.0, 1.0] + [0.0] * 254, "another recording")
+    tp.name_speaker(2, "Lucía")
+    assert set(dictionary.voices()["Lucía"]["parts"]) == {"another recording", rec.id}
+    tp.name_speaker(2, "Ana")
+    assert set(dictionary.voices()["Lucía"]["parts"]) == {"another recording"}
+    assert set(dictionary.voices()["Ana"]["parts"]) == {rec.id}
+    for _ in range(3):
+        tp.name_speaker(2, "Ana")
+    assert dictionary.voices()["Ana"]["recordings"] == 1

@@ -60,6 +60,20 @@ tag.
   offered under Help → Transcription model; transcribe a recording again to apply it.
 - `echo-app transcribe ID` no longer transcribes again a recording that already has a
   transcript, or one that is queued or running; add `--again` for a new run.
+- "Said by" teaches Echo the voice: after a fix, the other passages that clearly sound like it
+  follow, and "Back to the speakers Echo found" on a name undoes it. Needs a transcript made
+  with this version.
+- A recording teaches a person's voice once. Naming them again, or transcribing again, replaces
+  what that recording taught instead of adding it again, and renaming a speaker takes back what
+  the wrong name learned. Voices learned wrong this way before are best forgotten in the
+  person's profile and named again.
+- The "no sound from this input" hint is a note on the level meter in the sidebar, so a noise
+  gate no longer makes the controls jump. The welcome screen keeps the full hint.
+
+### Fixed
+
+- Pieces under 1.5 s cut out of a passage for an interruption often came back from the model as
+  "Gracias."; that text is no longer shown.
 
 ## 1.0.1 - 2026-10-24
 
