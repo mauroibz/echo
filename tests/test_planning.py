@@ -79,3 +79,23 @@ def test_long_paragraphs_are_broken():
         length += p.duration
         longest = max(longest, length)
     assert longest <= planning.PARAGRAPH_HARD_LIMIT + planning.MAX_PASSAGE
+
+
+def test_cut_makes_interruptions_passages_of_their_own():
+    ps = plan([(0, 20), (24, 30)])
+    # The second span is too short to cut; the third runs past the passage and is clipped to it.
+    cut = planning.cut(ps, [(5.0, 6.0), (12.0, 12.1), (19.5, 21.0)])
+    assert [(p.start, p.end, p.interrupting) for p in cut] == [
+        (0, 5.0, False), (5.0, 6.0, True), (6.0, 19.5, False), (19.5, 20, True), (24, 30, False)]
+    # The first piece keeps the passage's paragraph; the others continue it.
+    assert [p.paragraph for p in cut] == [True, False, False, False, True]
+    assert planning.cut(ps, []) == ps
+
+
+def test_cut_snaps_to_quiet_and_keeps_no_slivers():
+    ps = plan([(0, 20)])
+    cut = planning.cut(ps, [(5.0, 6.0)], lambda lo, hi: lo)  # the quietest point is always the earliest
+    assert [(p.start, p.end) for p in cut] == [(0, 4.75), (4.75, 5.9), (5.9, 20)]
+    # An interruption right at the start takes the sliver before it; one at the end the one after.
+    cut = planning.cut(ps, [(0.1, 2.0), (19.0, 19.8)])
+    assert [(p.start, p.end, p.interrupting) for p in cut] == [(0, 2.0, True), (2.0, 19.0, False), (19.0, 20, True)]

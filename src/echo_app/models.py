@@ -40,8 +40,18 @@ SPEAKER = ModelRef(
     approx_bytes=26_534_127,
     allow=("voxceleb_resnet34.onnx", "config.yaml"),
 )
+# Speaker segmentation for finding where someone else speaks inside a passage (pyannote's
+# segmentation-3.0, MIT, as exported to ONNX by onnx-community; the original repository is gated,
+# this export is not), run on the processor with onnxruntime. Optional like SPEAKER.
+SEGMENTATION = ModelRef(
+    repo="onnx-community/pyannote-segmentation-3.0",
+    revision="733a93b6473d019a773298e08cefa686894b1854",
+    required=("onnx/model.onnx",),
+    approx_bytes=5_986_908,
+    allow=("onnx/model.onnx", "config.json"),
+)
 ALL = (BASE, ADAPTER)  # needed to transcribe
-OPTIONAL = (SPEAKER,)
+OPTIONAL = (SPEAKER, SEGMENTATION)
 
 # Languages the pinned processor accepts (transformers' cohere_asr LANGUAGES). The tokenizer has
 # language tokens for many more, but the processor refuses them; tests/test_languages.py checks
@@ -78,7 +88,13 @@ def all_cached() -> bool:
 
 
 def speaker_cached() -> bool:
-    return is_cached(SPEAKER)
+    """Both speaker models are downloaded (the welcome screen and doctor offer the rest)."""
+    return all(is_cached(r) for r in OPTIONAL)
+
+
+def speaker_download_mb() -> int:
+    """Size of the speaker models still to download, in MB."""
+    return round(sum(r.approx_bytes for r in OPTIONAL if not is_cached(r)) / 1e6)
 
 
 def missing() -> list[ModelRef]:

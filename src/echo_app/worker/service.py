@@ -288,7 +288,15 @@ class Worker:
             partial["regions"] = self.engine.speech_regions(audio, vad_progress)
             partial["results"] = {}
             atomic_write_json(rec.path(PARTIAL), partial)
-        passages = planning.plan(partial["regions"], quietest_fn(audio))
+        quietest = quietest_fn(audio)
+        passages = planning.plan(partial["regions"], quietest)
+        if "turns" not in partial:
+            # A job resumed from before interruptions were found was planned without cuts; its
+            # results are numbered by those passages, so it stays that way.
+            partial["turns"] = [] if partial.get("results") else \
+                self._turns(rec, requested_at, passages, audio, started)
+            atomic_write_json(rec.path(PARTIAL), partial)
+        passages = planning.cut(passages, partial["turns"], quietest)
         results: dict[str, dict | str] = partial.setdefault("results", {})
         todo = [i for i in range(len(passages)) if str(i) not in results]
         # Longest first keeps batches uniform in length.
@@ -376,6 +384,34 @@ class Worker:
                                        time.time() - started)
         log.info("%s: transcribed %.0f s of audio in %.0f s", rec.id, total_s, time.time() - started)
 
+    def _labels_speakers(self, rec: Recording) -> bool:
+        return not rec.meta.speakers_off and getattr(self.engine, "labels_speakers", True)
+
+    def _turns(self, rec: Recording, requested_at, passages, audio, started) -> list[list[float]]:
+        """Spans where someone interrupts a passage's main voice, found before recognition so
+        that each becomes a passage of its own (speakers.interruptions). None without both
+        speaker models or for recordings marked as monologues."""
+        if not self._labels_speakers(rec):
+            return []
+        from . import speakers
+
+        if not (speakers.Segmenter.available() and speakers.Embedder.available()):
+            return []
+        seg = getattr(self, "_segmenter", None) or speakers.Segmenter()
+        self._segmenter = seg
+        spans: list[list[float]] = []
+        last = 0.0
+        for i, p in enumerate(passages):
+            clip = audio[int(p.start * SAMPLE_RATE):int(p.end * SAMPLE_RATE)]
+            for s, e in speakers.interruptions(speakers.local_activity(seg.window, clip), p.start):
+                spans.append([round(s, 3), round(e, 3)])
+            if time.monotonic() - last > 1.0:
+                last = time.monotonic()
+                self._check(rec, requested_at)
+                self._progress(rec, "speakers", i, len(passages), None, started)
+        log.info("%s: %d interruptions cut out of %d passages", rec.id, len(spans), len(passages))
+        return spans
+
     def _speakers(self, rec: Recording, requested_at, passages, audio, segments, started) -> dict | None:
         """Label passages by speaker (a separate stage after recognition, on the processor).
 
@@ -384,7 +420,7 @@ class Worker:
         suggested from voices the user named before. Skipped without the speaker model, for
         recordings marked as monologues, and for engines that do not provide it (tests).
         """
-        if rec.meta.speakers_off or not getattr(self.engine, "labels_speakers", True):
+        if not self._labels_speakers(rec):
             return None
         from . import speakers
 
@@ -393,18 +429,24 @@ class Worker:
             return None
         emb = getattr(self, "_embedder", None) or speakers.Embedder()
         self._embedder = emb
-        embs = {}
+        embs, glimpses = {}, {}
         last = 0.0
         for i, p in enumerate(passages):
-            if p.duration >= speakers.MIN_SECONDS and segments[i].get("text"):
+            if not segments[i].get("text"):
+                pass
+            elif p.duration >= speakers.MIN_SECONDS:
                 embs[i] = emb.embed(audio[int(p.start * SAMPLE_RATE):int(p.end * SAMPLE_RATE)])
+            elif p.interrupting and p.duration >= speakers.MIN_GLIMPSE:
+                glimpses[i] = emb.embed(audio[int(p.start * SAMPLE_RATE):int(p.end * SAMPLE_RATE)])
             if time.monotonic() - last > 1.0:
                 last = time.monotonic()
                 self._check(rec, requested_at)
                 self._progress(rec, "speakers", i, len(passages), None, started)
         spans = [(p.start, p.end) for p in passages]
         sides = speakers.louder_track(decode_tracks(rec), spans, TRACKS_RATE) if rec.meta.tracks else None
-        labels, centroids = speakers.label(spans, embs, tracks=sides)
+        interrupting = [p.interrupting for p in passages] if any(p.interrupting for p in passages) else None
+        labels, centroids = speakers.label(spans, embs, tracks=sides, interrupting=interrupting,
+                                           glimpses=glimpses)
         tracks = _speaker_tracks(labels, sides, spans) if sides is not None else None
         if not centroids:
             return None

@@ -13,6 +13,10 @@ PARAGRAPH_SOFT_LIMIT = 90.0  # after this much speech, break at the next pause o
 PARAGRAPH_SOFT_PAUSE = 0.5
 PARAGRAPH_HARD_LIMIT = 150.0  # always break after this much
 SPLIT_SEARCH = 5.0
+# Cutting out an interruption (see cut): each cut goes to the quietest point within this much
+# outside the span (or 0.1 s inside it), which for an interruption in a pause is the pause.
+CUT_SNAP = 0.25
+MIN_PIECE = 0.3  # a sliver shorter than this stays with its neighbor
 
 
 @dataclass
@@ -21,6 +25,7 @@ class Passage:
     end: float
     paragraph: bool = False  # starts a new paragraph
     gap_before: float = 0.0
+    interrupting: bool = False  # cut out of another voice's speech (see cut)
 
     @property
     def duration(self) -> float:
@@ -79,6 +84,48 @@ def plan(regions: Sequence[tuple[float, float]],
         i = j + 1
     _limit_paragraphs(passages)
     return passages
+
+
+def cut(passages: Sequence[Passage], spans: Sequence[Sequence[float]],
+        quietest: Callable[[float, float], float] | None = None) -> list[Passage]:
+    """Passages cut where someone interrupts: each (start, end) span inside a passage becomes a
+    passage of its own marked `interrupting`, the cuts moved to the quietest point nearby."""
+    out: list[Passage] = []
+    k = 0
+    for p in passages:
+        while k < len(spans) and spans[k][1] <= p.start:
+            k += 1
+        inside = []
+        j = k
+        while j < len(spans) and spans[j][0] < p.end:
+            inside.append(spans[j])
+            j += 1
+        pieces: list[list] = []  # [start, end, interrupting]
+        pos = p.start
+        for s, e in inside:
+            a = min(max(s, p.start), p.end)
+            b = min(max(e, p.start), p.end)
+            if quietest:
+                a = quietest(max(p.start, a - CUT_SNAP), min(p.end, a + 0.1))
+                b = quietest(max(a, b - 0.1), min(p.end, b + CUT_SNAP))
+            if b - max(a, pos) < MIN_PIECE:
+                continue
+            if a - pos >= MIN_PIECE:
+                pieces.append([pos, a, False])
+            elif pieces:
+                pieces[-1][1] = max(pos, a)
+            else:
+                a = pos  # the sliver before it at the passage start goes with it
+            pieces.append([max(a, pos), b, True])
+            pos = b
+        if p.end - pos >= MIN_PIECE or not pieces:
+            pieces.append([pos, p.end, False])
+        else:
+            pieces[-1][1] = p.end
+        for n, (s, e, interrupting) in enumerate(pieces):
+            out.append(Passage(s, e, p.paragraph if n == 0 else False, p.gap_before if n == 0 else 0.0,
+                               interrupting))
+    return out
 
 
 def _limit_paragraphs(passages: list[Passage]) -> None:

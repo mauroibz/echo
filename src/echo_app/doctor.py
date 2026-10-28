@@ -338,7 +338,7 @@ def check_worker(gpu: bool = True) -> list[Check]:
         checks.append(Check("Hugging Face login", OK, "token present"))
     if models.all_cached() and not models.speaker_cached():
         checks.append(Check("Speaker model", WARN, "not downloaded: recordings are not split by speaker",
-                            "echo-app models download  (27 MB)"))
+                            f"echo-app models download  ({models.speaker_download_mb()} MB)"))
     missing = [r.repo for r in models.ALL if not models.is_cached(r)]
     if missing:
         checks.append(Check("Model files", WARN, "not downloaded yet: " + ", ".join(missing),

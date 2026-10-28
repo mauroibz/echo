@@ -320,6 +320,7 @@ local summaries have no folder yet; they wait for the dictionary to be in daily 
 | 7 | `add-people-profiles` | product | archived |
 | 7 | `add-speaker-merge` | AI | archived |
 | 7 | `add-speaker-corrections` | AI | archived |
+| 7 | `add-speaker-turns` | AI | done; a check on real meetings with interruptions is open |
 
 The open items are listed under "Blocked" in each change's `tasks.md`, with what a person has
 to run and look for.

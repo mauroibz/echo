@@ -205,6 +205,8 @@ time.
 3. Speech is planned into passages of at most 28 seconds, cut at the widest pause and preferring
    passages of 8 seconds or more. Paragraphs start at pauses of 2 seconds or more, after 90
    seconds of speech at the next half-second pause, and always after 150 seconds.
+   With the speaker models, a passage is then cut where someone interrupts its main voice
+   (see Speakers).
 4. Passages are transcribed in batches of 8, halving the batch on GPU out-of-memory. Finished
    passages are saved as they complete, so a restarted job resumes where it stopped.
 
@@ -352,7 +354,7 @@ After recognition the worker labels passages by speaker, on the processor: a voi
 passage of 1.5 s or more (WeSpeaker's ResNet34 trained on VoxCeleb, Apache-2.0, a pinned 27 MB
 ONNX file run with onnxruntime), Kaldi filterbank features computed in numpy (they match
 torchaudio's `kaldi.fbank` to 1e-3), and agglomerative clustering on the cosine distance between
-cluster centroids, stopping at 0.4. Shorter passages take the previous speaker; a "speaker" with
+cluster centroids, stopping at 0.35. Shorter passages take the previous speaker; a "speaker" with
 under 8 s of speech joins the nearest one; a recording with one speaker gets no labels. Each
 speaker change starts a paragraph. The transcript keeps each speaker's centroid, and naming a
 speaker stores it as that person's voice (`voices.json` next to the dictionary), so a later
@@ -365,8 +367,39 @@ the shared channel, errors began at 0.60. Single-speaker recordings, the user's 
 microphone among them, stayed one speaker even at 0.15. Chapters read by the same reader
 measured 0.956 or more between centroids, different readers 0.72 at most. Embedding runs at
 about 120× real time on a 6-core CPU. Labels are per passage, so a passage that straddles a turn
-(the planner joins speech across pauses under 2 s) gets one speaker: in a two-reader test with
-quick turns that was 27 s of 165 s.
+(the planner joins speech across pauses under 2 s) would get one speaker: in a two-reader test
+with quick turns that was 27 s of 165 s, and a short interruption inside a long paragraph was
+never labeled. The cuts below are for that.
+
+Before recognition, right after speech detection, a segmentation model (pyannote's
+segmentation-3.0, MIT, as exported to ONNX by onnx-community, 6 MB, pinned, run with
+onnxruntime like the embedding model) looks at each planned passage in 10 s windows every 2.5 s
+and says, every 17 ms, which of up to three local speakers talks, two at once included. Local
+speakers are numbered afresh in each window, so each window's are matched to the earlier ones on
+their overlap; a frame is a speaker's when 40% of the windows over it say so. The passage's
+main voice is the local speaker with the most frames, and anyone else for 0.4 s or more (spans
+under 1 s apart joined) is cut out (`speakers.interruptions`, `planning.cut`): each cut goes to
+the quietest point within 0.25 s outside the span, which for an interruption in a pause is the
+pause, and the piece becomes a passage marked `interrupting`. The model then transcribes it like
+any other passage, so the interruption has its own text, and the editor, exports, search,
+merges and fixes need nothing new. The spans are kept in the partial file (`turns`) next to the
+speech regions, so a resumed job plans the same passages; a partial file from before has none
+and is finished uncut. Clustering is as before; an `interrupting` passage that clustered with
+the voice around it, or was too short to embed, takes the nearest other speaker on its track by
+its embedding (from 0.4 s of audio), or the only other one. Without the segmentation model, or
+for a monologue, nothing is cut.
+
+Measured on conversations built from 20 Spanish readers of Multilingual LibriSpeech (two or
+three speakers, about 6.5 minutes each, an interruption of 0.5 to 2.5 s every 4 to 14 s, in a
+pause or over the speaker, clean or through a room channel; ten readers to tune, ten to test).
+On the held-out half (52 minutes, 216 interruptions), labeling per passage at 0.4 showed 5% of
+the interruptions as someone else and labeled 88% of the speech right; with the cuts and 0.35,
+68% and 92%, at about two wrongly cut pieces per 10 minutes. Interruptions under a second in a
+pause are mostly missed (7 of 25). At 0.4, two speakers merged into one in three of eight tuning
+conversations; at 0.35, in one. Twenty six-minute monologues, clean and through the room
+channel, stayed one speaker at 0.35. Larger embedding models (WeSpeaker ResNet293, CAM++) were
+no better there. Segmentation and embeddings together run at about 78× real time on a 6-core
+CPU. Details in `openspec/changes/add-speaker-turns/design.md`.
 
 A recorded call has its sides on separate channels, so each passage first goes to the track
 that is louder over it (RMS, from the two channels decoded at 4 kHz, which is enough for
@@ -510,7 +543,7 @@ library. Without a portal, the same actions are CLI commands to bind in the desk
 | CPython 3.14 | downloaded by uv (`python-preference = "only-managed"`); the system Python is never used |
 | Packages | `<clone>/.venv`, from `uv.lock` with sha256 hashes, wheels only (`no-build = true`) |
 | `sounddevice` (base) | PortAudio audio where PipeWire does not run the sound: Windows, macOS, PulseAudio-only Linux. Its Windows and macOS wheels carry PortAudio; on Linux it uses the system's `libportaudio` and is only loaded when needed. Brings `cffi`. |
-| `onnxruntime` (transcription profiles) | Runs the 27 MB speaker-embedding model on the processor in every profile; torch could not load the ONNX export without a converter. Brings `flatbuffers` and `protobuf`. |
+| `onnxruntime` (transcription profiles) | Runs the 27 MB speaker-embedding model and the 6 MB speaker-segmentation model on the processor in every profile; torch could not load the ONNX exports without a converter. Brings `flatbuffers` and `protobuf`. |
 | `jeepney` (base, Linux) | D-Bus for the global-shortcuts portal; QtDBus cannot marshal its argument types. Pure Python, no dependencies. |
 | `send2trash` (base) | The desktop trash on Windows and macOS; Linux keeps Echo's own freedesktop code. Pure Python. |
 | Echo itself | not built or installed as a package (`package = false`); `bin/echo-app` runs the source tree |

@@ -250,3 +250,169 @@ def test_the_users_names_are_never_replaced(tmp_path, monkeypatch):
     settings.save(settings.Settings(your_name=""))
     t = _process(lib_, rec)
     assert "me" not in t["speakers"] and rec.meta.speakers == {}  # no name set: nobody is named
+
+
+def _activity(frames, spans):
+    """(frames, 3) activity: local speaker 0 throughout, others where `spans` (speaker, a, b) say."""
+    act = np.zeros((frames, 3))
+    act[:, 0] = 1.0
+    for who, a, b in spans:
+        act[a:b, who] = 1.0
+    return act
+
+
+def test_interruptions_from_activity():
+    step = speakers.SEG_STEP / 16000
+    act = _activity(1000, [(1, 100, 160), (1, 300, 310), (2, 500, 560), (2, 600, 640)])
+    spans = speakers.interruptions(act, 10.0)
+    # 60 frames (1 s) and the two runs 40 frames apart joined; 10 frames (0.17 s) is too short.
+    assert len(spans) == 2
+    assert spans[0][0] == pytest.approx(10.0 + 100 * step + speakers.SEG_HALF / 16000)
+    assert spans[1][1] == pytest.approx(10.0 + 640 * step + speakers.SEG_HALF / 16000)
+    # The main voice is whoever speaks most, whichever local number it has.
+    assert speakers.interruptions(act[:, [2, 0, 1]], 0.0) == speakers.interruptions(act, 0.0)
+    assert speakers.interruptions(np.zeros((0, 3)), 0.0) == []
+
+
+def test_local_activity_matches_speakers_across_windows():
+    # Each window numbers its speakers afresh: the second voice is local speaker 1 in even
+    # windows and 2 in odd ones. Stitched, it is one speaker throughout.
+    seen = []
+
+    def window(samples):
+        n = (speakers.SEG_WINDOW - 2 * speakers.SEG_HALF) // speakers.SEG_STEP + 1
+        act = np.zeros((n, 3), dtype=np.float32)
+        act[:, 0] = 1.0
+        act[:, 1 + len(seen) % 2] = 1.0
+        seen.append(len(samples))
+        return act
+
+    act = speakers.local_activity(window, np.zeros(25 * 16000, np.int16))
+    assert len(seen) >= 4 and min(seen) > speakers.SEG_WINDOW - speakers.SEG_STEP  # the last one ends on a frame
+    assert act.shape[0] == (25 * 16000 - 2 * speakers.SEG_HALF) // speakers.SEG_STEP + 1
+    assert (act[:, 0] == 1).all() and ((act[:, 1] == 1) | (act[:, 2] == 1)).all()
+    assert (act[:, 1] == 1).all() or (act[:, 2] == 1).all()
+    assert speakers.local_activity(window, np.zeros(100, np.int16)).shape == (0, 3)
+
+
+def test_label_interruptions_take_another_speaker():
+    passages = [(0, 20), (20, 21), (21, 40), (40, 60), (60, 60.8), (60.8, 80)]
+    embs = {0: _voice(1), 2: _voice(1), 3: _voice(2), 5: _voice(2)}
+    interrupting = [False, True, False, False, True, False]
+    labels, _ = speakers.label(passages, embs)
+    assert labels == [1, 1, 1, 2, 2, 2]  # short passages take a neighbor's speaker
+    labels, _ = speakers.label(passages, embs, interrupting=interrupting)
+    assert labels == [1, 2, 1, 2, 1, 2]
+    # With three speakers, a glimpse of the voice says which one; without, it stays.
+    passages3 = passages + [(80, 100)]
+    embs3 = {**embs, 6: _voice(3)}
+    labels, _ = speakers.label(passages3, embs3, interrupting=interrupting + [False], glimpses={1: _voice(3)})
+    assert labels[:2] == [1, 3] and labels[4] == 2
+    # An interruption long enough to embed that clustered with the voice around it is moved.
+    embs_long = {**embs, 1: _voice(1)}
+    assert speakers.label(passages, embs_long, interrupting=interrupting)[0][1] == 2
+    # One voice in the recording: no labels, interruptions or not.
+    assert speakers.label(passages, {i: _voice(1) for i in (0, 2, 3, 5)}, interrupting=interrupting)[0] == [None] * 6
+
+
+def test_label_interruptions_stay_on_their_track():
+    passages = [(0, 20), (20, 21), (21, 40), (40, 60)]
+    embs = {0: _voice(1), 2: _voice(1), 3: _voice(2)}
+    # The interruption is on the microphone, where only speaker 1 talks: nobody else to give it to.
+    labels, _ = speakers.label(passages, embs, tracks=[0, 0, 0, 1], interrupting=[False, True, False, False])
+    assert labels == [1, 1, 1, 2]
+
+
+def _segmenter(monkeypatch, spans_s):
+    """A segmentation model hearing a second local speaker at `spans_s` (seconds, absolute)."""
+    calls = []
+
+    class Segmenter:
+        @staticmethod
+        def available():
+            return True
+
+        def window(self, samples):
+            calls.append(len(samples))
+            n = (speakers.SEG_WINDOW - 2 * speakers.SEG_HALF) // speakers.SEG_STEP + 1
+            return np.ones((n, 3), dtype=np.float32) * np.array([1, 0, 0], dtype=np.float32)
+
+    def local_activity(window, samples):
+        act = np.zeros(((len(samples) - 2 * speakers.SEG_HALF) // speakers.SEG_STEP + 1, 3))
+        act[:, 0] = 1.0
+        window(samples)
+        return act
+
+    real = speakers.interruptions
+
+    def interruptions(activity, start):
+        end = start + (len(activity) * speakers.SEG_STEP + speakers.SEG_HALF) / 16000
+        return [(a, b) for a, b in spans_s if start <= a < end] + real(activity, start)
+
+    monkeypatch.setattr(speakers, "Segmenter", Segmenter)
+    monkeypatch.setattr(speakers, "local_activity", local_activity)
+    monkeypatch.setattr(speakers, "interruptions", interruptions)
+    return calls
+
+
+def test_worker_cuts_interruptions_before_recognition(tmp_path, monkeypatch):
+    lib_ = Library(tmp_path / "data")
+    # Two long turns; inside the first, someone else says something short in a pause.
+    rec = importer.import_file(lib_, speechy_wav(tmp_path / "i.wav", [(1, False), (20, True), (3, False),
+                                                                       (20, True), (1, False)])).recording
+    _segmenter(monkeypatch, [(9.0, 10.0)])
+
+    class Embedder:
+        @staticmethod
+        def available():
+            return True
+
+        def embed(self, samples):
+            # The second turn (20 s) and the interruption (1 s) are one voice, the rest another.
+            return _voice(2 if len(samples) >= 15 * 16000 or len(samples) < 1.5 * 16000 else 1)
+
+    monkeypatch.setattr(speakers, "Embedder", Embedder)
+    t = _process(lib_, rec)
+    segs = t["segments"]
+    bounds = [b for s in segs[:3] for b in (s["start"], s["end"])]
+    assert bounds == pytest.approx([1.0, 9.0, 9.0, 10.0, 10.0, 21.0], abs=0.3)  # cuts at the quietest point
+    assert [s["speaker"] for s in segs] == [1, 2, 1, 2]
+    assert [s["paragraph"] for s in segs] == [True, True, True, True]  # each change of voice
+    assert json.loads(rec.path("meta.json").read_text()).get("speakers_off") is not True
+    # Marked as a monologue: no segmentation, no cuts.
+    calls = _segmenter(monkeypatch, [(9.0, 10.0)])
+    rec.update(speakers_off=True)
+    t = _process(lib_, rec)
+    assert calls == [] and len(t["segments"]) == 2
+
+
+def test_resume_keeps_the_cuts_and_old_partials_stay_uncut(tmp_path, monkeypatch):
+    from echo_app.worker.service import PARTIAL, Worker
+
+    lib_ = Library(tmp_path / "data")
+    rec = importer.import_file(lib_, speechy_wav(tmp_path / "r.wav", [(1, False), (20, True), (1, False)])).recording
+    _segmenter(monkeypatch, [(9.0, 10.0)])
+    _embedder(monkeypatch, [1, 2])
+
+    class Crash(BaseException):  # a kill, which the worker does not catch
+        pass
+
+    def crash(n):
+        raise Crash
+
+    rec.request_transcription()
+    with pytest.raises(Crash):
+        Worker(lib_, VoiceEngine(on_batch=crash)).process(rec)
+    partial = json.loads(rec.path(PARTIAL).read_text())
+    assert partial["turns"] == [[9.0, 10.0]]
+    # Found once: the resumed job asks the segmentation model nothing and cuts the same way.
+    calls = _segmenter(monkeypatch, [(3.0, 4.0)])
+    Worker(lib_, VoiceEngine()).process(rec)
+    assert calls == [] and len(rec.reload().transcript()["segments"]) == 3
+    # A partial file from before cuts (results but no turns) is finished as it was planned.
+    rec.request_transcription()
+    partial = {k: v for k, v in partial.items() if k != "turns"}
+    partial["results"] = {"0": {"text": "hecho"}}
+    rec.path(PARTIAL).write_text(json.dumps(partial))
+    Worker(lib_, VoiceEngine()).process(rec)
+    assert [s["text"] for s in rec.reload().transcript()["segments"]] == ["hecho"]

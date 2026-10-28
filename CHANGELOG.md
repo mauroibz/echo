@@ -54,6 +54,10 @@ tag.
 
 ### Changed
 
+- Short interruptions are found. When someone cuts into another person's long paragraph for a
+  few words, that becomes its own paragraph with their name, instead of being labeled as the
+  person around it. Speakers are also merged into one less often. Needs a 6 MB download,
+  offered under Help → Transcription model; transcribe a recording again to apply it.
 - `echo-app transcribe ID` no longer transcribes again a recording that already has a
   transcript, or one that is queued or running; add `--again` for a new run.
 

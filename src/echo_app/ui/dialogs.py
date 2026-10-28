@@ -116,13 +116,15 @@ class ModelDownload(QWidget):
         self.bar.setVisible(installed and (not cached or speaker_only))
         self.button.setVisible(installed and (not cached or speaker_only))
         self.button.setEnabled((has_token or speaker_only) and self.proc is None)
-        self.button.setText("Download (27 MB)" if speaker_only else "Download (4.3 GB)")
+        size = f"{models.speaker_download_mb()} MB" if speaker_only else "4.3 GB"
+        self.button.setText(f"Download ({size})")
         if not installed:
             self.info.setText("Transcription is not installed on this computer. To add it, run in the Echo folder:\n"
                               "./install.sh --with-transcription")
         elif speaker_only:
-            self.info.setText("The transcription model is ready. One more small download (27 MB) lets Echo tell "
-                              "speakers apart in interviews and meetings.")
+            self.info.setText(f"The transcription model is ready. One more small download "
+                              f"({models.speaker_download_mb()} MB) lets Echo tell speakers apart in interviews "
+                              "and meetings.")
         elif cached:
             speed = transcription.speed_text()
             self.info.setText("The transcription model is downloaded and ready." + (f" {speed}" if speed else ""))

@@ -179,7 +179,10 @@ Model versions are pinned, and only weights and configuration are downloaded, ne
   Japanese, Korean, Polish, Portuguese and Vietnamese too; the Spanish adapter is used for
   Spanish only.
 - **Who said what.** In interviews and meetings Echo tells the speakers apart and starts a new
-  paragraph when the speaker changes; their names show beside the text. A bar over the
+  paragraph when the speaker changes; their names show beside the text. A short interruption
+  inside someone's long paragraph ("¿y cuánto sale?") becomes a paragraph of its own with the
+  other person's name. Echo catches most interruptions of a second or more; shorter ones, or one
+  person's voice split in two, are fixed below. A bar over the
   transcript asks about one unnamed speaker at a time, whoever speaks most first: ▶ plays a few
   seconds of them, then type a name and press Enter, or click "Yes, Ana" when the voice matches
   someone you named before. "Not now" stops asking about that recording; the names beside the
@@ -197,7 +200,9 @@ Model versions are pinned, and only weights and configuration are downloaded, ne
   for improving speaker labeling later.
   Exports carry the names. Monologues are left alone, and ⋯ → Label speakers turns it off for a
   recording. Voices are kept as numbers in `~/.config/echo/voices.json`, on this computer only.
-  This needs a small extra download (27 MB), offered under Help → Transcription model.
+  This needs a small extra download (33 MB), offered under Help → Transcription model; after
+  updating Echo, the 6 MB that finds interruptions is offered there too. Transcribe a recording
+  again to apply it.
 - **Names and terms.** When you correct a name in a transcript ("zurus" to "Surus"), a small
   suggestion under the text offers to add it to the dictionary; one click, and Echo spells it
   that way in new transcripts and fixes the old spelling in existing ones. Corrections Echo
