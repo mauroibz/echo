@@ -1,7 +1,7 @@
 # Working on Echo
 
 Echo is a Linux desktop app that records long-form audio and transcribes Spanish speech
-locally. `README.md` is for users, `docs/design.md` explains the architecture and its
+locally. `README.md` and `docs/guide.md` are for users, `docs/design.md` explains the architecture and its
 reasons, `openspec/specs/` is the behavior each part must keep, and `docs/roadmap.md` is
 the plan. This file is for an agent implementing that plan without anyone watching.
 
@@ -51,8 +51,9 @@ uses a stub engine.
 4. **Test.** Add tests next to the existing ones (`tests/test_*.py`; UI tests drive real
    widgets offscreen as in `tests/test_ui.py`; the recorder uses `tests/fake_capture.py`).
    The whole fast suite must pass before every commit.
-5. **Document.** Update `README.md` for anything a user sees (features, shortcuts, settings,
-   troubleshooting) and `docs/design.md` for anything about how it works. Add a line to
+5. **Document.** Update `docs/guide.md` for anything a user sees (features, shortcuts, settings,
+   troubleshooting), `README.md` when it changes what Echo is or how it installs, and
+   `docs/design.md` for anything about how it works. Add a line to
    `CHANGELOG.md` under Unreleased once that file exists (`add-ubuntu-parity` creates it).
 6. **Archive.** When every task is done: merge the change's spec deltas into
    `openspec/specs/<capability>/spec.md` (ADDED requirements are appended; MODIFIED replace
