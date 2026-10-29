@@ -3,6 +3,14 @@
 Notable changes to Echo. Versions are git tags (`vX.Y.Z`); `main` may be ahead of the latest
 tag.
 
+## 1.3.0 - 2026-10-29
+
+### Added
+
+- Extension points for optional packages installed into the same app (the first planned is Echo
+  Studio, for summaries). Without one, Echo looks and works as before and still sends nothing
+  anywhere; `ECHO_NO_EXTENSIONS=1` starts it without any. See Extensions in `docs/design.md`.
+
 ## 1.2.0 - 2026-10-28
 
 ### Added
