@@ -85,7 +85,17 @@ def run(argv: list[str]) -> int:
     app.setWindowIcon(app_icon())
     app.setQuitOnLastWindowClosed(False)
     lib = Library(cfg.data_path)
-    win = MainWindow(lib, UiState())
+    from .. import extensions
+
+    window_class = next((c for c in extensions.call("window_class") if c is not None), MainWindow)
+    try:
+        win = window_class(lib, UiState())
+    except Exception:
+        if window_class is MainWindow:
+            raise
+        log.exception("extension window failed; opening Echo's own")
+        win = MainWindow(lib, UiState())
+    extensions.call("attach_window", win)
 
     def on_message(msg: dict):
         if msg.get("show"):

@@ -108,12 +108,13 @@ that signal, plus disagreement between the adapter and base-model outputs when b
 would let the editor shade passages the user should check first. Cheap and useful for long
 recordings where nobody reads everything.
 
-### 1.5 Local summaries and structure (optional, later)
+### 1.5 Summaries and structure (Echo Studio)
 
-Titles, summaries, action items and chapter headings from a local LLM. This is the first
-feature that would pull in a second large model, so it belongs behind its own install profile
-and should wait until the prongs above have settled. Markdown export with headings from
-paragraph breaks gives much of the value with no model at all (see Prong 3).
+Titles, summaries, action items and chapter headings from a language model. These need a
+second model, local or in the cloud, so they are not part of Echo: they belong to Echo Studio,
+an optional extension installed into the same app (see Extensions in `docs/design.md`). Echo
+provides the places Studio adds to and stays local. Markdown export with headings from markers
+gives part of the value with no model at all (see Prong 3).
 
 ## Prong 2: Adoption
 
@@ -270,7 +271,7 @@ than turning it into a note-taking platform, and most reuse existing pieces.
 | 1 | 1.1 dictionary (corrections chip, layers A and B); 2.3 Linux-side refactors (command file, locks, capture interface); 3 markers and timestamps export | The dictionary is the highest-value AI change and is mostly plumbing. The refactors de-risk Windows without touching behavior. |
 | 2 | 2.3 Windows backend and installer; 2.2 CPU tuning of the one model, guided by the phase 0 measurement; 1.3 languages; 3 tags, watched folder, edit-with-audio | Windows is the long pole and starts as soon as the abstractions land. |
 | 3 | 1.2 speakers; 2.4 macOS; 3 quick note, review mode, richer export | Each builds on phase 2 pieces. |
-| Later | 1.1 layer C personal adapter; 1.5 local summaries | Need a corpus and a second model respectively; only worth it once the above is in daily use. |
+| Later | 1.1 layer C personal adapter | Needs a corpus; only worth it once the above is in daily use. |
 
 ## Decisions made
 
@@ -287,8 +288,9 @@ than turning it into a note-taking platform, and most reuse existing pieces.
 
 `CLAUDE.md` at the repository root says how an agent picks, implements, verifies and
 archives a change unattended. Each item is a change folder in `openspec/changes/`, ready to be applied in the usual way
-(proposal, design where decisions were needed, spec deltas, tasks). The personal adapter and
-local summaries have no folder yet; they wait for the dictionary to be in daily use.
+(proposal, design where decisions were needed, spec deltas, tasks). The personal adapter has
+no folder yet; it waits for the dictionary to be in daily use. Summaries are Echo Studio's
+(1.5).
 
 | Phase | Change | Prong | Status (2026-10-24) |
 |---|---|---|---|
@@ -324,6 +326,7 @@ local summaries have no folder yet; they wait for the dictionary to be in daily 
 | 7 | `add-speaker-relabel` | AI | done; a check on a real meeting is open |
 | 7 | `change-silence-note` | product | archived |
 | 7 | `add-call-turns` | AI | done; a check on a real call is open |
+| 8 | `add-extension-points` | product | archived |
 
 The open items are listed under "Blocked" in each change's `tasks.md`, with what a person has
 to run and look for.

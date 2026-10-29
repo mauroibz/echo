@@ -5,15 +5,15 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QItemSelectionModel, QObject, QSize, Qt, QTimer, QUrl
+from PySide6.QtCore import QEvent, QItemSelectionModel, QObject, QSize, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QAction, QCloseEvent, QDesktopServices, QFont, QKeySequence, QShortcut
 from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCompleter, QFileDialog, QFrame, QHBoxLayout, QLabel, QLineEdit,
-                               QListView, QMainWindow, QMenu, QMessageBox, QSplitter, QStatusBar, QSystemTrayIcon,
-                               QToolButton, QVBoxLayout, QWidget)
+                               QListView, QMainWindow, QMenu, QMessageBox, QSplitter, QStackedWidget, QStatusBar,
+                               QSystemTrayIcon, QToolButton, QVBoxLayout, QWidget)
 
 from .. import APP_NAME, export, features, importer, recorder, sets, settings, transcription
 from ..index import Index, parse_people, parse_query
-from ..library import READY, RECORDING, T_QUEUED, T_RUNNING, Library, Recording
+from ..library import READY, RECORDING, T_QUEUED, T_RUNNING, TRANSCRIPT, Library, Recording
 from . import theme
 from .common import RECORD_RED, UiState, app_icon, dot_icon, fmt_duration, icon, run_task
 from .dialogs import (AboutDialog, DoctorDialog, ExportLibraryDialog, ModelDialog, SettingsDialog, ShortcutsDialog,
@@ -65,7 +65,62 @@ class DropOverlay(QLabel):
         super().showEvent(e)
 
 
+class ViewSwitch(QWidget):
+    """The transcript, and the views extensions add beside it, one shown at a time. With no
+    added view there is no switch: the transcript card alone, as in Echo without extensions."""
+
+    def __init__(self, transcript: QWidget):
+        super().__init__()
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(8)
+        self.bar = QWidget()
+        bl = QHBoxLayout(self.bar)
+        bl.setContentsMargins(0, 0, 0, 0)
+        bl.setSpacing(4)
+        bl.addStretch(1)
+        self.bar.hide()
+        lay.addWidget(self.bar)
+        self.stack = QStackedWidget()
+        lay.addWidget(self.stack, 1)
+        self.buttons: list[QToolButton] = []
+        self._add_page("Transcript", transcript)
+        self.buttons[0].setChecked(True)
+
+    def _add_page(self, title: str, widget: QWidget):
+        b = QToolButton()
+        b.setText(title)
+        b.setCheckable(True)
+        b.setAutoExclusive(True)
+        b.setAccessibleName(f"Show {title.lower()}")
+        k = self.stack.addWidget(widget)
+        b.clicked.connect(lambda: self.stack.setCurrentIndex(k))
+        self.bar.layout().insertWidget(len(self.buttons), b)
+        self.buttons.append(b)
+
+    def add(self, title: str, widget: QWidget):
+        widget.setObjectName("card")
+        widget.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self._add_page(title, widget)
+        self.bar.show()
+
+    def views(self) -> list[QWidget]:
+        return [self.stack.widget(i) for i in range(1, self.stack.count())]
+
+    def show_subject(self, rec, linked):
+        for w in self.views():
+            fn = getattr(w, "show_subject", None)
+            if fn is None:
+                continue
+            try:
+                fn(rec, linked)
+            except Exception:
+                log.exception("view %s failed to show the selection", type(w).__name__)
+
+
 class MainWindow(QMainWindow):
+    transcribed = Signal(str)  # a recording's transcript was written while the window runs
+
     def __init__(self, library: Library, state: UiState):
         super().__init__()
         self.library = library
@@ -76,7 +131,8 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(APP_NAME)
         self.setWindowIcon(app_icon())
         self.setAcceptDrops(True)
-        self._build()
+        self._build_parts()
+        self._build_layout()
         self._build_menus()
         self._build_tray()
         self._restore()
@@ -92,13 +148,18 @@ class MainWindow(QMainWindow):
         # Linking changes no recording folder: a synced notes folder is brought up to date as a whole.
         self.model.sets_changed.connect(lambda: self._notes_changed(list(self.model._all)))
         self.model.recordings_changed.connect(self._deliver_quick_notes)
+        self._transcript_times = {r.id: self._transcript_time(r) for r in self.model._all.values()}
+        self.model.recordings_changed.connect(self._check_transcribed)
+        self.model.recordings_changed.connect(self._shown_changed)
         self.shortcuts = None
         self.watcher = FolderWatcher(self.library, self)
         self.watcher.imported.connect(self._watched_import)
         QTimer.singleShot(0, self._startup_tasks)
 
     # ---- construction ----
-    def _build(self):
+    def _build_parts(self):
+        """Make and connect the parts: recorder, search, tags, banner, list, player, transcript.
+        Where they go is _build_layout's, which a window that lays them out differently overrides."""
         self.recorder_panel = RecorderPanel(self.library)
         self.recorder_panel.message.connect(self.show_message)
         self.recorder_panel.started.connect(self._recording_started)
@@ -158,20 +219,8 @@ class MainWindow(QMainWindow):
         self.empty.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         theme.set_role(self.empty, dim=True)
 
-        left = theme.DeepBackground()
-        left.setObjectName("sidebar")
-        ll = QVBoxLayout(left)
-        ll.setContentsMargins(0, 0, 0, 0)
-        ll.setSpacing(0)
-        ll.addWidget(self.recorder_panel)
-        sw = QWidget()
-        sl = QVBoxLayout(sw)
-        sl.setContentsMargins(14, 2, 14, 4)
-        sl.setSpacing(12)
-        sl.addWidget(self.search)
         self.tag_bar = TagBar()
         self.tag_bar.toggled.connect(self._toggle_tag)
-        sl.addWidget(self.tag_bar)
         # After an import: notes that look like one burst, offered for linking in one click.
         self.banner = QFrame()
         self.banner.setObjectName("banner")
@@ -200,13 +249,9 @@ class MainWindow(QMainWindow):
         bl.addWidget(self.banner_close)
         self.banner.hide()
         self._offers: list[sets.Offer] = []
-        sl.addWidget(self.banner)
         self.list_label = QLabel("RECORDINGS")
         self.list_label.setFont(theme.display_font(0.78, QFont.Weight.ExtraBold))
         theme.set_role(self.list_label, eyebrow=True)
-        sl.addWidget(self.list_label)
-        ll.addWidget(sw)
-        ll.addWidget(self.list, 1)
         # Several rows selected: link them (or delete them) in one click.
         self.selection_bar = QFrame()
         self.selection_bar.setObjectName("selectionbar")
@@ -231,7 +276,6 @@ class MainWindow(QMainWindow):
         self.bar_delete.clicked.connect(self.delete_selected)
         bl.addWidget(self.bar_delete)
         self.selection_bar.hide()
-        ll.addWidget(self.selection_bar)
 
         self.player = PlayerPanel()
         self.player.message.connect(self.show_message)
@@ -253,14 +297,43 @@ class MainWindow(QMainWindow):
         self.transcript.attach_player(self.player)
         self.player.markers_changed.connect(lambda _rid: self.transcript.reload_markers())
         self.transcript.marker_clicked.connect(self._seek_and_play)
-
         for card in (self.player, self.transcript):
             card.setObjectName("card")
             card.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        # The transcript and the views extensions add next to it (add_view), one shown at a time.
+        self.views = ViewSwitch(self.transcript)
+
+        self.setStatusBar(QStatusBar())
+        self.worker_label = QLabel("")
+        self.statusBar().addPermanentWidget(self.worker_label)
+        self.overlay = DropOverlay(self)
+
+        self._space = _SpaceFilter(self.player.toggle_play)
+        self.list.installEventFilter(self._space)
+        self.player.wave.installEventFilter(self._space)
+
+    def _build_layout(self):
+        """The sidebar (recorder, search, tags, list) beside the player over the transcript."""
+        left = theme.DeepBackground()
+        left.setObjectName("sidebar")
+        ll = QVBoxLayout(left)
+        ll.setContentsMargins(0, 0, 0, 0)
+        ll.setSpacing(0)
+        ll.addWidget(self.recorder_panel)
+        sw = QWidget()
+        sl = QVBoxLayout(sw)
+        sl.setContentsMargins(14, 2, 14, 4)
+        sl.setSpacing(12)
+        for w in (self.search, self.tag_bar, self.banner, self.list_label):
+            sl.addWidget(w)
+        ll.addWidget(sw)
+        ll.addWidget(self.list, 1)
+        ll.addWidget(self.selection_bar)
+
         self.right_split = QSplitter(Qt.Orientation.Vertical)
         self.right_split.setObjectName("content")
         self.right_split.addWidget(self.player)
-        self.right_split.addWidget(self.transcript)
+        self.right_split.addWidget(self.views)
         self.right_split.setStretchFactor(0, 0)
         self.right_split.setStretchFactor(1, 1)
         self.right_split.setChildrenCollapsible(False)
@@ -279,14 +352,18 @@ class MainWindow(QMainWindow):
         left.setMinimumWidth(280)
         self.setCentralWidget(self.split)
 
-        self.setStatusBar(QStatusBar())
-        self.worker_label = QLabel("")
-        self.statusBar().addPermanentWidget(self.worker_label)
-        self.overlay = DropOverlay(self)
+    def _restore_layout(self):
+        self.split.setSizes(self.state.get("split") or [330, 850])
+        self.right_split.setSizes(self.state.get("right_split") or [200, 560])
 
-        self._space = _SpaceFilter(self.player.toggle_play)
-        self.list.installEventFilter(self._space)
-        self.player.wave.installEventFilter(self._space)
+    def _save_layout(self):
+        self.state.set("split", self.split.sizes())
+        self.state.set("right_split", self.right_split.sizes())
+
+    def add_view(self, title: str, widget: QWidget):
+        """A view an extension shows instead of the transcript, chosen with a switch over it."""
+        self.views.add(title, widget)
+        self.views.show_subject(self.current(), self.current_set())
 
     def _act(self, menu: QMenu, text: str, slot, shortcut=None, ic: str | None = None) -> QAction:
         a = QAction(text, self)
@@ -393,8 +470,7 @@ class MainWindow(QMainWindow):
             self.resize(1180, 760)
         if self.state.get("maximized"):
             self.setWindowState(Qt.WindowState.WindowMaximized)
-        self.split.setSizes(self.state.get("split") or [330, 850])
-        self.right_split.setSizes(self.state.get("right_split") or [200, 560])
+        self._restore_layout()
         self.player.set_speed(self.state.get("speed", 1.0))
         vols = self.state.get("volumes")
         self.player.volumes = {k: float(v) for k, v in (vols.items() if isinstance(vols, dict) else ())
@@ -405,8 +481,7 @@ class MainWindow(QMainWindow):
             g = self.geometry()
             self.state.set("geometry", [g.x(), g.y(), g.width(), g.height()])
         self.state.set("maximized", self.isMaximized())
-        self.state.set("split", self.split.sizes())
-        self.state.set("right_split", self.right_split.sizes())
+        self._save_layout()
         self.state.set("speed", self.player.speed_value())
         self.state.set("volumes", self.player.volumes)
         key = self.current_key()
@@ -685,6 +760,7 @@ class MainWindow(QMainWindow):
             rec = self.model.recording(current.row()) if current.isValid() else None
             self.player.set_recording(rec)
             self.transcript.set_recording(rec)
+        self.views.show_subject(self.current(), linked)
         self._carry_search()
         self._update_actions()
 
@@ -1173,6 +1249,30 @@ class MainWindow(QMainWindow):
                 self.tray.showMessage(APP_NAME, "Recording a quick note. Press the same keys to stop.",
                                       QSystemTrayIcon.MessageIcon.Information, 3000)
 
+    @staticmethod
+    def _transcript_time(rec: Recording) -> float | None:
+        try:
+            return rec.path(TRANSCRIPT).stat().st_mtime
+        except OSError:
+            return None
+
+    def _shown_changed(self, ids: list):
+        """Views follow the shown recording's or set's files as the transcript does."""
+        rec, linked = self.current(), self.current_set()
+        shown = {rec.id} if rec is not None else {r.id for r in linked[1]} if linked is not None else set()
+        if shown & set(ids):
+            self.views.show_subject(self.library.get(rec.id) if rec is not None else None, linked)
+
+    def _check_transcribed(self, ids: list):
+        for rid in ids:
+            rec = self.library.get(rid)
+            if rec is None:
+                continue
+            t = self._transcript_time(rec)
+            if t is not None and t != self._transcript_times.get(rid):
+                self._transcript_times[rid] = t
+                self.transcribed.emit(rid)
+
     def _deliver_quick_notes(self, ids: list):
         """A quick note's text goes to the clipboard once, as soon as it is transcribed."""
         from ..library import T_DONE
@@ -1336,7 +1436,9 @@ class MainWindow(QMainWindow):
 
     # ---- dialogs ----
     def show_settings(self):
-        dlg = SettingsDialog(self.recorder_panel.session is not None, self)
+        from .. import extensions
+
+        dlg = SettingsDialog(self.recorder_panel.session is not None, self, extensions.gather("settings_pages"))
         accepted = dlg.exec()
         if accepted:
             self.watcher.configure()

@@ -362,6 +362,9 @@ def run_all(gpu: bool = True) -> list[Check]:
     checks.append(check_lock())
     checks += check_data_dir(cfg)
     checks += check_worker(gpu=gpu)
+    from . import extensions
+
+    checks += extensions.gather("doctor_checks")
     return checks
 
 

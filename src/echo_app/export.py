@@ -340,7 +340,11 @@ def to_markdown(rec: Recording, timestamps: bool = False, audio_link: str | None
     if rec.meta.notes:
         head += ["", f"> {rec.meta.notes}"]
     body = _markdown_body(rec, text, timestamps)
-    return "\n".join(head) + "\n\n" + body.strip() + "\n"
+    from . import extensions
+
+    extra = "".join(f"## {heading}\n\n{section.strip()}\n\n"
+                    for heading, section in extensions.gather("markdown_sections", rec))
+    return "\n".join(head) + "\n\n" + extra + body.strip() + "\n"
 
 
 def _markdown_body(rec: Recording, text: str, timestamps: bool) -> str:

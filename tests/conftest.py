@@ -23,6 +23,8 @@ def isolated_home(tmp_path, monkeypatch):
     monkeypatch.setenv("ECHO_RUNTIME_DIR", str(tmp_path / "run"))
     monkeypatch.setenv("ECHO_NO_WORKER", "1")
     monkeypatch.setenv("ECHO_NO_PORTAL", "1")  # never ask the real desktop for shortcuts
+    # Echo alone, even in a checkout with an extension next to it; tests/test_extensions.py loads fakes.
+    monkeypatch.setenv("ECHO_NO_EXTENSIONS", "1")
     return home
 
 

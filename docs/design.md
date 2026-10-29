@@ -14,6 +14,9 @@ change.
   whose every entry has a reason.
 - **No root, no surprises.** The install touches only the clone and the user's home, and gets
   the same hash-locked packages on every machine.
+- **Local.** Echo sends nothing anywhere; the one connection it opens is the model download.
+  Features that need a language model or a cloud service belong to an extension (see
+  Extensions), not to Echo.
 
 ## Processes
 
@@ -586,6 +589,35 @@ long as the D-Bus connection that created it, so a thread in the window keeps on
 and turns the portal's Activated signals into Qt signals. QtDBus aborts inside libdbus when asked
 to build the portal's `a(sa{sv})` argument, so this uses `jeepney`, a small pure-Python D-Bus
 library. Without a portal, the same actions are CLI commands to bind in the desktop's settings.
+
+## Extensions
+
+An extension is an optional package next to `echo_app` that adds to the same app: one install,
+one window, one data folder. The only one planned is Echo Studio (`echo_studio`), for summaries
+and other features that need a language model or a cloud service. Echo ships without it and is
+complete without it.
+
+Echo looks for the names in `extensions.KNOWN` and imports the ones present; entry points would
+need Echo installed as a distribution, which it is not. An extension's module defines any of a
+few hooks, each called where Echo already does that kind of work: `register_cli` (subcommands),
+`doctor_checks`, `markdown_sections` (sections in a recording's note, after its header),
+`settings_pages` (Settings tabs with an `apply()` run on OK), `window_class` and
+`attach_window`. An import or a hook that raises is logged and skipped, and a window class that
+fails falls back to Echo's own, so recording and transcription never depend on an extension's
+code. `ECHO_NO_EXTENSIONS=1` starts Echo without any, and the test suite always runs that way.
+
+The main window is built in two steps, `_build_parts` (make and connect the recorder, search, tag
+bar, list, player and transcript) and `_build_layout` (put them in the sidebar and splitters),
+so an extension's window can subclass it and lay the same parts out its own way without copying
+the wiring. `add_view(title, widget)` puts a view beside the transcript, chosen with a switch
+that only exists once a view is added; a view's `show_subject(rec, linked)` is called on every
+selection change and whenever the shown recording's files change. `transcribed(id)` is emitted
+when a recording's `transcript.json` is written while the window runs.
+
+`tests/test_extensions.py` parses the core's modules and fails if one imports an extension, a
+network library (`socket`, `ssl`, `http`, `urllib.request`, `requests`, `httpx`) or Qt's
+networking beyond the local single-instance socket; `huggingface_hub` is allowed in `models.py`
+only.
 
 ## Packaging and dependency risk
 

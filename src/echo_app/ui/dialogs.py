@@ -536,7 +536,7 @@ class ExportLibraryDialog(FittedDialog):
 
 
 class SettingsDialog(QDialog):
-    def __init__(self, recording_active: bool, parent=None):
+    def __init__(self, recording_active: bool, parent=None, pages=()):
         super().__init__(parent)
         self.setWindowTitle("Settings")
         self.setMinimumWidth(560)
@@ -552,6 +552,10 @@ class SettingsDialog(QDialog):
         self.tabs.addTab(self.dictionary, "Dictionary")
         self.watched = WatchedFoldersPage(self.cfg.watch_dirs)
         self.tabs.addTab(self.watched, "Import")
+        # Pages from extensions; each one's apply() saves it on OK.
+        self.pages = list(pages)
+        for title, page in self.pages:
+            self.tabs.addTab(page, title)
         form = QFormLayout()
         form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
         self.your_name = QLineEdit(self.cfg.your_name)
@@ -695,6 +699,16 @@ class SettingsDialog(QDialog):
         except OSError as e:
             self.note.setText(f"Could not save the dictionary: {e}")
             return
+        for title, page in self.pages:
+            apply = getattr(page, "apply", None)
+            if apply is None:
+                continue
+            try:
+                apply()
+            except ValueError as e:
+                self.tabs.setCurrentWidget(page)
+                self.note.setText(f"{title}: {e}")
+                return
         self.data_changed = self.cfg.data_path != self._old_data
         super().accept()
 
