@@ -323,6 +323,35 @@ echo-app transcribe meeting.mp4 --format md --context "Lucía y Martín, presupu
   imported or not found, or transcription is not installed; 2 usage error; 3 timed out, still
   transcribing.
 
+## Echo Studio: summaries
+
+Echo Studio is an extension that adds summaries to the same app. It is in the checkout's
+`studio` branch (`git switch studio`, then run Echo as usual); without it Echo is unchanged and
+sends nothing anywhere.
+
+Summaries are written by a language model on a server you choose: one on this computer
+(llama.cpp's `llama-server`, Ollama, vLLM, LM Studio) or a cloud provider with an
+OpenAI-compatible API. In Settings → Summaries, enter its address (ending in `/v1`, for example
+`http://127.0.0.1:8080/v1`), the model's name and, if it needs one, an API key; Test asks the
+server which models it has. When the server is not on this computer or your network, the page
+says so: **the transcript of each recording you summarize is sent to it.** Nothing is sent until
+you press Summarize.
+
+Once a server is set, a Transcript / Summary switch appears over the transcript. Summary shows
+the selected recording's summary, with Summarize (Summarize again once there is one) and Copy.
+The summary is grouped by topic and ends with the next steps and who does them, in the
+recording's language. If you edit the transcript afterwards, the view says so. A transcript of
+more than about an hour of talk (60,000 characters) is summarized in parts that are then joined. Summaries are
+included in notes exported to a folder, under "Resumen".
+
+From the command line: `echo-app summarize ID --print` prints the summary, `--json` gives the
+recording with a `summary` key, `--force` summarizes again. Exit codes: 0 done, 1 a recording
+failed, 2 usage error, 3 no server set up. `echo-app doctor` checks the server.
+
+The server settings are in `~/.config/echo/studio.toml`, the key in `~/.config/echo/llm.key`
+(readable only by you) or `$ECHO_LLM_API_KEY`, and each summary in its recording's folder as
+`summary.json`. `ECHO_NO_EXTENSIONS=1 echo-app` starts Echo without Studio.
+
 ## Where things live
 
 | What | Where |
