@@ -365,6 +365,13 @@ Follow-up, beside Copy, drafts the email you would send after the meeting: what 
 who does what by when. Edit it, then Copy it or press Open in mail to start a message in your mail
 program. Echo sends nothing itself. Read it first: a language model wrote it.
 
+**Ask.** With a server set, an Ask view sits beside Transcript and Summary: ask about the shown
+recording ("¿qué precio se acordó?") and the answer comes from its transcript, citing the times;
+click a time to hear it. The Ask screen (the question button beside People, Ctrl+Shift+A) asks
+across all your recordings: Echo's search finds the passages that match, only those are sent to
+the server, and the answer cites them; click a citation to open the recording there. From the
+command line: `echo-app ask ID "question"`, or `echo-app ask "question"` for all of them.
+
 The arrow beside Summarize picks the kind of meeting: a general one, or a template with its own
 sections (`uno-a-uno`, `entrevista`, `clase`, `cliente`). The choice is kept as a tag such as
 `template:entrevista`, so you can also set it in the tag field before the transcript is ready.

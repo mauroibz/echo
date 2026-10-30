@@ -7,6 +7,7 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
+from PySide6.QtCore import QUrl
 from PySide6.QtWidgets import QCheckBox, QToolButton
 
 from echo_app import cli, export, extensions
@@ -55,7 +56,8 @@ class FakeServer:
                 body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
                 first = (body.get("system") or body["messages"][0]["content"])
                 server.all_requests.append(body)
-                helpers = ("Write a title", "You extract the action items", "You write the follow-up")
+                helpers = ("Write a title", "You extract the action items", "You write the follow-up",
+                           "You answer questions", "You turn a question")
                 if not first.startswith(helpers):
                     server.requests.append(body)  # the summaries; titles and action items apart
                 server.headers.append(dict(self.headers))
@@ -68,9 +70,12 @@ class FakeServer:
                                                  {"type": "text", "text": server.reply}],
                                      "stop_reason": server.stop_reason})
                     return
-                reply = (server.title if first.startswith("Write a title") else server.actions
-                         if first.startswith("You extract the action items") else server.mail
-                         if first.startswith("You write the follow-up email") else server.reply)
+                canned = {"Write a title": server.title, "You extract the action items": server.actions,
+                          "You write the follow-up email": server.mail,
+                          "You answer questions about one meeting": "Se habló del precio [0:06].",
+                          "You turn a question": '["precio", "@nadie precio"]',
+                          "You answer questions about past meetings": "Lucía habló del precio [1]."}
+                reply = next((v for k, v in canned.items() if first.startswith(k)), server.reply)
                 self._send(200, {"choices": [{"message": {"content": reply}}]})
 
         self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
@@ -437,6 +442,49 @@ def test_follow_up_draft(window, lib, server, studio, capsys, tmp_path, monkeypa
     settings.save(s)
     assert cli.main(["summarize", rec.id, "--follow-up"]) == 0
     assert "Subject: Seguimiento de la charla" in capsys.readouterr().out
+
+
+def test_ask_a_recording_and_the_library(window, lib, server, studio, capsys, monkeypatch):
+    from echo_app import settings
+    from echo_studio import ask
+    from echo_studio.ask_ui import AskScreen, AskView
+
+    rec = _rec(lib)
+    said = ask.ask_recording(rec, "¿De qué hablaron?", [("¿Quién estaba?", "Lucía [0:00].")])
+    user = server.all_requests[-1]["messages"][1]["content"]
+    assert "[0:06] Hablemos del precio." in user and "Q: ¿Quién estaba?" in user and user.endswith("¿De qué hablaron?")
+    assert ask.link_times(said, rec.id) == f"Se habló del precio [0:06](echo:{rec.id}@6)."
+    assert ask.parse_link(f"echo:{rec.id}@6") == (rec.id, 6.0) and ask.parse_link("https://x") is None
+    assert ask.link_refs("Sí [1, 3] y [2].", [{"id": "a", "start": 1.5}, {"id": "b", "start": 0.0}]) == \
+        "Sí [[1](echo:a@1.5), 3] y [[2](echo:b@0)]."
+    window.model.refresh()
+    _attach(window)
+    view = next(v for v in window.views.views() if isinstance(v, AskView))
+    window._select(rec.id)
+    assert view.chat.isVisibleTo(view)
+    played = []
+    monkeypatch.setattr(window, "_seek_and_play", played.append)
+    view.chat.box.setText("¿De qué hablaron?")
+    view.chat.ask()
+    assert wait_until(lambda: len(view.chat.turns) == 1)
+    assert "echo:" in view.chat.turns[0][2]
+    view.chat._open(QUrl(f"echo:{rec.id}@6"))
+    assert played == [6.0]
+    screen = next(w for w in window._screen_buttons if isinstance(w, AskScreen))
+    screen.chat.box.setText("¿Qué se dijo del precio?")
+    screen.chat.ask()
+    assert wait_until(lambda: len(screen.chat.turns) == 1)
+    passages = server.all_requests[-1]["messages"][1]["content"]
+    assert passages.startswith("Passages:\n\n[1] Charla con Lucía") and "Hablemos del precio." in passages
+    assert f"(echo:{rec.id}@" in screen.chat.turns[0][2]
+    s = settings.load()[0]
+    s.data_dir = str(lib.data_dir)
+    settings.save(s)
+    assert cli.main(["ask", rec.id, "¿Precio?"]) == 0
+    assert "Se habló del precio [0:06]." in capsys.readouterr().out
+    assert cli.main(["ask", "¿Precio?"]) == 0
+    out = capsys.readouterr().out
+    assert "Lucía habló del precio [1]." in out and f"[1] Charla con Lucía ({rec.id}) at 0:" in out
 
 
 def test_split_at_paragraphs():

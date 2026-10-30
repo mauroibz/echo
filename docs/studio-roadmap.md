@@ -230,8 +230,8 @@ meetings, open items both ways, and the notes from their profile. It is built fr
 | 2 | `add-studio-window` | replaced by Echo's `add_screen` (`add-extension-screens`, archived) |
 | 3 | `add-studio-actions` | done; archives after `add-studio-summaries` |
 | 3 | `add-studio-follow-up` | done; archives after `add-studio-summaries` |
-| 3 | `add-studio-ask` | planned |
-| 4 | `add-studio-ask-library` | planned |
+| 3 | `add-studio-ask` | done; archives after `add-studio-summaries` |
+| 4 | `add-studio-ask-library` | done; archives after `add-studio-summaries` |
 | 4 | `add-studio-install` | planned |
 | v2 | `add-studio-calendar` | planned |
 | v2 | `add-studio-connectors` | planned |

@@ -68,13 +68,16 @@ def _offer_view() -> None:
     """The Summary view and Studio's screens, once a server is set up (at start, or right after
     Settings)."""
     from .actions_ui import PendingScreen
+    from .ask_ui import AskScreen, AskView
     from .ui import VIEW_TITLE, SummaryView
 
     w = _window
     if w is None or not config.enabled() or any(isinstance(v, SummaryView) for v in w.views.views()):
         return
     w.add_view(VIEW_TITLE, SummaryView(_jobs, message=w.show_message, show_recording=w.show_recording))
+    w.add_view("Ask", AskView(w.show_recording))
     w.add_screen("Pending", "list-checks", PendingScreen(w.library, w.show_recording), "Ctrl+Shift+T")
+    w.add_screen("Ask", "message-circle-question", AskScreen(w.library, w.show_recording), "Ctrl+Shift+A")
 
 
 def person_sections(name: str) -> list:

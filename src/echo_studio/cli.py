@@ -81,6 +81,49 @@ def cmd_summarize(args) -> int:
     return code
 
 
+def cmd_ask(args) -> int:
+    from echo_app.export import stamp
+    from echo_app.index import Index
+    from echo_app.library import Library
+    from echo_app.settings import load
+
+    from . import ask
+
+    if not config.load().enabled:
+        _err("Asking needs a language-model server: set one in Settings, Summaries.")
+        return NOT_SET_UP
+    if len(args.words) not in (1, 2):
+        _err('usage: echo-app ask [ID] "question"')
+        return USAGE
+    s = load()[0]
+    lib = Library(s.data_path)
+    try:
+        if len(args.words) == 2:
+            rec = lib.get(args.words[0])
+            if rec is None:
+                _err(f"{args.words[0]}: no such recording (see: echo-app list)")
+                return FAILED
+            print(ask.ask_recording(rec, args.words[1]).strip())
+            return OK
+        idx = Index(lib)
+        try:
+            idx.sync()
+            answer, passages = ask.ask_library(idx, args.words[0], language=s.language)
+        finally:
+            idx.close()
+    except (ValueError, llm.LLMError) as e:
+        _err(str(e))
+        return FAILED
+    if not passages:
+        print("Nothing in the recordings matches that.")
+        return OK
+    print(answer.strip() + "\n")
+    for n, p in enumerate(passages, 1):
+        if f"[{n}]" in answer or f"{n}," in answer or f", {n}]" in answer:
+            print(f"[{n}] {p['title']} ({p['id']}) at {stamp(p['start'])}")
+    return OK
+
+
 def _needs(rec) -> bool:
     data = summary.load(rec)
     return data is None or summary.stale(rec, data)
@@ -122,3 +165,18 @@ exit codes:
     s.add_argument("--print", action="store_true", help="print each summary to standard output")
     s.add_argument("--json", action="store_true", help="print the result as JSON")
     s.set_defaults(func=cmd_summarize)
+
+    a = sub.add_parser(
+        "ask", help="ask a question about a recording or all of them (Echo Studio)",
+        description="Answer a question from what was said, with the language-model server set in Settings, "
+                    "Summaries. With an ID, the recording's transcript is sent; without, Echo's search finds "
+                    "the passages that match and only those are sent.",
+        epilog="""examples:
+  echo-app ask 20261029-103000-ab12 "¿qué precio se acordó?"
+  echo-app ask "¿qué acordamos con Acme sobre precios en octubre?"
+
+exit codes: 0 answered, 1 failed, 2 usage error, 3 no server set up""",
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    a.add_argument("words", nargs="+", metavar="[ID] QUESTION")
+    a.set_defaults(func=cmd_ask)
+
