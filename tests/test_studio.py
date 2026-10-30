@@ -7,10 +7,11 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
+from PySide6.QtWidgets import QCheckBox, QToolButton
 
 from echo_app import cli, export, extensions
 from echo_app.library import Library
-from echo_studio import config, keychain, llm, summary, templates
+from echo_studio import actions, config, keychain, llm, summary, templates
 from test_ui import lib, pump, qapp, wait_until, window  # noqa: F401 - fixtures
 from test_vault import SEGS, _rec
 
@@ -25,6 +26,9 @@ class FakeServer:
         self.status = 200
         self.models = ["modelo-a"]
         self.paths: list[str] = []
+        self.all_requests: list[dict] = []
+        self.actions = json.dumps([{"text": "Enviar la propuesta", "owner": "lucia", "due": "2026-10-31",
+                                    "at": "0:06"}])
         self.stop_reason = "end_turn"
         self.title = '"Precio nuevo con Lucía."'
         server = self
@@ -48,7 +52,10 @@ class FakeServer:
 
             def do_POST(self):
                 body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
-                server.requests.append(body)
+                first = (body.get("system") or body["messages"][0]["content"])
+                server.all_requests.append(body)
+                if not first.startswith(("Write a title", "You extract the action items")):
+                    server.requests.append(body)  # the summaries; titles and action items apart
                 server.headers.append(dict(self.headers))
                 server.paths.append(self.path)
                 if server.status != 200:
@@ -59,8 +66,8 @@ class FakeServer:
                                                  {"type": "text", "text": server.reply}],
                                      "stop_reason": server.stop_reason})
                     return
-                first = (body.get("system") or body["messages"][0]["content"])
-                reply = server.title if first.startswith("Write a title") else server.reply
+                reply = (server.title if first.startswith("Write a title") else server.actions
+                         if first.startswith("You extract the action items") else server.reply)
                 self._send(200, {"choices": [{"message": {"content": reply}}]})
 
         self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
@@ -321,7 +328,78 @@ def test_title_from_the_summary_only_when_automatic(window, lib, server, studio)
     assert wait_until(lambda: other.path(summary.FILE).exists())
     pump(200)
     assert lib.get(other.id).meta.title == "Mi título"
-    assert not any(r["messages"][0]["content"].startswith("Write a title") for r in server.requests[2:])
+    titles = [r for r in server.all_requests if r["messages"][0]["content"].startswith("Write a title")]
+    assert len(titles) == 1
+
+
+def test_action_items_parsed_tolerantly():
+    reply = 'Acá van:\n```json\n[{"text": " Enviar  la propuesta ", "owner": "Lucía", "due": "2026-11-02",' \
+            ' "at": "1:02:03"}, {"text": "", "owner": "x"}, {"text": "Llamar", "due": "el viernes", "at": "x"}]\n```'
+    items = actions.parse(reply)
+    assert items == [{"text": "Enviar la propuesta", "owner": "Lucía", "due": "2026-11-02", "at": 3723.0,
+                      "done": False},
+                     {"text": "Llamar", "owner": "", "due": "", "at": None, "done": False}]
+    assert actions.parse("no hay") == [] and actions.parse("[{bad json") == []
+
+
+def test_action_items_after_the_summary_keep_done(tmp_path, server):
+    lib = Library(tmp_path / "data")
+    rec = _rec(lib)
+    data = summary.write(rec)
+    summary.finish(rec, data)
+    req = server.all_requests[-1]
+    assert req["messages"][0]["content"].startswith("You extract the action items")
+    assert "Transcript with times:" in req["messages"][1]["content"] and "[0:06]" in req["messages"][1]["content"]
+    d = actions.load(rec)
+    assert d["items"] == [{"text": "Enviar la propuesta", "owner": "lucia", "due": "2026-10-31", "at": 6.0,
+                           "done": False}]
+    actions.set_done(rec, 0, True)
+    assert actions.open_items(lib) == []
+    server.actions = json.dumps([{"text": "enviar la PROPUESTA", "owner": "Lucía"}, {"text": "Llamar a Ana"}])
+    summary.finish(rec, data)
+    items = actions.load(rec)["items"]
+    assert [i["done"] for i in items] == [True, False]  # the same text keeps its check
+    assert [i["text"] for i in actions.open_items(lib)] == ["Llamar a Ana"]
+    assert actions.open_items(lib, person="LUCIA") == [] and actions.open_items(lib, person="nadie") == []
+
+
+def test_pending_screen_and_summary_items(window, lib, server, studio):
+    from echo_studio.actions_ui import PendingScreen
+    from echo_studio.ui import SummaryView
+
+    rec = _rec(lib)
+    rec.set_tags(["acme"])
+    window.model.refresh()
+    _attach(window)
+    view = window.views.views()[0]
+    assert isinstance(view, SummaryView)
+    window._select(rec.id)
+    window.transcribed.emit(rec.id)
+    assert wait_until(lambda: actions.load(lib.get(rec.id)) is not None)
+    view.show_subject(lib.get(rec.id), None)
+    assert view.actions_box.isVisibleTo(view)
+    box = view.actions.findChildren(QCheckBox)[0]
+    assert box.text() == "Enviar la propuesta"
+    screen = next(w for w in window._screen_buttons if isinstance(w, PendingScreen))
+    window._screen_buttons[screen].click()
+    assert window.screens.currentWidget() is screen and screen.count.text() == "1 open item"
+    assert [screen.person.itemText(i) for i in range(screen.person.count())] == ["Everyone", "lucia"]
+    screen.tag.setText("#otra")
+    assert screen.count.text() == "0 open items"
+    screen.tag.setText("#acme")
+    assert screen.count.text() == "1 open item"
+    played = []
+    window._seek_and_play = played.append
+    screen.list.findChildren(QToolButton)[0].click()  # the item's time: back to the recording, playing
+    assert window.screens.currentWidget() is window.content and played == [6.0]
+    import echo_studio
+
+    [(title, section)] = echo_studio.person_sections("Lucia")  # People: their open items
+    assert title == "Open items" and [b.text() for b in section.findChildren(QCheckBox)] == ["Enviar la propuesta"]
+    window._screen_buttons[screen].click()
+    screen.list.findChildren(QCheckBox)[0].setChecked(True)
+    screen.refresh()
+    assert screen.count.text() == "0 open items" and actions.load(lib.get(rec.id))["items"][0]["done"]
 
 
 def test_split_at_paragraphs():

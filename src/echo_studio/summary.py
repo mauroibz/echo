@@ -254,3 +254,25 @@ def stale(rec: Recording, data: dict | None = None) -> bool:
 def demoted(text: str, levels: int = 2) -> str:
     """The summary's headings under a note's own: # becomes ###."""
     return re.sub(r"^(#{1,4}) ", lambda m: "#" * (len(m.group(1)) + levels) + " ", text, flags=re.MULTILINE)
+
+
+def finish(rec: Recording, data: dict, cfg: config.Config | None = None) -> list[str]:
+    """What follows a new summary: the title (when automatic and wanted) and the action items. A
+    failure here leaves the summary saved; the returned lines say what did not work."""
+    from . import actions
+
+    cfg = cfg or config.load()
+    notes = []
+    if cfg.auto_title:
+        try:
+            if title := retitle(rec, data, cfg):
+                notes.append(f"titled “{title}”")
+        except llm.LLMError as e:
+            notes.append(f"no title: {e}")
+    try:
+        n = len(actions.write(rec, data, cfg)["items"])
+        notes.append(f"{n} action item{'s' if n != 1 else ''}")
+    except llm.LLMError as e:
+        notes.append(f"no action items: {e}")
+    return notes
+

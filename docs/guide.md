@@ -355,6 +355,12 @@ Summaries are included in notes exported to a folder, under "Resumen".
 Your notes and markers lead the summary: each note and marked moment is covered, expanded from
 what was said around it, and editing a note marks the summary out of date.
 
+Each summary's next steps also become action items, listed under it with their owner, due date
+and a button that plays where each came up; check one when it is done. Pending (the checklist
+button beside People, Ctrl+Shift+T) gathers what is still open across all your recordings, by
+person and by tag (`#acme`), and a person's profile in People shows what they owe. The items are
+kept in `actions.json` in the recording's folder; summarizing again keeps your checks.
+
 The arrow beside Summarize picks the kind of meeting: a general one, or a template with its own
 sections (`uno-a-uno`, `entrevista`, `clase`, `cliente`). The choice is kept as a tag such as
 `template:entrevista`, so you can also set it in the tag field before the transcript is ready.

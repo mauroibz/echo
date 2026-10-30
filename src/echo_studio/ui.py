@@ -7,12 +7,14 @@ import os
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QActionGroup, QFont
 from PySide6.QtWidgets import (QApplication, QCheckBox, QFormLayout, QFrame, QHBoxLayout, QLabel, QLineEdit,
-                               QMenu, QPushButton, QTextBrowser, QToolButton, QVBoxLayout, QWidget)
+                               QMenu, QPushButton, QScrollArea, QTextBrowser, QToolButton, QVBoxLayout,
+                               QWidget)
 
 from echo_app.ui import theme
 from echo_app.ui.common import icon, run_task
 
-from . import config, keychain, llm, summary, templates
+from . import actions, config, keychain, llm, summary, templates
+from .actions_ui import ActionList, items_of
 
 VIEW_TITLE = "Summary"
 
@@ -136,9 +138,10 @@ class SettingsPage(QWidget):
 class SummaryView(QWidget):
     """The selected recording's summary, with Summarize and Copy. Read-only: it is replaced, not edited."""
 
-    def __init__(self, jobs, message=None):
+    def __init__(self, jobs, message=None, show_recording=None):
         super().__init__()
         self.message = message or (lambda _t: None)
+        self.show_recording = show_recording or (lambda _rid, _at: None)
         self.rec = None
         self.linked = None
         self.jobs = jobs
@@ -178,6 +181,24 @@ class SummaryView(QWidget):
         self.text.setAccessibleName("Summary")
         self.text.setFrameShape(QFrame.Shape.NoFrame)  # it sits in the reading card, like the transcript
         lay.addWidget(self.text, 1)
+        # The summary's action items, to check off; their time buttons play where each came up.
+        self.actions_box = QWidget()
+        al = QVBoxLayout(self.actions_box)
+        al.setContentsMargins(0, 6, 0, 0)
+        al.setSpacing(6)
+        head = QLabel("Action items")
+        head.setFont(theme.display_font(0.95, QFont.Weight.Bold))
+        al.addWidget(head)
+        self.actions = ActionList()
+        self.actions.toggled.connect(self._toggle_action)
+        self.actions.play.connect(lambda rid, at: self.show_recording(rid, at))
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setMaximumHeight(220)
+        scroll.setWidget(self.actions)
+        al.addWidget(scroll)
+        lay.addWidget(self.actions_box)
         self.show_subject(None, None)
 
     def show_subject(self, rec, linked):
@@ -191,6 +212,9 @@ class SummaryView(QWidget):
         self.summarize_btn.setEnabled(not busy)
         self.summarize_btn.setText("Summarize again" if data else "Summarize")
         self.copy_btn.setVisible(data is not None)
+        items = items_of(rec) if data is not None else []
+        self.actions.set_items(items)
+        self.actions_box.setVisible(bool(items))
         if data is not None:
             self.text.setMarkdown(data["text"])
         else:
@@ -220,6 +244,10 @@ class SummaryView(QWidget):
     def summarize(self):
         if self.rec is not None:
             self.jobs.request(self.rec.id)
+
+    def _toggle_action(self, rid: str, index: int, done: bool):
+        if self.rec is not None and self.rec.id == rid:
+            actions.set_done(self.rec, index, done)
 
     def _fill_templates(self):
         m = self.template_menu

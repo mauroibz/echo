@@ -65,10 +65,22 @@ def attach_window(window) -> None:
 
 
 def _offer_view() -> None:
-    """The Summary view, once a server is set up (at start, or right after Settings)."""
+    """The Summary view and Studio's screens, once a server is set up (at start, or right after
+    Settings)."""
+    from .actions_ui import PendingScreen
     from .ui import VIEW_TITLE, SummaryView
 
     w = _window
     if w is None or not config.enabled() or any(isinstance(v, SummaryView) for v in w.views.views()):
         return
-    w.add_view(VIEW_TITLE, SummaryView(_jobs, message=w.show_message))
+    w.add_view(VIEW_TITLE, SummaryView(_jobs, message=w.show_message, show_recording=w.show_recording))
+    w.add_screen("Pending", "list-checks", PendingScreen(w.library, w.show_recording), "Ctrl+Shift+T")
+
+
+def person_sections(name: str) -> list:
+    from .actions_ui import person_section
+
+    w = _window
+    if w is None or not config.enabled():
+        return []
+    return [("Open items", person_section(w.library, name, w.show_recording))]
