@@ -5,6 +5,8 @@ tag.
 
 ## Unreleased
 
+## 1.4.0 - 2026-10-30
+
 ### Changed
 
 - A calmer window with the same look. The menus are in a button at the top of the sidebar (F10)
