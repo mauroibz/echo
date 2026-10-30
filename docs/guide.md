@@ -338,21 +338,31 @@ models it has. When the server is not on this computer or your network, the page
 says so: **the transcript of each recording you summarize is sent to it.** Nothing is sent until
 you press Summarize.
 
-Once a server is set, a Transcript / Summary switch appears over the transcript. Summary shows
-the selected recording's summary, with Summarize (Summarize again once there is one) and Copy.
-The summary is grouped by topic and ends with the next steps and who does them, in the
-recording's language. Your notes and markers lead it: each note and marked moment is covered,
-expanded from what was said around it, and editing a note marks the summary out of date. Each
-recording is summarized as soon as its transcript is ready, one at a
-time; uncheck "Summarize each recording when its transcript is ready" in Settings → Summaries to
-summarize only when you press the button. If you edit the transcript afterwards, the view says
-so. A transcript of more than about an hour of talk (60,000 characters) is summarized in parts
-that are then joined. Summaries are included in notes exported to a folder, under "Resumen".
+Once a server is set, a Transcript / Summary switch appears over the transcript. Summary shows the
+selected recording's summary, with Summarize (Summarize again once there is one) and Copy. The
+summary is grouped by topic and ends with the next steps and who does them, in the recording's
+language.
+
+Each recording is summarized as soon as its transcript is ready, one at a time; uncheck "Summarize
+each recording when its transcript is ready" in Settings → Summaries to summarize only when you
+press the button. If you edit the transcript afterwards, the view says so. A transcript of more
+than about an hour of talk (60,000 characters) is summarized in parts that are then joined.
+Summaries are included in notes exported to a folder, under "Resumen".
+
+Your notes and markers lead the summary: each note and marked moment is covered, expanded from
+what was said around it, and editing a note marks the summary out of date.
+
+The arrow beside Summarize picks the kind of meeting: a general one, or a template with its own
+sections (`uno-a-uno`, `entrevista`, `clase`, `cliente`). The choice is kept as a tag such as
+`template:entrevista`, so you can also set it in the tag field before the transcript is ready.
+Your own templates are Markdown files in `~/.config/echo/studio/templates/` (the file's name is
+the template's), with a line per rule on sections, for example "- Una sección por tema del
+directorio, con las decisiones al final."; one named like a built-in replaces it.
 
 From the command line: `echo-app summarize ID --print` prints the summary, `--all` summarizes
 every transcribed recording that has no current summary (the ones from before you set up the
 server, for example), `--json` gives the recording with a `summary` key, `--force` summarizes
-again. Exit codes: 0 done, 1 a recording failed, 2 usage error, 3 no server set up. `echo-app doctor` checks the server.
+again, `--template NAME` sets the kind of meeting. Exit codes: 0 done, 1 a recording failed, 2 usage error, 3 no server set up. `echo-app doctor` checks the server.
 
 The server settings are in `~/.config/echo/studio.toml`. The key is kept in your desktop's
 keyring (KDE Wallet or GNOME Keyring, through `secret-tool`), never in a file; to keep it

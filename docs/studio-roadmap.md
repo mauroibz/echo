@@ -224,8 +224,8 @@ meetings, open items both ways, and the notes from their profile. It is built fr
 | Phase | Change | Status (2026-10-29) |
 |---|---|---|
 | 0 | `add-studio-summaries` | done; 1.8 on real recordings is open |
-| 1 | `add-studio-notes-first` | done; archived with `add-studio-summaries` |
-| 1 | `add-studio-templates` | planned |
+| 1 | `add-studio-notes-first` | done; archives after `add-studio-summaries` |
+| 1 | `add-studio-templates` | done; archives after `add-studio-summaries` |
 | 1 | `add-studio-auto` | planned |
 | 2 | `add-studio-window` | planned |
 | 3 | `add-studio-actions` | planned |

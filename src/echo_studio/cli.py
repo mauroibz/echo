@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import sys
 
-from . import config, llm, summary
+from . import config, llm, summary, templates
 
 # Exit codes, as Echo's transcribe: 0 done, 1 a recording failed, 2 usage, 3 no server set up.
 OK, FAILED, USAGE, NOT_SET_UP = 0, 1, 2, 3
@@ -34,6 +34,9 @@ def cmd_summarize(args) -> int:
     if args.all == bool(args.ids):
         _err("give recording ids, or --all")
         return USAGE
+    if args.template is not None and args.template != "general" and not templates.text(args.template):
+        _err(f"no template “{args.template}”; there are: general, " + ", ".join(templates.names()))
+        return USAGE
     ids = args.ids or [r.id for r in lib.all() if summary.source_text(r) and _needs(r)]
     if args.all:
         _err(f"{len(ids)} recording(s) to summarize")
@@ -43,6 +46,8 @@ def cmd_summarize(args) -> int:
             _err(f"{rid}: no such recording (see: echo-app list)")
             code = FAILED
             continue
+        if args.template is not None:
+            templates.set_for(rec, None if args.template == "general" else args.template)
         data = summary.load(rec)
         if data is not None and not args.force and not summary.stale(rec, data):
             _err(f"{rid}: already summarized (--force to do it again)")
@@ -97,6 +102,10 @@ exit codes:
     s.add_argument("ids", nargs="*", metavar="ID", help="recording ids (see: echo-app list)")
     s.add_argument("--all", action="store_true",
                    help="every transcribed recording whose summary is missing or out of date")
+    s.add_argument("--template", metavar="NAME",
+                   help="the kind of meeting (kept as the recording's template: tag); \"general\" for none. "
+                        "Built in: " + ", ".join(sorted(templates.BUILT_IN)) + "; your own go in "
+                        "~/.config/echo/studio/templates/NAME.md")
     s.add_argument("--force", action="store_true", help="summarize again even if the summary is current")
     s.add_argument("--print", action="store_true", help="print each summary to standard output")
     s.add_argument("--json", action="store_true", help="print the result as JSON")

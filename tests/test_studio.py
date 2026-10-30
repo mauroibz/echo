@@ -10,7 +10,7 @@ import pytest
 
 from echo_app import cli, export, extensions
 from echo_app.library import Library
-from echo_studio import config, keychain, llm, summary
+from echo_studio import config, keychain, llm, summary, templates
 from test_ui import lib, pump, qapp, wait_until, window  # noqa: F401 - fixtures
 from test_vault import SEGS, _rec
 
@@ -268,6 +268,43 @@ def test_notes_and_markers_lead_the_summary(tmp_path, server):
     assert not summary.stale(rec)
 
 
+def test_templates_by_tag(tmp_path, server):
+    rec = _rec(Library(tmp_path / "data"))
+    summary.write(rec)
+    assert templates.GENERAL in server.requests[-1]["messages"][0]["content"]
+    rec.set_tags(["cliente-x", "template:Entrevista"])
+    assert templates.of(rec) == "Entrevista" and summary.stale(rec)  # the template is part of the source
+    data = summary.write(rec)
+    system = server.requests[-1]["messages"][0]["content"]
+    assert templates.BUILT_IN["entrevista"] in system and templates.GENERAL not in system
+    assert data["template"] == "Entrevista" and not summary.stale(rec)
+    # The user's own template wins over a built-in with the same name; names list both.
+    templates.user_dir().mkdir(parents=True)
+    (templates.user_dir() / "entrevista.md").write_text("- Una sección por candidato.\n")
+    (templates.user_dir() / "directorio.md").write_text("- Una sección por tema del directorio.\n")
+    assert "directorio" in templates.names() and "uno-a-uno" in templates.names()
+    assert summary.stale(rec)
+    summary.write(rec)
+    assert "Una sección por candidato." in server.requests[-1]["messages"][0]["content"]
+    templates.set_for(rec, None)
+    assert rec.meta.tags == ["cliente-x"] and templates.resolve(rec)[0] is None
+    templates.set_for(rec, "nada")  # unknown: the general prompt
+    assert templates.resolve(rec) == (None, templates.GENERAL)
+
+
+def test_cli_template(tmp_path, server, capsys, studio):
+    from echo_app import settings
+
+    s = settings.load()[0]
+    s.data_dir = str(tmp_path / "data")
+    settings.save(s)
+    rec = _rec(Library(tmp_path / "data"))
+    assert cli.main(["summarize", rec.id, "--template", "nada"]) == 2
+    assert cli.main(["summarize", rec.id, "--template", "clase"]) == 0
+    assert templates.BUILT_IN["clase"] in server.requests[-1]["messages"][0]["content"]
+    assert Library(tmp_path / "data").get(rec.id).meta.tags == ["template:clase"]
+
+
 def test_split_at_paragraphs():
     paras = [("palabra " * 1200).strip() + "." for _ in range(20)]  # ~9,600 characters each
     parts = summary.split("\n\n".join(paras))
@@ -370,6 +407,12 @@ def test_summary_view(window, lib, server, studio):
     view.summarize_btn.click()
     assert wait_until(lambda: rec.path(summary.FILE).exists() and "Lucía habló" in view.text.toPlainText())
     assert view.summarize_btn.text() == "Summarize again" and view.copy_btn.isVisible()
+    view._fill_templates()
+    names = [a.text() for a in view.template_menu.actions() if a.isCheckable()]
+    assert names[0] == "General meeting" and "entrevista" in names
+    view.use_template("entrevista")
+    assert wait_until(lambda: (summary.load(lib.get(rec.id)) or {}).get("template") == "entrevista")
+    assert "entrevista" in view.status.text()
     view.copy()
     from PySide6.QtWidgets import QApplication
 

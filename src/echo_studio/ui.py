@@ -5,14 +5,14 @@ from __future__ import annotations
 import os
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QActionGroup, QFont
 from PySide6.QtWidgets import (QApplication, QCheckBox, QFormLayout, QFrame, QHBoxLayout, QLabel, QLineEdit,
-                               QPushButton, QTextBrowser, QToolButton, QVBoxLayout, QWidget)
+                               QMenu, QPushButton, QTextBrowser, QToolButton, QVBoxLayout, QWidget)
 
 from echo_app.ui import theme
 from echo_app.ui.common import icon, run_task
 
-from . import config, keychain, llm, summary
+from . import config, keychain, llm, summary, templates
 
 VIEW_TITLE = "Summary"
 
@@ -155,6 +155,11 @@ class SummaryView(QWidget):
         self.summarize_btn.setIcon(icon("transcribe"))
         self.summarize_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self.summarize_btn.clicked.connect(self.summarize)
+        # The arrow beside Summarize picks the kind of meeting: the template, kept as a tag.
+        self.template_menu = QMenu(self.summarize_btn)
+        self.template_menu.aboutToShow.connect(self._fill_templates)
+        self.summarize_btn.setMenu(self.template_menu)
+        self.summarize_btn.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
         bar.addWidget(self.summarize_btn)
         self.copy_btn = QToolButton()
         self.copy_btn.setText("Copy")
@@ -198,6 +203,8 @@ class SummaryView(QWidget):
             self.status.setText(f"Summary failed: {failure}")
         elif data is not None:
             note = f"From {data.get('server') or 'the server'}"
+            if data.get("template"):
+                note += f" · {data['template']}"
             self.status.setText("The transcript changed since this summary." if summary.stale(rec, data) else note)
         elif not has_text:
             self.status.setText("Transcribe this recording to summarize it.")
@@ -209,6 +216,29 @@ class SummaryView(QWidget):
     def summarize(self):
         if self.rec is not None:
             self.jobs.request(self.rec.id)
+
+    def _fill_templates(self):
+        m = self.template_menu
+        m.clear()
+        if self.rec is None:
+            return
+        m.addSection("Summarize as")
+        group = QActionGroup(m)
+        current, _ = templates.resolve(self.rec)
+        for name in [None, *templates.names()]:
+            a = m.addAction(name or "General meeting")
+            a.setCheckable(True)
+            a.setChecked(name == current if name else current is None)
+            group.addAction(a)
+            a.triggered.connect(lambda _c=False, n=name: self.use_template(n))
+
+    def use_template(self, name: str | None):
+        """Summarize again as this kind of meeting; the choice is kept as the recording's tag."""
+        rec = self.rec
+        if rec is None:
+            return
+        templates.set_for(rec, name)
+        self.jobs.request(rec.id)
 
     def _on_changed(self, rid: str):
         if self.rec is not None and self.rec.id == rid:

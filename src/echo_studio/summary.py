@@ -18,7 +18,7 @@ from echo_app import export
 from echo_app.fsutil import atomic_write_json, read_json
 from echo_app.library import Recording
 
-from . import config, llm
+from . import config, llm, templates
 
 FILE = "summary.json"
 VERSION = 1
@@ -28,8 +28,7 @@ PART_MAX = 40_000  # each part of a longer transcript
 PROMPT = """You are a meeting note-taker. Given a transcript, write a structured summary of it.
 
 Rules:
-- Group the content by topic, not in the order it was said, in 4 to 7 sections, each with a
-  single # heading. Use no ## or ### headings.
+{structure}
 - Everything under a heading is bullet points (- ), at most two levels deep.
 - The last section is "{next_steps}": each action as **the action in bold** (who does it),
   with a line of context under it. Leave the section out if nothing was agreed.
@@ -116,10 +115,12 @@ def guide(rec: Recording) -> str:
 
 def source_sha(rec: Recording) -> str:
     """The hash of what a summary is made from: the transcript and, when there are any, the notes and
-    markers, so editing a note marks the summary out of date. Without them, the transcript's alone,
-    as summaries made before notes were sent."""
+    markers and the template, so editing a note or changing the template marks the summary out of
+    date. Without them, the transcript's alone, as summaries made before those existed."""
     text, g = source_text(rec), guide(rec)
-    return sha(f"{g}\n\n{text}" if g else text)
+    name, guidance = templates.resolve(rec)
+    lead = "\n".join(x for x in (f"template {name} {templates.sha(guidance)}" if name else "", g) if x)
+    return sha(f"{lead}\n\n{text}" if lead else text)
 
 
 def split(text: str, limit: int = PART_MAX) -> list[str]:
@@ -177,7 +178,9 @@ def write(rec: Recording, progress=None, cfg: config.Config | None = None) -> di
     if not text:
         raise ValueError("this recording has no transcript to summarize")
     lang = language(rec)
-    system = PROMPT.format(next_steps=next_steps(lang), language=LANGUAGES.get(lang, lang))
+    template, structure = templates.resolve(rec)
+    system = PROMPT.format(structure=structure, next_steps=next_steps(lang),
+                           language=LANGUAGES.get(lang, lang))
     head = _header(rec)
     made_from = source_sha(rec)  # before the requests: an edit made meanwhile leaves the summary stale
     g = guide(rec)
@@ -208,7 +211,7 @@ def write(rec: Recording, progress=None, cfg: config.Config | None = None) -> di
         raise llm.LLMError("the server returned an empty summary")
     data = {"version": VERSION, "text": out, "created": datetime.now().astimezone().isoformat(timespec="seconds"),
             "model": cfg.llm_model, "server": config.host(cfg.llm_url), "language": lang,
-            "source_sha256": made_from}
+            "template": template, "source_sha256": made_from}
     atomic_write_json(rec.path(FILE), data)
     return data
 
