@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QFrame, QLabel, QPushButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget
 
@@ -16,6 +16,7 @@ class DetailsPanel(QScrollArea):
     transcript's own; this panel only places them under headings and hides empty sections."""
 
     seek_requested = Signal(float)
+    WIDTH = 300
 
     def __init__(self, player, transcript, parent=None):
         super().__init__(parent)
@@ -25,7 +26,9 @@ class DetailsPanel(QScrollArea):
         self.setWidgetResizable(True)
         self.setFrameShape(QFrame.Shape.NoFrame)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.setFixedWidth(300)
+        # The width is a maximum, so opening and closing can slide it (motion.slide_width).
+        self.setMaximumWidth(self.WIDTH)
+        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
         body = QWidget()
         body.setObjectName("detailsbody")
         self.setWidget(body)
@@ -64,6 +67,9 @@ class DetailsPanel(QScrollArea):
             lay.addWidget(sec)
             self.sections.append((sec, w, textual))
         lay.addStretch(1)
+
+    def sizeHint(self) -> QSize:
+        return QSize(self.maximumWidth(), super().sizeHint().height())
 
     def refresh(self):
         """Follow what the player shows: its markers, and which sections have anything."""

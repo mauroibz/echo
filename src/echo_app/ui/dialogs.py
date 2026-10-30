@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog,
                                QTreeWidgetItem, QVBoxLayout, QWidget)
 
 from .. import APP_NAME, __version__, dictionary, doctor, features, models, selfcmd, settings, transcription
-from . import theme
+from . import motion, theme
 from .common import icon, run_task
 
 
@@ -580,6 +580,10 @@ class SettingsDialog(QDialog):
         self._mode_on_open = theme.mode()
         self.theme.currentIndexChanged.connect(lambda _i: theme.apply(self.theme.currentData()))
         form.addRow("Appearance", self.theme)
+        self.reduce_motion = QCheckBox("Reduce motion")
+        self.reduce_motion.setToolTip("No animations. Echo also turns them off when the desktop has them off.")
+        self.reduce_motion.setChecked(self.cfg.reduce_motion)
+        form.addRow("", self.reduce_motion)
         if recording_active:
             self.data_dir.setEnabled(False)
             browse.setEnabled(False)
@@ -693,7 +697,9 @@ class SettingsDialog(QDialog):
         self.cfg.language = self.language.currentData() or "es"
         self.cfg.worker_idle_minutes = self.idle.value()
         self.cfg.theme = self.theme.currentData()
+        self.cfg.reduce_motion = self.reduce_motion.isChecked()
         settings.save(self.cfg)
+        motion.refresh()
         try:
             self.dictionary.save()
         except OSError as e:

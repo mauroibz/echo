@@ -18,6 +18,14 @@ tag.
   file and statistics. Tag chips open from a filter button in the search field. In dark mode the
   transcript's text is softer and speakers' colors keep their contrast.
 
+### Added
+
+- Short animations where something changes: the recorder entering a recording, a pulsing dot
+  (blinking amber when paused), a ring and a falling marker when you mark a moment, new
+  recordings sliding into the list, a sweep along a running transcription, smooth scrolling to
+  the passage that plays, Details sliding open and messages fading. Settings → Appearance →
+  "Reduce motion" turns them off, and Echo leaves them off when the desktop has animations off.
+
 ## 1.3.0 - 2026-10-29
 
 ### Added

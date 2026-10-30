@@ -186,7 +186,8 @@ The list is grouped by Today, Yesterday, This week and then by month. A row show
 day, the length and how many people speak; a status appears only when something is happening or
 needs you (recording, transcribing, waiting, failed, not transcribed). Details shows a
 recording's word count, speaking rate and share of silence. Settings → Appearance switches
-between light, dark and the system's theme.
+between light, dark and the system's theme, and "Reduce motion" turns off the window's short
+animations (Echo also leaves them off when the desktop has animations turned off).
 
 ## Playing, cropping and linking
 

@@ -14,7 +14,7 @@ from .. import recorder, settings
 from ..audio import backend, levels, monitor
 from ..audio.backend import DEFAULT_OUTPUT, INPUT, Source
 from ..library import Library
-from . import theme
+from . import motion, theme
 from .common import Wordmark, dot_icon, fmt_duration, icon, run_task
 
 log = logging.getLogger(__name__)
@@ -194,9 +194,14 @@ class RecorderPanel(QWidget):
         bl = QVBoxLayout(self.block)
         bl.setContentsMargins(0, 0, 0, 0)
         bl.setSpacing(10)
+        state_row = QHBoxLayout()
+        state_row.setSpacing(4)
+        self.pulse = motion.PulseDot("coral")
+        state_row.addWidget(self.pulse)
         self.state_label = QLabel("")
         self.state_label.setFont(theme.display_font(0.82, QFont.Weight.ExtraBold))
-        bl.addWidget(self.state_label)
+        state_row.addWidget(self.state_label, 1)
+        bl.addLayout(state_row)
         self.elapsed = QLabel("0:00:00")
         self.elapsed.setFont(theme.display_font(2.5, QFont.Weight.Light, tabular=True))
         self.elapsed.setAccessibleName("Recorded time")
@@ -239,6 +244,7 @@ class RecorderPanel(QWidget):
         self.mark_btn.setAccessibleName("Add marker")
         self.mark_btn.clicked.connect(self.add_marker)
         ctl.addWidget(self.mark_btn)
+        self._ripple = motion.Ripple(self.mark_btn, "coral")
         bl.addLayout(ctl)
 
         self.warning = QLabel("")
@@ -657,6 +663,7 @@ class RecorderPanel(QWidget):
         except recorder.RecorderError as e:
             self.message.emit(str(e))
             return
+        self._ripple.play()
         self.message.emit(f"Marker at {fmt_duration(sess.status().get('elapsed', 0))}.")
         self.note.clear()
         self.note.show()
@@ -694,9 +701,12 @@ class RecorderPanel(QWidget):
     def _update_buttons(self):
         rec = self.session is not None
         t = theme.current()
+        was = bool(self.block.property("recording") == "true")
         theme.set_role(self.block, recording=rec)
+        if rec != was:
+            motion.fade(self.block, 1.0, motion.MEDIUM, start=0.0)  # the block changes, it does not jump
         self.block.layout().setContentsMargins(*((16, 14, 16, 16) if rec else (0, 0, 0, 0)))
-        for w in (self.state_label, self.elapsed, self.meter, self.mark_btn):
+        for w in (self.pulse, self.state_label, self.elapsed, self.meter, self.mark_btn):
             w.setVisible(rec)
         self.call_meter.setVisible(rec and getattr(self, "_two_tracks", False))
         self.source_btn.setVisible(not rec)
@@ -741,9 +751,11 @@ class RecorderPanel(QWidget):
             paused = st.get("state") == recorder.S_PAUSED
             if st.get("state") != self._state:
                 self._state = st.get("state") or ""
-                self.state_label.setText("PAUSED" if paused else "● RECORDING")
+                self.state_label.setText("PAUSED" if paused else "RECORDING")
                 tone = theme.current().amber if paused else "#ffb4b4"
                 self.state_label.setStyleSheet(f"color: {tone}; letter-spacing: 1px;")
+                self.pulse.set_paused(paused)
+                motion.fade(self.elapsed, 0.55 if paused else 1.0, motion.MEDIUM)
                 self.pause_btn.setIcon(icon("record") if paused else icon("pause", "on_deep"))
                 self._wake_waves()
             self.pause_btn.setToolTip("Resume recording (Ctrl+Shift+R)" if paused else "Pause recording (Ctrl+Shift+R)")

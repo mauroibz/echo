@@ -34,6 +34,7 @@ class Settings:
     export_timestamps: bool = False  # paragraph times in exported notes
     export_audio: str = "link"  # link, copy or none
     global_shortcuts: bool = True  # Ctrl+Alt+R and Ctrl+Alt+N from any application (desktop portal)
+    reduce_motion: bool = False  # no animations (also when the desktop has them off)
 
     @property
     def data_path(self) -> Path:
@@ -51,6 +52,7 @@ _COMMENTS = {
     "auto_transcribe": "Transcribe new recordings and imports automatically",
     "worker_idle_minutes": "Minutes before the idle transcription worker exits and frees GPU memory",
     "theme": "Appearance: light, dark or system",
+    "reduce_motion": "No animations in the window (Echo also follows the desktop's setting)",
     "show_timestamps": "Show passage start times next to the transcript",
     "language": "Default transcription language (es, en, pt, fr, it, de, ...)",
     "edit_autopause": "While a passage plays for editing, typing pauses it and it plays again after",

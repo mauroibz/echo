@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCompleter, QFil
 from .. import APP_NAME, export, features, importer, recorder, sets, settings, transcription
 from ..index import Index, parse_people, parse_query
 from ..library import READY, RECORDING, T_QUEUED, T_RUNNING, TRANSCRIPT, Library, Recording
-from . import theme
+from . import motion, theme
 from .common import RECORD_RED, UiState, app_icon, dot_icon, fmt_duration, icon, run_task
 from .dialogs import (AboutDialog, DoctorDialog, ExportLibraryDialog, ModelDialog, SettingsDialog, ShortcutsDialog,
                       WelcomeDialog)
@@ -74,16 +74,24 @@ class Toast(QLabel):
         self.setWordWrap(True)
         self.setMaximumWidth(560)
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-        self._timer = QTimer(self, singleShot=True, timeout=self.hide)
+        self._timer = QTimer(self, singleShot=True, timeout=self._fade_out)
         self.hide()
 
     def show_text(self, text: str, ms: int | None = None):
         self.setText(text)
         self.adjustSize()
         self.place()
-        self.show()
+        if not self.isVisible():
+            self.show()
+            motion.fade(self, 1.0, motion.MEDIUM, start=0.0)
         self.raise_()
         self._timer.start(ms or (4000 if len(text) < 70 else 6500))
+
+    def _fade_out(self):
+        if motion.on():
+            motion.fade(self, 0.0, motion.MEDIUM, done=lambda: (self.hide(), self.setGraphicsEffect(None)))
+        else:
+            self.hide()
 
     def place(self):
         p = self.parentWidget()
@@ -233,6 +241,8 @@ class MainWindow(QMainWindow):
         self.model.modelReset.connect(self._restore_selection)
         self.delegate = RowDelegate(self.list)
         self.list.setItemDelegate(self.delegate)
+        motion.clock().tick.connect(lambda _t: self.list.viewport().update()
+                                    if self.list.isVisible() and self.model.needs_frames() else None)
         self.list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.list.setDragDropMode(QAbstractItemView.DragDropMode.DragDrop)
         self.list.setDefaultDropAction(Qt.DropAction.MoveAction)
@@ -461,14 +471,24 @@ class MainWindow(QMainWindow):
         return b
 
     def show_details(self, on: bool):
-        """Details at the right of the transcript, open or closed (Ctrl+I)."""
-        self.details.setVisible(on)
+        """Details at the right of the transcript, open or closed (Ctrl+I); it slides."""
         if self.details_btn.isChecked() != on:
-            self.details_btn.setChecked(on)
+            self.details_btn.setChecked(on)  # its toggled signal comes back here
+            return
         if hasattr(self, "a_details"):
             self.a_details.setChecked(on)
-        if on:
+        if on and not self.details.isVisible():
+            self.details.setMaximumWidth(0)
+            self.details.show()
             self.details.refresh()
+            motion.slide_width(self.details, self.details.WIDTH)
+        elif not on and self.details.isVisible():
+            def closed():
+                if not self.details_btn.isChecked():  # not opened again while it slid
+                    self.details.hide()
+                    self.details.setMaximumWidth(self.details.WIDTH)
+
+            motion.slide_width(self.details, 0, done=closed)
 
     def toggle_tag_bar(self):
         self._tags_open = not self._tags_open
@@ -667,6 +687,7 @@ class MainWindow(QMainWindow):
     # ---- periodic refresh ----
     def _refresh(self):
         self.model.refresh()
+        self._animate_list()
         self._update_empty()
         rec = self.current()
         linked = self.current_set()
@@ -1590,6 +1611,18 @@ class MainWindow(QMainWindow):
         self.transcript.refresh()
 
     # ---- window lifecycle ----
+    def _set_shown(self, shown: bool):
+        """Meters and animation run only while the window is on screen."""
+        self.recorder_panel.set_window_shown(shown)
+        motion.clock().set_shown(shown)
+
+    def _animate_list(self):
+        """Frames for the list while a row is arriving or a transcription runs (its sweep)."""
+        if self.model.needs_frames():
+            motion.clock().hold(self.list)
+        else:
+            motion.clock().release(self.list)
+
     def show_message(self, text: str, ms: int | None = None):
         self.toast.show_text(text, ms)
 
@@ -1601,16 +1634,16 @@ class MainWindow(QMainWindow):
 
     def changeEvent(self, e):
         if e.type() == QEvent.Type.WindowStateChange:
-            self.recorder_panel.set_window_shown(self.isVisible() and not self.isMinimized())
+            self._set_shown(self.isVisible() and not self.isMinimized())
         super().changeEvent(e)
 
     def showEvent(self, e):
         super().showEvent(e)
-        self.recorder_panel.set_window_shown(not self.isMinimized())
+        self._set_shown(not self.isMinimized())
 
     def hideEvent(self, e):
         super().hideEvent(e)
-        self.recorder_panel.set_window_shown(False)
+        self._set_shown(False)
 
     def resizeEvent(self, e):
         super().resizeEvent(e)
@@ -1651,6 +1684,7 @@ class MainWindow(QMainWindow):
 
     def shutdown(self):
         self._refresh_timer.stop()
+        motion.clock().release(self.list)
         self.watcher.stop()
         if self.shortcuts is not None:
             self.shortcuts.stop()

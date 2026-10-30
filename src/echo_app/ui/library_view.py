@@ -3,16 +3,17 @@
 from __future__ import annotations
 
 import os
+import time
 from dataclasses import dataclass
 
 from PySide6.QtCore import QAbstractListModel, QModelIndex, QRect, QRectF, QSize, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QLinearGradient, QPainter
 from PySide6.QtWidgets import QStyle, QStyledItemDelegate, QStyleOptionViewItem
 
 from .. import features, recorder, sets
 from ..library import (FAILED, NEEDS_FINALIZE, READY, RECORDING, T_DONE, T_FAILED, T_QUEUED, T_RUNNING,
                        Library, Recording)
-from . import theme
+from . import motion, theme
 from .common import date_group, fmt_date, fmt_duration, fmt_eta, fmt_length, fmt_when
 from .common import icon as tinted_icon
 
@@ -28,6 +29,7 @@ ROW_HEADER, ROW_REC, ROW_SET, ROW_PART = "header", "rec", "set", "part"
 
 HEADER = "§"  # row ids starting with this are date headings
 GROUPS = {"today": "Today", "yesterday": "Yesterday", "week": "This week"}
+ARRIVE_S = 0.32  # a new row slides in for this long
 MONTHS = ("January", "February", "March", "April", "May", "June", "July", "August", "September", "October",
           "November", "December")
 
@@ -161,6 +163,7 @@ class LibraryModel(QAbstractListModel):
         self._parts: dict[str, list[str]] = {}  # set id -> present members (two or more), in order
         self._member_of: dict[str, str] = {}  # recording id -> set id, for those sets
         self.expanded: set[str] = set()
+        self.born: dict[str, float] = {}  # when a recording appeared after the first load: it slides in
 
     # ---- Qt model API ----
     def rowCount(self, parent=None) -> int:
@@ -380,6 +383,8 @@ class LibraryModel(QAbstractListModel):
                 rec = self.library.get(rid)
                 if rec is None:
                     continue
+                if self._loaded and rid not in self._all:
+                    self.born[rid] = time.monotonic()
                 self._all[rid] = rec
                 self._mtimes[rid] = mtime
                 changed_ids.append(rid)
@@ -473,6 +478,14 @@ class LibraryModel(QAbstractListModel):
         self._rows = ids
         self.endResetModel()
 
+    def needs_frames(self) -> bool:
+        """Whether some row moves: one arriving, or a transcription running."""
+        now = time.monotonic()
+        for rid, t in list(self.born.items()):
+            if now - t > ARRIVE_S:
+                del self.born[rid]
+        return bool(self.born) or any(st.kind == K_BUSY and st.progress is not None for st in self._status.values())
+
     def shown(self) -> int:
         """Rows that are recordings or sets, not date headings."""
         return sum(1 for r in self._rows if not r.startswith(HEADER))
@@ -565,6 +578,12 @@ class RowDelegate(QStyledItemDelegate):
         t = theme.current()
         p.save()
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        born = index.model().born.get(rec.id) if rec is not None and motion.on() else None
+        if born is not None:
+            k = min(1.0, (time.monotonic() - born) / ARRIVE_S)
+            ease = 1 - (1 - k) ** 3
+            p.setOpacity(ease)
+            p.translate(-12 * (1 - ease), 0)
         card = QRectF(option.rect).adjusted(self.MARGIN, 2, -self.MARGIN, -2)
         self._card(p, option, card)
         live = st is not None and st.kind == K_RECORDING
@@ -659,4 +678,14 @@ class RowDelegate(QStyledItemDelegate):
             bar.setWidth(bar.width() * max(0.02, min(1.0, st.progress)))
             p.setBrush(QColor(t.foam))
             p.drawRoundedRect(bar, 1.5, 1.5)
+            if motion.on():
+                # A light sweep along the done part while the work runs.
+                phase = (motion.clock().now() % 1.4) / 1.4
+                x = bar.left() + (bar.width() + 40) * phase - 40
+                g = QLinearGradient(x, 0, x + 40, 0)
+                g.setColorAt(0.0, QColor(255, 255, 255, 0))
+                g.setColorAt(0.5, QColor(255, 255, 255, 170))
+                g.setColorAt(1.0, QColor(255, 255, 255, 0))
+                p.setBrush(g)
+                p.drawRoundedRect(bar, 1.5, 1.5)
         p.restore()

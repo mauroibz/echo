@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 
 import numpy as np
-from PySide6.QtCore import QEvent, QPointF, QRectF, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QEasingCurve, QEvent, QPointF, QRectF, QSize, Qt, QTimer, QVariantAnimation, Signal
 from PySide6.QtGui import QColor, QFont, QKeyEvent, QLinearGradient, QMouseEvent, QPainter, QPen
 from PySide6.QtWidgets import (QComboBox, QFrame, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMenu,
                                QSizePolicy, QSlider, QToolButton, QToolTip, QVBoxLayout, QWidget)
@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (QComboBox, QFrame, QHBoxLayout, QInputDialog, QLa
 from ..audio import peaks as peaks_mod
 from ..audio.playback import MAX_VOLUME, Playback, SetPlayback
 from ..library import READY, Recording
-from . import theme
+from . import motion, theme
 from .common import fmt_date, fmt_duration, fmt_length, icon, run_task
 
 log = logging.getLogger(__name__)
@@ -73,6 +73,24 @@ class WaveformView(QWidget):
         self._last_handle = "start"
         self._cache_key = None
         self._columns = None
+        self._drop_at: float | None = None  # the marker dropping in, and how far (0..1)
+        self._drop_p = 1.0
+
+    def _drop(self, at: float):
+        if not motion.on():
+            return
+        self._drop_at, self._drop_p = at, 0.0
+        anim = QVariantAnimation(self)
+        anim.setStartValue(0.0)
+        anim.setEndValue(1.0)
+        anim.setDuration(420)
+        anim.setEasingCurve(QEasingCurve.Type.OutBack)
+        anim.valueChanged.connect(self._drop_frame)
+        anim.start(QVariantAnimation.DeletionPolicy.DeleteWhenStopped)
+
+    def _drop_frame(self, v):
+        self._drop_p = float(v)
+        self.update()
 
     # ---- data ----
     def set_recording(self, duration: float, crop_start, crop_end, gaps=(), markers=()):
@@ -202,12 +220,14 @@ class WaveformView(QWidget):
         line.setAlpha(150)
         for m in self.markers:
             x = self._x(m["at"])
+            # A marker just added drops in from above with a small bounce.
+            dy = -14 * (1 - self._drop_p) if m["at"] == self._drop_at else 0.0
             p.setPen(QPen(line, 1))
-            p.drawLine(QPointF(x, 9), QPointF(x, rect.height()))
+            p.drawLine(QPointF(x, 9 + max(0.0, dy)), QPointF(x, rect.height()))
             p.setPen(Qt.PenStyle.NoPen)
             p.setBrush(coral)
-            p.drawPolygon([QPointF(x - 5.5, 0), QPointF(x + 5.5, 0), QPointF(x + 5.5, 7), QPointF(x, 11),
-                           QPointF(x - 5.5, 7)])
+            p.drawPolygon([QPointF(x - 5.5, dy), QPointF(x + 5.5, dy), QPointF(x + 5.5, 7 + dy), QPointF(x, 11 + dy),
+                           QPointF(x - 5.5, 7 + dy)])
         # Crop handles (always drawn subtly at the edges so they are discoverable)
         for which, tm in (("start", self._start()), ("end", self._end())) if self.editable else ():
             x = self._x(tm)
@@ -312,8 +332,10 @@ class WaveformView(QWidget):
             super().mouseDoubleClickEvent(e)
 
     def add_marker(self, t: float):
-        self.markers.append({"at": round(max(0.0, min(self.duration, t)), 2), "note": ""})
+        at = round(max(0.0, min(self.duration, t)), 2)
+        self.markers.append({"at": at, "note": ""})
         self.markers.sort(key=lambda m: m["at"])
+        self._drop(at)
         self.update()
         self.markers_edited.emit(self.markers)
 
@@ -888,6 +910,9 @@ class PlayerPanel(QWidget):
 
     def _sync_play_icon(self):
         playing = self.player.playing
+        if playing != getattr(self, "_shown_playing", False):
+            self._shown_playing = playing
+            motion.fade(self.play_btn, 1.0, motion.FAST, start=0.35)  # the icon crosses over
         self.play_btn.setIcon(icon("pause" if playing else "play", "on_accent"))
         self.play_btn.setAccessibleName("Pause" if playing else "Play")
         if playing:

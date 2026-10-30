@@ -568,6 +568,16 @@ the blank line that precedes it (`QPlainTextEdit` ignores per-block line heights
 the blank line is the room there is; the first turn gets it from the document margin). A turn
 that does not follow a blank line keeps its name in the margin, so a name never covers text.
 
+Motion (`ui/motion.py`) marks changes of state in 120 to 420 ms: the recording block fading in, a
+pulsing dot (amber and blinking when paused), a ring on the marker button and a marker dropping
+onto the waveform, new rows sliding into the list and a sweep along running progress, the play
+icon crossing over, smooth scrolling to the passage that plays, Details sliding, the toast
+fading. Painted motion shares one 30 Hz clock that runs only while something holds it and the
+window is shown. Every helper jumps to its end state when motion is off (Settings, GNOME's
+`enable-animations`, KDE's `AnimationDurationFactor=0`, or `ECHO_REDUCE_MOTION=1`, which the
+tests set), so behavior is the same either way. Qt stylesheets have no transitions or
+transforms, so hover lifts from the design were left out rather than faked.
+
 ### Linked sets
 
 A set is one row in the list model (a flat list with heading, recording, set and part rows,

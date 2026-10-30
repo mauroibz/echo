@@ -6,7 +6,7 @@ import logging
 import os
 import unicodedata
 
-from PySide6.QtCore import QRect, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QEasingCurve, QPropertyAnimation, QRect, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import (QAction, QColor, QFont, QKeySequence, QMouseEvent, QPainter, QTextCharFormat,
                            QTextCursor)
 from PySide6.QtWidgets import (QApplication, QCompleter, QFileDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QMenu, QMessageBox,
@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (QApplication, QCompleter, QFileDialog, QFrame, QH
 from .. import align, dictionary, export, features, models, recorder, relabel, settings, transcription
 from ..library import (CORRECTED, EDITED, RELABELED, NEEDS_FINALIZE, READY, RECORDING, T_FAILED, T_QUEUED, T_RUNNING,
                        TRANSCRIPT, Library, Recording)
-from . import theme
+from . import motion, theme
 from .common import fmt_date, fmt_duration, fmt_eta, icon, run_task
 
 log = logging.getLogger(__name__)
@@ -2440,7 +2440,28 @@ class TranscriptPanel(QWidget):
                 cur = QTextCursor(self.editor.document())
                 cur.setPosition(self._spans[idx][0])
                 self.editor.setTextCursor(cur)
-                self.editor.ensureCursorVisible()
+                self._scroll_to_cursor()
+
+    def _scroll_to_cursor(self):
+        """Bring the passage that plays into view: smoothly, and only when it is out of view."""
+        ed = self.editor
+        r = ed.cursorRect()
+        h = ed.viewport().height()
+        if 0 <= r.top() and r.bottom() <= h:
+            return
+        if not motion.on():
+            ed.ensureCursorVisible()
+            return
+        bar = ed.verticalScrollBar()
+        # QPlainTextEdit scrolls by lines: find the line that puts the passage a third of the way down.
+        lines = max(1, round((r.top() - h / 3) / max(1, ed.fontMetrics().lineSpacing())))
+        target = max(bar.minimum(), min(bar.maximum(), bar.value() + lines))
+        anim = QPropertyAnimation(bar, b"value", self)
+        anim.setStartValue(bar.value())
+        anim.setEndValue(target)
+        anim.setDuration(motion.MEDIUM)
+        anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        anim.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
 
     def _on_ctrl_click(self, pos: int):
         for a, b, start in self._spans:

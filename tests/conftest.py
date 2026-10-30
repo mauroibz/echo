@@ -25,6 +25,8 @@ def isolated_home(tmp_path, monkeypatch):
     monkeypatch.setenv("ECHO_NO_PORTAL", "1")  # never ask the real desktop for shortcuts
     # Echo alone, even in a checkout with an extension next to it; tests/test_extensions.py loads fakes.
     monkeypatch.setenv("ECHO_NO_EXTENSIONS", "1")
+    # No animation unless a test asks for it (tests/test_motion.py): states are final at once.
+    monkeypatch.setenv("ECHO_REDUCE_MOTION", "1")
     return home
 
 
