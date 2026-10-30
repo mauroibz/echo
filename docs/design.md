@@ -578,6 +578,17 @@ window is shown. Every helper jumps to its end state when motion is off (Setting
 tests set), so behavior is the same either way. Qt stylesheets have no transitions or
 transforms, so hover lifts from the design were left out rather than faked.
 
+The window's code is split by what it is about, so no module has to be read whole to change one
+thing. `main_window` builds the parts, keeps the state, follows the selection and owns the
+window's lifecycle; its actions on the list (`window_library`), search and import
+(`window_search`) and recording from outside the window (`window_capture`) are mixins, and small
+widgets live in `window_parts`. The transcript panel is the same: `transcript` shows, saves and
+follows, `editor` is the text widget with its margin and speaker names, and `transcript_sets`,
+`transcript_speakers` and `transcript_find` are its mixins over the helpers in `transcript_text`.
+The player's waveform is `waveform`; the input's meter, list and panel are `inputs`. Mixins hold
+methods only: every widget and every piece of state is created in the class's own `__init__`,
+so reading `_build_parts` (or the panel's `_build`) shows everything a mixin can touch.
+
 The recording dock (`ui/record_dock.py`) is a frameless `Qt.Tool` window with
 `WindowStaysOnTopHint`, drawn as a pill in the sidebar's gradient. It holds no recording logic:
 its buttons call the recorder panel, and it reads the session's status on its own 200 ms timer

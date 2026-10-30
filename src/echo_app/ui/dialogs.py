@@ -279,7 +279,7 @@ class WelcomeDialog(FittedDialog):
         self.source.activated.connect(self._pick)
         mic.addWidget(self.source, 1)
         lay.addLayout(mic)
-        from .recorder_panel import LevelMeter
+        from .inputs import LevelMeter
 
         self.meter = LevelMeter(on_deep=False)
         lay.addWidget(self.meter)

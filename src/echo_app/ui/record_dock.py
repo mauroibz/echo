@@ -13,11 +13,11 @@ from .. import recorder
 from ..library import Library
 from . import motion, theme
 from .common import dot_icon, fmt_duration, icon
+from .inputs import FLOOR_DB
 from .library_view import status_of
 
 MINIMAL_AFTER_S = 5.0  # while recording, without the pointer over it, the dock shrinks to the time
 SAVED_FOR_S = 10.0  # "Saved" stays this long unless Open or Done is pressed
-FLOOR_DB = -60.0
 
 
 class LevelWave(QWidget):

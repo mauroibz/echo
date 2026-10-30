@@ -85,7 +85,7 @@ def test_said_by_moves_what_sounds_the_same_and_can_go_back(window, lib, monkeyp
     assert [n for _a, _name, _c, n in tp.editor.labels] == [1, 2]
     from PySide6.QtWidgets import QMenu
 
-    from echo_app.ui import transcript
+    from echo_app.ui import transcript_speakers
 
     shown = []
 
@@ -93,7 +93,7 @@ def test_said_by_moves_what_sounds_the_same_and_can_go_back(window, lib, monkeyp
         def exec(self, *_a):
             shown.extend(x.text() for x in self.actions())
 
-    monkeypatch.setattr(transcript, "QMenu", Menu)
+    monkeypatch.setattr(transcript_speakers, "QMenu", Menu)
     tp._speaker_menu(1, None)
     assert "Back to the speakers Echo found" in shown
     tp.restore_speakers()
