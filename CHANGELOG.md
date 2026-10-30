@@ -5,6 +5,8 @@ tag.
 
 ## Unreleased
 
+## 1.4.1 - 2026-10-30
+
 ### Added
 
 - Click a word in the transcript to move playback close to it, playing or paused. Ctrl+click
