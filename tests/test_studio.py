@@ -27,6 +27,7 @@ class FakeServer:
         self.models = ["modelo-a"]
         self.paths: list[str] = []
         self.all_requests: list[dict] = []
+        self.mail = "Asunto: Seguimiento de la charla\n\nHola a todos:\n\n- Lucía envía la propuesta."
         self.actions = json.dumps([{"text": "Enviar la propuesta", "owner": "lucia", "due": "2026-10-31",
                                     "at": "0:06"}])
         self.stop_reason = "end_turn"
@@ -54,7 +55,8 @@ class FakeServer:
                 body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
                 first = (body.get("system") or body["messages"][0]["content"])
                 server.all_requests.append(body)
-                if not first.startswith(("Write a title", "You extract the action items")):
+                helpers = ("Write a title", "You extract the action items", "You write the follow-up")
+                if not first.startswith(helpers):
                     server.requests.append(body)  # the summaries; titles and action items apart
                 server.headers.append(dict(self.headers))
                 server.paths.append(self.path)
@@ -67,7 +69,8 @@ class FakeServer:
                                      "stop_reason": server.stop_reason})
                     return
                 reply = (server.title if first.startswith("Write a title") else server.actions
-                         if first.startswith("You extract the action items") else server.reply)
+                         if first.startswith("You extract the action items") else server.mail
+                         if first.startswith("You write the follow-up email") else server.reply)
                 self._send(200, {"choices": [{"message": {"content": reply}}]})
 
         self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
@@ -400,6 +403,40 @@ def test_pending_screen_and_summary_items(window, lib, server, studio):
     screen.list.findChildren(QCheckBox)[0].setChecked(True)
     screen.refresh()
     assert screen.count.text() == "0 open items" and actions.load(lib.get(rec.id))["items"][0]["done"]
+
+
+def test_follow_up_draft(window, lib, server, studio, capsys, tmp_path, monkeypatch):
+    from echo_app import settings
+    from echo_studio import followup
+    from echo_studio.ui import FollowUpDialog, SummaryView
+
+    rec = _rec(lib)
+    summary.finish(rec, summary.write(rec))
+    subject, body = followup.draft(rec)
+    assert subject == "Seguimiento de la charla" and body.startswith("Hola a todos:")
+    req = server.all_requests[-1]["messages"][1]["content"]
+    assert "Action items:\n- Enviar la propuesta (lucia), by 2026-10-31" in req
+    assert followup.mailto("A b", "c&d") == "mailto:?subject=A%20b&body=c%26d"
+    window.model.refresh()
+    _attach(window)
+    view = window.views.views()[0]
+    assert isinstance(view, SummaryView)
+    window._select(rec.id)
+    window.views.buttons[1].click()
+    assert view.follow_btn.isVisible()
+    view.follow_up()
+    assert wait_until(lambda: any(isinstance(w, FollowUpDialog) for w in view.findChildren(FollowUpDialog)))
+    dlg = view.findChildren(FollowUpDialog)[0]
+    assert dlg.subject.text() == "Seguimiento de la charla"
+    opened = []
+    monkeypatch.setattr("echo_studio.ui.QDesktopServices.openUrl", lambda url: opened.append(url.toString()))
+    dlg.open_mail()
+    assert opened and opened[0].startswith("mailto:?subject=Seguimiento")
+    s = settings.load()[0]
+    s.data_dir = str(lib.data_dir)
+    settings.save(s)
+    assert cli.main(["summarize", rec.id, "--follow-up"]) == 0
+    assert "Subject: Seguimiento de la charla" in capsys.readouterr().out
 
 
 def test_split_at_paragraphs():

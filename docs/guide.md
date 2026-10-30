@@ -361,6 +361,10 @@ button beside People, Ctrl+Shift+T) gathers what is still open across all your r
 person and by tag (`#acme`), and a person's profile in People shows what they owe. The items are
 kept in `actions.json` in the recording's folder; summarizing again keeps your checks.
 
+Follow-up, beside Copy, drafts the email you would send after the meeting: what was agreed and
+who does what by when. Edit it, then Copy it or press Open in mail to start a message in your mail
+program. Echo sends nothing itself. Read it first: a language model wrote it.
+
 The arrow beside Summarize picks the kind of meeting: a general one, or a template with its own
 sections (`uno-a-uno`, `entrevista`, `clase`, `cliente`). The choice is kept as a tag such as
 `template:entrevista`, so you can also set it in the tag field before the transcript is ready.
@@ -371,7 +375,7 @@ directorio, con las decisiones al final."; one named like a built-in replaces it
 From the command line: `echo-app summarize ID --print` prints the summary, `--all` summarizes
 every transcribed recording that has no current summary (the ones from before you set up the
 server, for example), `--json` gives the recording with a `summary` key, `--force` summarizes
-again, `--template NAME` sets the kind of meeting. Exit codes: 0 done, 1 a recording failed, 2 usage error, 3 no server set up. `echo-app doctor` checks the server.
+again, `--template NAME` sets the kind of meeting, `--follow-up` prints the follow-up draft. Exit codes: 0 done, 1 a recording failed, 2 usage error, 3 no server set up. `echo-app doctor` checks the server.
 
 The server settings are in `~/.config/echo/studio.toml`. The key is kept in your desktop's
 keyring (KDE Wallet or GNOME Keyring, through `secret-tool`), never in a file; to keep it

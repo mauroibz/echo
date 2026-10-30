@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import sys
 
-from . import config, llm, summary, templates
+from . import config, followup, llm, summary, templates
 
 # Exit codes, as Echo's transcribe: 0 done, 1 a recording failed, 2 usage, 3 no server set up.
 OK, FAILED, USAGE, NOT_SET_UP = 0, 1, 2, 3
@@ -68,6 +68,14 @@ def cmd_summarize(args) -> int:
             out.append(d)
         elif args.print:
             print(data["text"] + "\n")
+        if args.follow_up:
+            try:
+                subject, body = followup.draft(rec, cfg)
+            except (ValueError, llm.LLMError) as e:
+                _err(f"{rid}: no follow-up: {e}")
+                code = FAILED
+                continue
+            print(f"Subject: {subject}\n\n{body}\n")
     if args.json:
         print(json.dumps(out, ensure_ascii=False, indent=2))
     return code
@@ -109,6 +117,8 @@ exit codes:
                         "Built in: " + ", ".join(sorted(templates.BUILT_IN)) + "; your own go in "
                         "~/.config/echo/studio/templates/NAME.md")
     s.add_argument("--force", action="store_true", help="summarize again even if the summary is current")
+    s.add_argument("--follow-up", action="store_true",
+                   help="print a follow-up email drafted from the summary (Studio sends nothing)")
     s.add_argument("--print", action="store_true", help="print each summary to standard output")
     s.add_argument("--json", action="store_true", help="print the result as JSON")
     s.set_defaults(func=cmd_summarize)

@@ -4,16 +4,16 @@ from __future__ import annotations
 
 import os
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QActionGroup, QFont
-from PySide6.QtWidgets import (QApplication, QCheckBox, QFormLayout, QFrame, QHBoxLayout, QLabel, QLineEdit,
-                               QMenu, QPushButton, QScrollArea, QTextBrowser, QToolButton, QVBoxLayout,
-                               QWidget)
+from PySide6.QtCore import Qt, QUrl
+from PySide6.QtGui import QActionGroup, QDesktopServices, QFont
+from PySide6.QtWidgets import (QApplication, QCheckBox, QDialog, QFormLayout, QFrame, QHBoxLayout, QLabel,
+                               QLineEdit, QMenu, QPlainTextEdit, QPushButton, QScrollArea, QTextBrowser,
+                               QToolButton, QVBoxLayout, QWidget)
 
 from echo_app.ui import theme
 from echo_app.ui.common import icon, run_task
 
-from . import actions, config, keychain, llm, summary, templates
+from . import actions, config, followup, keychain, llm, summary, templates
 from .actions_ui import ActionList, items_of
 
 VIEW_TITLE = "Summary"
@@ -168,6 +168,13 @@ class SummaryView(QWidget):
         self.summarize_btn.setMenu(self.template_menu)
         self.summarize_btn.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
         bar.addWidget(self.summarize_btn)
+        self.follow_btn = QToolButton()
+        self.follow_btn.setText("Follow-up")
+        self.follow_btn.setIcon(icon("mail"))
+        self.follow_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.follow_btn.setToolTip("Draft the follow-up email from this summary")
+        self.follow_btn.clicked.connect(self.follow_up)
+        bar.addWidget(self.follow_btn)
         self.copy_btn = QToolButton()
         self.copy_btn.setText("Copy")
         self.copy_btn.setIcon(icon("copy"))
@@ -212,6 +219,7 @@ class SummaryView(QWidget):
         self.summarize_btn.setEnabled(not busy)
         self.summarize_btn.setText("Summarize again" if data else "Summarize")
         self.copy_btn.setVisible(data is not None)
+        self.follow_btn.setVisible(data is not None and not busy)
         items = items_of(rec) if data is not None else []
         self.actions.set_items(items)
         self.actions_box.setVisible(bool(items))
@@ -244,6 +252,25 @@ class SummaryView(QWidget):
     def summarize(self):
         if self.rec is not None:
             self.jobs.request(self.rec.id)
+
+    def follow_up(self):
+        rec = self.rec
+        if rec is None:
+            return
+        self.follow_btn.setEnabled(False)
+        self.status.setText("Drafting the follow-up…")
+
+        def done(result):
+            self.follow_btn.setEnabled(True)
+            self.show_subject(self.rec, self.linked)
+            FollowUpDialog(*result, parent=self).show()
+
+        def failed(msg):
+            self.follow_btn.setEnabled(True)
+            self.show_subject(self.rec, self.linked)
+            self.message(f"No draft: {msg}")
+
+        run_task(lambda: followup.draft(rec), on_done=done, on_error=failed)
 
     def _toggle_action(self, rid: str, index: int, done: bool):
         if self.rec is not None and self.rec.id == rid:
@@ -286,3 +313,38 @@ class SummaryView(QWidget):
         if data:
             QApplication.clipboard().setText(data["text"] + "\n")
             self.message("Summary copied.")
+
+
+class FollowUpDialog(QDialog):
+    """The drafted email, to edit, copy or open in the mail program. Studio sends nothing."""
+
+    def __init__(self, subject: str, body: str, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Follow-up")
+        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        self.resize(560, 520)
+        lay = QVBoxLayout(self)
+        form = QFormLayout()
+        self.subject = QLineEdit(subject)
+        form.addRow("Subject", self.subject)
+        lay.addLayout(form)
+        self.body = QPlainTextEdit(body)
+        self.body.setAccessibleName("Email")
+        lay.addWidget(self.body, 1)
+        row = QHBoxLayout()
+        row.addWidget(_dim("Check it before sending: it was written by a language model."), 1)
+        copy = QPushButton("Copy")
+        copy.clicked.connect(self.copy)
+        row.addWidget(copy)
+        mail = QPushButton("Open in mail")
+        mail.setDefault(True)
+        mail.clicked.connect(self.open_mail)
+        row.addWidget(mail)
+        lay.addLayout(row)
+
+    def copy(self):
+        QApplication.clipboard().setText(f"{self.subject.text()}\n\n{self.body.toPlainText()}")
+
+    def open_mail(self):
+        QDesktopServices.openUrl(QUrl(followup.mailto(self.subject.text(), self.body.toPlainText())))
+
