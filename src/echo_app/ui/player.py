@@ -7,14 +7,14 @@ import logging
 import numpy as np
 from PySide6.QtCore import QEvent, QPointF, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QKeyEvent, QLinearGradient, QMouseEvent, QPainter, QPen
-from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMenu, QSizePolicy,
-                               QSlider, QToolButton, QToolTip, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QComboBox, QFrame, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMenu,
+                               QSizePolicy, QSlider, QToolButton, QToolTip, QVBoxLayout, QWidget)
 
 from ..audio import peaks as peaks_mod
 from ..audio.playback import MAX_VOLUME, Playback, SetPlayback
 from ..library import READY, Recording
 from . import theme
-from .common import fmt_date, fmt_duration, icon, run_task
+from .common import fmt_date, fmt_duration, fmt_length, icon, run_task
 
 log = logging.getLogger(__name__)
 
@@ -404,86 +404,135 @@ class PlayerPanel(QWidget):
         self.set_recording(None)
 
     def _build(self):
-        lay = QVBoxLayout(self)
-        lay.setContentsMargins(18, 14, 18, 14)
-        lay.setSpacing(6)
+        """The parts, in three places the window lays out: `header` (title, one line, tags), `dock`
+        (playback along the bottom) and the pieces of Details (`context`, `notes`, `file_info`,
+        `stats`). The panel itself is not shown."""
+        self.header = QWidget()
+        hl = QVBoxLayout(self.header)
+        hl.setContentsMargins(0, 0, 0, 0)
+        hl.setSpacing(6)
         self.title = QLineEdit()
         self.title.setFrame(False)
         self.title.setObjectName("title")
-        self.title.setFont(theme.display_font(1.65, QFont.Weight.ExtraBold))
+        self.title.setFont(theme.display_font(1.9, QFont.Weight.ExtraBold))
         self.title.setPlaceholderText("Untitled")
         self.title.setToolTip("Rename (F2)")
         self.title.setAccessibleName("Title")
         self.title.editingFinished.connect(self._commit_title)
-        lay.addWidget(self.title)
+        hl.addWidget(self.title)
+        line = QHBoxLayout()
+        line.setContentsMargins(5, 0, 0, 0)
+        line.setSpacing(12)
         self.subtitle = QLabel("")
         self.subtitle.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         theme.set_role(self.subtitle, dim=True)
-        lay.addWidget(self.subtitle)
+        line.addWidget(self.subtitle)
+        from .tags import NotesEdit, TagEditor
+
+        self.tags = TagEditor()
+        self.tags.changed.connect(self._commit_tags)
+        line.addWidget(self.tags, 1)
+        hl.addLayout(line)
+
         self.context = QLineEdit()
         self.context.setObjectName("context")
-        self.context.setFrame(False)
-        self.context.setPlaceholderText("Who is speaking, what about (optional, helps transcription)")
+        self.context.setPlaceholderText("Who is speaking, what about (optional)")
         self._context_tip = ("Used as context when this recording is transcribed, together with the dictionary.\n"
                              "For example: Entrevista con Lucía sobre PipeWire")
         self.context.setToolTip(self._context_tip)
         self.context.setAccessibleName("Who is speaking, what about")
         self.context.editingFinished.connect(self._commit_context)
-        lay.addWidget(self.context)
-        from .tags import NotesEdit, TagEditor
-
-        self.tags = TagEditor()
-        self.tags.changed.connect(self._commit_tags)
-        lay.addWidget(self.tags)
         self.notes = NotesEdit()
         self.notes.edited.connect(self._commit_notes)
-        lay.addWidget(self.notes)
-        self.wave = WaveformView()
-        self.wave.seek_requested.connect(self.seek)
-        self.wave.crop_changed.connect(self._crop_changed)
-        self.wave.markers_edited.connect(self._markers_edited)
-        lay.addWidget(self.wave, 1)
-        row = QHBoxLayout()
-        row.setSpacing(6)
+        self.file_info = QLabel("")
+        self.file_info.setWordWrap(True)
+        self.file_info.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.stats = QLabel("")
+        self.stats.setWordWrap(True)
+
+        self.dock = QWidget()
+        self.dock.setObjectName("dock")
+        row = QHBoxLayout(self.dock)
+        row.setContentsMargins(20, 10, 16, 10)
+        row.setSpacing(12)
         self.play_btn = QToolButton()
         self.play_btn.setObjectName("play")
         self.play_btn.setIcon(icon("play", "on_accent"))
         self.play_btn.setIconSize(QSize(18, 18))
-        self.play_btn.setFixedSize(42, 42)
+        self.play_btn.setFixedSize(44, 44)
         self.play_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.play_btn.setToolTip("Play / pause (Space)")
         self.play_btn.setAccessibleName("Play")
         self.play_btn.clicked.connect(self.toggle_play)
         row.addWidget(self.play_btn)
-        self.time = QLabel("0:00 / 0:00")
-        self.time.setFont(theme.display_font(1.0, QFont.Weight.DemiBold, tabular=True))
-        self.time.setMinimumWidth(120)
+        self.time = QLabel("0:00")
+        self.time.setFont(theme.display_font(0.95, QFont.Weight.Bold, tabular=True))
+        self.time.setMinimumWidth(self.time.fontMetrics().horizontalAdvance("0:00:00") + 4)
         row.addWidget(self.time)
-        self.speed = QComboBox()
+        self.wave = WaveformView()
+        self.wave.setMinimumHeight(44)
+        self.wave.setMaximumHeight(52)
+        self.wave.seek_requested.connect(self.seek)
+        self.wave.crop_changed.connect(self._crop_changed)
+        self.wave.markers_edited.connect(self._markers_edited)
+        row.addWidget(self.wave, 1)
+        self.total = QLabel("0:00")
+        self.total.setFont(theme.display_font(0.95, QFont.Weight.DemiBold, tabular=True))
+        theme.set_role(self.total, dim=True)
+        row.addWidget(self.total)
+        self.crop_label = QLabel("")
+        theme.set_role(self.crop_label, dim=True)
+        row.addWidget(self.crop_label)
+        self.clear_crop_btn = QToolButton()
+        self.clear_crop_btn.setIcon(icon("clear", "muted"))
+        self.clear_crop_btn.setToolTip("Clear the crop")
+        self.clear_crop_btn.setAccessibleName("Clear crop")
+        self.clear_crop_btn.clicked.connect(self.clear_crop)
+        row.addWidget(self.clear_crop_btn)
+        # Speed: one button that steps through the speeds (its menu lists them); the combo box
+        # holds the value.
+        self.speed = QComboBox(self)
         for s in self.SPEEDS:
             self.speed.addItem(f"{s:g}×", s)
-        self.speed.setToolTip("Playback speed")
-        self.speed.setAccessibleName("Playback speed")
+        self.speed.hide()
         self.speed.currentIndexChanged.connect(lambda _i: self.player.set_speed(self.speed.currentData()))
-        row.addWidget(self.speed)
-        row.addSpacing(10)
-        # Volume, for quiet recordings: up to 400% (a limiter keeps the boost from clipping).
-        # Each change restarts the pipeline, so a drag applies once the slider settles.
-        vol_icon = QLabel()
-        vol_icon.setPixmap(icon("volume", "muted").pixmap(16, 16))
-        row.addWidget(vol_icon)
+        self.speed_btn = QToolButton()
+        self.speed_btn.setObjectName("pill")
+        self.speed_btn.setFont(theme.display_font(0.9, QFont.Weight.Bold, tabular=True))
+        self.speed_btn.setToolTip("Playback speed: click for the next one")
+        self.speed_btn.setAccessibleName("Playback speed")
+        self.speed_btn.clicked.connect(lambda: self.speed.setCurrentIndex((self.speed.currentIndex() + 1)
+                                                                          % self.speed.count()))
+        self.speed.currentIndexChanged.connect(lambda _i: self.speed_btn.setText(self.speed.currentText()))
+        self.speed_btn.setText(self.speed.currentText())
+        row.addWidget(self.speed_btn)
+        # Volume, for quiet recordings: up to 400% (a limiter keeps the boost from clipping), in a
+        # popup. Each change restarts the pipeline, so a drag applies once the slider settles.
+        self.volume_btn = QToolButton()
+        self.volume_btn.setIcon(icon("volume", "muted"))
+        self.volume_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.volume_btn.setFont(theme.display_font(0.85, QFont.Weight.Bold, tabular=True))
+        self.volume_btn.setToolTip("Volume")
+        self.volume_btn.setAccessibleName("Volume")
+        self.volume_btn.clicked.connect(self._open_volume)
+        row.addWidget(self.volume_btn)
+        self.volume_popup = QFrame(self, Qt.WindowType.Popup)
+        self.volume_popup.setObjectName("popup")
+        vl = QHBoxLayout(self.volume_popup)
+        vl.setContentsMargins(14, 10, 10, 10)
+        vl.setSpacing(8)
         self.volume = QSlider(Qt.Orientation.Horizontal)
         self.volume.setRange(0, round(MAX_VOLUME * 100))
         self.volume.setSingleStep(5)
         self.volume.setPageStep(10)
         self.volume.setValue(100)
-        self.volume.setFixedWidth(120)
+        self.volume.setFixedWidth(180)
         self.volume.setToolTip("Volume. Above 100% boosts quiet recordings; the audio file is not changed.\n"
                                "Remembered for each recording. Double-click for 100%.")
         self.volume.setAccessibleName("Volume")
         self.volume.valueChanged.connect(self._volume_moved)
         self.volume.installEventFilter(self)
-        row.addWidget(self.volume)
+        vl.addWidget(self.volume)
         self.volume_label = QToolButton()
         self.volume_label.setText("100%")
         self.volume_label.setFont(theme.display_font(0.85, QFont.Weight.Bold, tabular=True))
@@ -491,24 +540,18 @@ class PlayerPanel(QWidget):
         self.volume_label.setToolTip("Back to 100%")
         self.volume_label.setAccessibleName("Reset volume to 100%")
         self.volume_label.clicked.connect(lambda: self.volume.setValue(100))
-        row.addWidget(self.volume_label)
+        vl.addWidget(self.volume_label)
         self._volume_timer = QTimer(self, singleShot=True, interval=150, timeout=self._apply_volume)
-        row.addStretch(1)
-        self.crop_label = QLabel("")
-        row.addWidget(self.crop_label)
-        self.clear_crop_btn = QToolButton()
-        self.clear_crop_btn.setText("Clear crop")
-        self.clear_crop_btn.setIcon(icon("clear"))
-        self.clear_crop_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-        self.clear_crop_btn.clicked.connect(self.clear_crop)
-        row.addWidget(self.clear_crop_btn)
-        self.export_btn = QToolButton()
-        self.export_btn.setText("Export audio…")
-        self.export_btn.setIcon(icon("export"))
-        self.export_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.export_btn = QToolButton(self)  # exporting is in the header's Export menu
+        self.export_btn.hide()
         self.export_btn.clicked.connect(self.export_requested.emit)
-        row.addWidget(self.export_btn)
-        lay.addLayout(row)
+
+    def _open_volume(self):
+        self.volume_popup.adjustSize()
+        at = self.volume_btn.mapToGlobal(self.volume_btn.rect().topRight())
+        self.volume_popup.move(at.x() - self.volume_popup.width(), at.y() - self.volume_popup.height() - 6)
+        self.volume_popup.show()
+        self.volume.setFocus()
 
     # ---- recording ----
     def _leave_set(self):
@@ -519,7 +562,7 @@ class PlayerPanel(QWidget):
         self.player = self._rec_player
         self.linked, self.parts = None, []
         self.wave.editable, self.wave.dividers = True, []
-        for w in (self.tags, self.notes, self.export_btn):
+        for w in (self.tags, self.notes):
             w.show()
         self.title.setToolTip("Rename (F2)")
         self.context.setToolTip(self._context_tip)
@@ -537,7 +580,7 @@ class PlayerPanel(QWidget):
         self.rec = None
         self.linked = linked
         self.player = self._set_player
-        for w in (self.tags, self.notes, self.export_btn, self.clear_crop_btn):
+        for w in (self.tags, self.notes, self.clear_crop_btn):
             w.hide()
         self.crop_label.setText("")
         self.title.setEnabled(True)
@@ -552,9 +595,11 @@ class PlayerPanel(QWidget):
         first, last = parts[0].meta.created, parts[-1].meta.created
         span = fmt_date(first) + (f" to {fmt_date(last).split(' ')[-1]}" if first[:10] == last[:10] else
                                   f" to {fmt_date(last)}")
-        self.subtitle.setText(f"{sets.summary(linked, parts)}  ·  {span}")
+        self.subtitle.setText(f"{span} · {sets.summary(linked, parts)}")
+        self.file_info.setText("")
+        self.stats.setText("")
         playable = any(p.rec.audio_path is not None and p.rec.audio_path.exists() for p in timeline)
-        for w in (self.play_btn, self.speed, self.volume, self.volume_label, self.wave):
+        for w in (self.play_btn, self.speed_btn, self.volume_btn, self.volume, self.volume_label, self.wave):
             w.setEnabled(playable)
         self._show_volume()
         if same and sig == getattr(self, "_set_sig", None):
@@ -611,7 +656,8 @@ class PlayerPanel(QWidget):
         same = rec is not None and self.rec is not None and rec.id == self.rec.id
         self.rec = rec
         playable = rec is not None and rec.meta.state == READY and rec.audio_path is not None and rec.audio_path.exists()
-        for w in (self.play_btn, self.speed, self.volume, self.volume_label, self.export_btn, self.wave):
+        for w in (self.play_btn, self.speed_btn, self.volume_btn, self.volume, self.volume_label, self.export_btn,
+                  self.wave):
             w.setEnabled(playable)
         self._show_volume()
         self.title.setEnabled(rec is not None)
@@ -626,6 +672,8 @@ class PlayerPanel(QWidget):
             self.tags.set_tags([])
             self.notes.set_text("")
             self.subtitle.setText("")
+            self.file_info.setText("")
+            self.stats.setText("")
             self.wave.placeholder = ""
             self.wave.set_recording(0, None, None)
             self.wave.set_peaks(None)
@@ -640,16 +688,19 @@ class PlayerPanel(QWidget):
         self.notes.set_text(rec.meta.notes)
         bits = [fmt_date(rec.meta.created)]
         if rec.meta.duration:
-            bits.append(fmt_duration(rec.meta.duration))
-        if rec.meta.source:
-            bits.append(rec.meta.source)
+            bits.append(fmt_length(rec.meta.duration))
+        n = len(rec.speaker_numbers()) if not rec.meta.speakers_off else 0
+        if n > 1:
+            bits.append(f"{n} speakers")
+        self.subtitle.setText(" · ".join(bits))
+        facts = [rec.meta.source or rec.meta.audio or ""]
         if rec.meta.recovered:
-            bits.append("recovered after a crash")
+            facts.append("Recovered after a crash")
         interruptions = [g for g in rec.meta.gaps if g.get("kind") == "interruption"]
         if interruptions:
-            bits.append(f"{len(interruptions)} capture interruption{'s' if len(interruptions) > 1 else ''}")
-        stats = statistics(rec)
-        self.subtitle.setText("  ·  ".join(bits) + (f"\n{stats}" if stats else ""))
+            facts.append(f"{len(interruptions)} capture interruption{'s' if len(interruptions) > 1 else ''}")
+        self.file_info.setText("\n".join(f for f in facts if f))
+        self.stats.setText(statistics(rec).replace("  ·  ", "\n"))
         if same and self._loaded_sha == rec.meta.sha256 and playable:
             self.wave.crop_start, self.wave.crop_end = rec.meta.crop_start, rec.meta.crop_end
             if self.wave._drag != "marker":
@@ -790,6 +841,7 @@ class PlayerPanel(QWidget):
             self.crop_label.setText(f"Crop {fmt_duration(s)}–{fmt_duration(e)}")
         else:
             self.crop_label.setText("")
+        self.crop_label.setVisible(bool(cropped))
 
     # ---- playback ----
     def _shown(self) -> bool:
@@ -863,7 +915,8 @@ class PlayerPanel(QWidget):
         dur = (self.rec.meta.duration if self.rec else 0) or self.player.duration
         if self.linked is not None:
             dur = self.player.duration
-        self.time.setText(f"{fmt_duration(self.player.position())} / {fmt_duration(dur)}")
+        self.time.setText(fmt_duration(self.player.position()))
+        self.total.setText(fmt_duration(dur))
 
     def speed_value(self) -> float:
         return self.speed.currentData()
@@ -888,11 +941,17 @@ class PlayerPanel(QWidget):
             self.volume.setValue(round(value * 100))
             self.volume.blockSignals(False)
         self.volume_label.setText(f"{self.volume.value()}%")
+        self._show_volume_btn()
         self.player.set_volume(value)
+
+    def _show_volume_btn(self):
+        pct = self.volume.value()
+        self.volume_btn.setText("" if pct == 100 else f"{pct}%")
 
     def _volume_moved(self, pct: int):
         # Stored at once, so a refresh of the same recording during a drag keeps the new value.
         self.volume_label.setText(f"{pct}%")
+        self._show_volume_btn()
         key = self._volume_key()
         if key is not None:
             if pct == 100:

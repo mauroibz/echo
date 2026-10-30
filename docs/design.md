@@ -103,8 +103,8 @@ back to the default input; `stream.capture.sink=true` captures what the computer
 
 Before recording, a low-rate `pw-record` stream drives the level meter while the window is
 shown. After four seconds of exact digital silence Echo says so, because a connected
-microphone with its gain up never produces it: as a note drawn on the empty meter in the
-sidebar, since a noise gate makes that silence in every pause and a line of text appearing
+microphone with its gain up never produces it: in the input's name under Record (and on the
+meters), since a noise gate makes that silence in every pause and a line of text appearing
 under the controls moved them; the welcome screen shows the full advice under its meter.
 
 The gain slider sets the source node's own volume through `wpctl` (WirePlumber, installed with
@@ -554,6 +554,20 @@ read the current tokens when they paint, so switching appearance is live. Icons 
 interface typeface (Manrope) are bundled so Echo looks the same on any desktop; transcripts use
 the desktop's own text face.
 
+The window shows one thing at a time and keeps the rest a click away. There is no menu bar and
+no status bar: the menus are in a button at the top of the sidebar (F10), with every action also
+on the window so its shortcut works with the menu closed, and messages are a toast over the
+bottom of the content. At rest the recorder is only Record and the input's name; the input list,
+level, listen, gain and computer audio are in a popup under that name, fed by the same idle
+monitor, and the waves keep showing the input's level. The selected recording is a header (title,
+one line, tags, actions), the transcript and the player docked under it, and Details at the
+right. `PlayerPanel` and `TranscriptPanel` keep owning their widgets and logic; the window only
+places them (`player.header`, `player.dock`, the pieces `DetailsPanel` puts under headings), and
+the transcript's own toolbar is hidden. Speaker names are drawn by the editor over each turn, in
+the blank line that precedes it (`QPlainTextEdit` ignores per-block line heights and margins, so
+the blank line is the room there is; the first turn gets it from the document margin). A turn
+that does not follow a blank line keeps its name in the margin, so a name never covers text.
+
 ### Linked sets
 
 A set is one row in the list model (a flat list with heading, recording, set and part rows,
@@ -607,7 +621,8 @@ fails falls back to Echo's own, so recording and transcription never depend on a
 code. `ECHO_NO_EXTENSIONS=1` starts Echo without any, and the test suite always runs that way.
 
 The main window is built in two steps, `_build_parts` (make and connect the recorder, search, tag
-bar, list, player and transcript) and `_build_layout` (put them in the sidebar and splitters),
+bar, list, player and transcript) and `_build_layout` (put them in the sidebar, the header, the
+reading card and Details),
 so an extension's window can subclass it and lay the same parts out its own way without copying
 the wiring. `add_view(title, widget)` puts a view beside the transcript, chosen with a switch
 that only exists once a view is added; a view's `show_subject(rec, linked)` is called on every

@@ -82,7 +82,7 @@ def test_said_by_moves_what_sounds_the_same_and_can_go_back(window, lib, monkeyp
     tp.said_by(1, None, tp.editor.toPlainText().index("Bien.") + 1)
     assert [s["speaker"] for s in rec.transcript()["segments"]] == [1, 1, 1, 2, 2]
     assert "1 more passage moved to match what Ana said" in messages[-1]
-    assert [n for _a, _name, _c, n in tp.editor.margin.labels] == [1, 2]
+    assert [n for _a, _name, _c, n in tp.editor.labels] == [1, 2]
     from PySide6.QtWidgets import QMenu
 
     from echo_app.ui import transcript
@@ -98,4 +98,4 @@ def test_said_by_moves_what_sounds_the_same_and_can_go_back(window, lib, monkeyp
     assert "Back to the speakers Echo found" in shown
     tp.restore_speakers()
     assert [s["speaker"] for s in rec.transcript()["segments"]] == [1, 2, 2, 2, 2]
-    assert [n for _a, _name, _c, n in tp.editor.margin.labels] == [1, 2]  # "Bien." keeps its fix
+    assert [n for _a, _name, _c, n in tp.editor.labels] == [1, 2]  # "Bien." keeps its fix

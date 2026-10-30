@@ -27,6 +27,8 @@ AUTOSAVE_MS = 1000
 HEAD, LOCK, SEP = 100_000, 200_000, 300_000
 NAME_SAMPLE_S = 6.0  # how much of a speaker the naming bar plays: enough to know a voice
 REPLAY_AFTER_MS = 1000  # after this long without typing, the passage being corrected plays again
+BASE_MARGIN = 14  # the text's margin inside the editor
+HEAD_ROOM = 34  # with a speaker's name over the first paragraph: room above it for the name
 
 
 def _fold(text: str) -> str:
@@ -255,14 +257,37 @@ class Editor(QPlainTextEdit):
         self.margin = TimestampMargin(self)
         self.margin.hide()
         self.updateRequest.connect(lambda _r, _dy: self.margin.update())
+        # Speaker names drawn over their turns: (position, name, color role, number), and where
+        # each was drawn, for clicks.
+        self.heads: list[tuple[int, str, str, int]] = []
+        self.labels: list[tuple[int, str, str, int]] = []
+        self._head_rects: list[tuple[QRect, int]] = []
+        self.head_font = theme.display_font(0.8, QFont.Weight.ExtraBold)
 
     def set_stamps(self, stamps: list[tuple[int, float]] | None, marks: list[tuple[int, dict]] = (),
                    labels=()):
         """Show passage times (character position, seconds), marker dots and speaker names;
-        nothing hides the margin."""
+        nothing hides the margin. A name goes over its turn when the turn starts a paragraph after a
+        blank line (or the text), and in the margin otherwise, so it never covers text."""
+        doc = self.document()
+        self.labels = list(labels)  # every speaker name, wherever it is drawn
+        heads, side = [], []
+        for lab in labels:
+            block = doc.findBlock(lab[0])
+            prev = block.previous()
+            starts = block.isValid() and lab[0] == block.position()
+            if starts and (block.blockNumber() == 0 or (prev.isValid() and not prev.text().strip())):
+                heads.append(lab)
+            else:
+                side.append(lab)
+        self.heads = heads
+        room = HEAD_ROOM if any(doc.findBlock(h[0]).blockNumber() == 0 for h in heads) else BASE_MARGIN
+        if doc.documentMargin() != room:
+            doc.setDocumentMargin(room)
+        self.viewport().update()
         self.margin.stamps = stamps or []
         self.margin.marks = list(marks)
-        self.margin.labels = list(labels)
+        self.margin.labels = side
         if not self.margin.stamps and not self.margin.marks and not self.margin.labels:
             self.margin.hide()
             self.setViewportMargins(0, 0, 0, 0)
@@ -344,7 +369,52 @@ class Editor(QPlainTextEdit):
                 return
         super().insertFromMimeData(source)
 
+    def paintEvent(self, e):
+        super().paintEvent(e)
+        self._head_rects = []
+        if not self.heads:
+            return
+        p = QPainter(self.viewport())
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setFont(self.head_font)
+        fm = p.fontMetrics()
+        doc = self.document()
+        h = self.viewport().height()
+        for pos, name, role, n in self.heads:
+            block = doc.findBlock(pos)
+            if not block.isValid():
+                continue
+            here = self.cursorRect(QTextCursor(block))
+            if block.blockNumber() == 0:
+                bottom = here.top() - 2
+            else:
+                prev = block.previous()
+                if prev.text().strip():
+                    continue  # typed into the blank line since: the name waits for the next layout
+                bottom = here.top() - 2
+            top = bottom - fm.height()
+            if bottom < 0 or top > h:
+                continue
+            x = here.left()
+            dot = 8
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(theme.color(role))
+            p.drawEllipse(x, top + (fm.height() - dot) // 2, dot, dot)
+            p.setPen(theme.color(role))
+            w = fm.horizontalAdvance(name)
+            p.drawText(QRect(x + dot + 7, top, w + 2, fm.height()), Qt.AlignmentFlag.AlignVCenter, name)
+            self._head_rects.append((QRect(x - 2, top - 2, dot + 7 + w + 6, fm.height() + 4), n))
+        p.end()
+
+    def _head_at(self, pt) -> int | None:
+        return next((n for r, n in self._head_rects if r.contains(pt)), None)
+
     def mousePressEvent(self, e: QMouseEvent):
+        if e.button() == Qt.MouseButton.LeftButton and not e.modifiers():
+            n = self._head_at(e.position().toPoint())
+            if n is not None:
+                self.speaker_clicked.emit(n, e.globalPosition().toPoint())
+                return
         if e.modifiers() & Qt.KeyboardModifier.ControlModifier and e.button() == Qt.MouseButton.LeftButton:
             self.ctrl_clicked.emit(self.cursorForPosition(e.position().toPoint()).position())
             return
@@ -356,6 +426,15 @@ class Editor(QPlainTextEdit):
         super().mousePressEvent(e)
 
     def mouseMoveEvent(self, e: QMouseEvent):
+        if not e.buttons() and self._head_rects:
+            on = self._head_at(e.position().toPoint()) is not None
+            self.viewport().setCursor(Qt.CursorShape.PointingHandCursor if on else Qt.CursorShape.IBeamCursor)
+            if on:
+                from PySide6.QtWidgets import QToolTip
+
+                QToolTip.showText(e.globalPosition().toPoint(), "Name, merge or open this speaker", self)
+                super().mouseMoveEvent(e)
+                return
         if self.heading_at is not None and not e.buttons():
             k = self.heading_at(self.cursorForPosition(e.position().toPoint()).position())
             self.viewport().setCursor(Qt.CursorShape.PointingHandCursor if k is not None
@@ -528,7 +607,11 @@ class TranscriptPanel(QWidget):
         pl = QVBoxLayout(page)
         pl.setContentsMargins(16, 12, 16, 10)
         pl.setSpacing(8)
-        bar = QHBoxLayout()
+        # The window shows these elsewhere (the status in Details, the buttons in the header), so
+        # the bar itself stays hidden; a window that wants it back shows `toolbar`.
+        self.toolbar = QWidget()
+        bar = QHBoxLayout(self.toolbar)
+        bar.setContentsMargins(0, 0, 0, 0)
         bar.setSpacing(4)
         self.status = QLabel()
         self.status.setFont(theme.display_font(0.85, QFont.Weight.Bold))
@@ -572,8 +655,9 @@ class TranscriptPanel(QWidget):
         self.lang_menu.aboutToShow.connect(self._fill_languages)
         self.act_revert = menu.addAction(icon("revert"), "Revert to model output…", self.revert)
         self.more_btn.setMenu(menu)
+        self.more_menu = menu
         bar.addWidget(self.more_btn)
-        pl.addLayout(bar)
+        pl.addWidget(self.toolbar)
 
         self.notice = QFrame()
         self.notice.setObjectName("notice")
@@ -603,7 +687,7 @@ class TranscriptPanel(QWidget):
         self.editor.setTabChangesFocus(True)
         self.editor.setAccessibleName("Transcript")
         self.editor.setFont(theme.reading_font())
-        self.editor.document().setDocumentMargin(14)
+        self.editor.document().setDocumentMargin(BASE_MARGIN)
         self.editor.textChanged.connect(self._on_text_changed)
         self.editor.ctrl_clicked.connect(self._on_ctrl_click)
         self.editor.marker_clicked.connect(self.marker_clicked.emit)
@@ -1456,7 +1540,7 @@ class TranscriptPanel(QWidget):
         self._update_namebar()
         self.changed.emit(rec.id)
 
-    SPEAKER_COLORS = ("accent_deep", "coral_deep", "amber", "accent", "muted")
+    SPEAKER_COLORS = ("accent_deep", "orange", "violet", "coral_deep", "muted")
 
     def _speaker_labels(self) -> list[tuple[int, str, str, int]]:
         """A name where the speaker changes: the user's, a suggestion with "?", or "Speaker N"."""

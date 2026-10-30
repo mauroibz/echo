@@ -3,6 +3,21 @@
 Notable changes to Echo. Versions are git tags (`vX.Y.Z`); `main` may be ahead of the latest
 tag.
 
+## Unreleased
+
+### Changed
+
+- A calmer window with the same look. The menus are in a button at the top of the sidebar (F10)
+  and messages show for a moment over the bottom of the window, instead of a menu bar and a
+  status bar. At rest the recorder is Record and the input's name, which opens the input list,
+  level, gain and computer audio; while recording it shows the time, the level, Pause, Stop and a
+  marker button. The list is grouped by Today, Yesterday, This week and month, and a row shows a
+  status only when something is happening or needs you. The selected recording has its title,
+  date and tags on top, the transcript in a reading column with each speaker's name over their
+  turn, and the player along the bottom; Details (Ctrl+I) holds the notes, markers, context line,
+  file and statistics. Tag chips open from a filter button in the search field. In dark mode the
+  transcript's text is softer and speakers' colors keep their contrast.
+
 ## 1.3.0 - 2026-10-29
 
 ### Added

@@ -66,15 +66,15 @@ def test_menu_merges_labels_follow_and_voice_learns_both(window, lib):
     window._select(rec.id)
     pump(200)
     tp = window.transcript
-    assert [n for *_x, n in tp.editor.margin.labels] == [1, 2, 3, 1]
+    assert [n for *_x, n in tp.editor.labels] == [1, 2, 3, 1]
     assert "3 speakers" in tp.status.text()
     tp.merge_speaker(3, 2)
-    assert [n for *_x, n in tp.editor.margin.labels] == [1, 2, 1]  # one label where 3 was
+    assert [n for *_x, n in tp.editor.labels] == [1, 2, 1]  # one label where 3 was
     assert "2 speakers" in tp.status.text()
     tp.name_speaker(2, "Ana")
     voice = dictionary.voices()["Ana"]["voice"]
     assert voice == [0.0, 0.9]  # the average of both parts, folded once
     assert tp._speakers_shown() == [1, 2]
     tp.separate_speaker(2)
-    assert [n for *_x, n in tp.editor.margin.labels] == [1, 2, 3, 1]
+    assert [n for *_x, n in tp.editor.labels] == [1, 2, 3, 1]
     assert lib.get(rec.id).meta.speakers == {"1": "Pedro", "2": "Ana"}

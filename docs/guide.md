@@ -1,7 +1,14 @@
 # Using Echo
 
-Everything Echo does, by task. The [README](../README.md) covers installing; all shortcuts are
-also under Help → Keyboard shortcuts (F1).
+Everything Echo does, by task. The [README](../README.md) covers installing. Every action is in
+the menu button at the top of the sidebar (☰, or F10), and all shortcuts are under Help →
+Keyboard shortcuts (F1).
+
+**The window.** The sidebar holds the recorder, the search and your recordings, grouped by day.
+The selected recording shows its title, date and tags at the top, its transcript in the middle
+and the player along the bottom. Details (the panel button at the top right, or Ctrl+I) opens
+its notes, markers, context line, file, statistics and how the transcript was made; it stays
+open or closed as you leave it. Messages show for a few seconds over the bottom of the window.
 
 - [Recording](#recording)
 - [Importing](#importing)
@@ -17,11 +24,14 @@ also under Help → Keyboard shortcuts (F1).
 
 ## Recording
 
-**Record.** Pick the input at the top left and speak; the meter and the waves should move.
-Press Record (Ctrl+R), pause with Ctrl+Shift+R, press Stop to save. Closing the window does not
-stop a recording: it carries on, with a tray icon to stop it.
+**Record.** Press Record (Ctrl+R) and speak. The input's name is under the button; click it to
+pick another, see its level, listen to it, set its gain or add the computer's audio. The waves
+under the recorder rise with the input, and if it stays silent the name under Record says so.
+While recording, the recorder shows the time, the level, Pause (Ctrl+Shift+R), Stop and a
+marker button. Closing the window does not stop a recording: it carries on, with a tray icon to
+stop it.
 
-**Gain.** The slider under the meter is the input's gain, also while recording: keep the loudest
+**Gain.** The slider under the level, in the input panel, is the input's gain: keep the loudest
 parts out of the red (double-click for 100%). It is the same setting as the desktop's sound
 settings, so it stays with the microphone; with PortAudio (no PipeWire) it is hidden and those
 settings set it.
@@ -31,9 +41,9 @@ two seconds. A closed window, a crash or a power cut loses nothing that reached 
 the next start recovers the recording by itself. Finished recordings are lossless FLAC, kept
 only after Echo checks they decode to exactly what was captured.
 
-**Record a call.** With a microphone selected, turn on "Computer audio" under the gain slider:
-Echo also records what the default output plays (Meet, Teams, Zoom), and a second meter shows
-it. Start the call, then Record.
+**Record a call.** With a microphone selected, turn on "Also record computer audio" in the input
+panel: Echo also records what the default output plays (Meet, Teams, Zoom), and a second meter
+shows it. Start the call, then Record.
 
 - Wear headphones: with speakers the microphone hears the call too.
 - Echo only listens, so the call app keeps its microphone and sound. If you switch outputs
@@ -52,8 +62,9 @@ the keys. Where the desktop has no shortcuts portal, bind keys to `echo-app reco
 `echo-app record --quick-note` in its keyboard settings. Recordings you have not renamed take
 their title from their first sentence.
 
-**Markers.** While recording, press M (or use the tray menu) to drop a marker; type a short note
-if you like, without stopping. Markers show on the waveform and beside the transcript; Alt+→
+**Markers.** While recording, press M, the marker button or the tray menu's entry to drop a
+marker; type a short note if you like, without stopping. Markers show on the waveform, beside
+the transcript and in Details, where a click plays from one; Alt+→
 and Alt+← jump between them, Ctrl+M adds one at the playhead, and you can drag, edit or remove
 them on the waveform.
 
@@ -82,8 +93,9 @@ natural pauses into passages and paragraphs, with punctuation and accents. A rec
 transcribes an hour of audio in about a minute; a recent desktop processor in five to ten.
 
 **Read and edit.** Click a recording. Edits save automatically and are never overwritten by a
-new transcription. Copy with Ctrl+Shift+C (Ctrl+Alt+C with passage times), find with Ctrl+F,
-export with Ctrl+E. View → Passage times (Ctrl+T) shows when each passage starts. While playing,
+new transcription. Copy with Ctrl+Shift+C or the Copy button (Ctrl+Alt+C with passage times),
+find with Ctrl+F, export with Ctrl+E or Export. ⋯ → Passage times (Ctrl+T) shows when each
+passage starts. While playing,
 the current passage is highlighted, in edited text too; Ctrl+click a passage to hear it.
 
 **Correct with the audio.** Ctrl+. plays the passage under the cursor (again to stop);
@@ -93,7 +105,7 @@ it plays again from its start (Settings → Editing turns this off).
 
 **Check what matters.** Passages Echo is unsure of are shaded, with the reason on hover ("very
 few words for 12 s of speech", "the model was unsure of it", "the model repeated itself here");
-the status line and the list count them. Editing a passage clears its mark.
+Details and the list count them (⚑). Editing a passage clears its mark.
 
 **Other languages.** Spanish is the default. The transcript's menu (⋯ → Language) sets a
 recording's language and transcribes it again; Settings → Transcription language changes the
@@ -104,7 +116,7 @@ only.
 ## Who said what
 
 In interviews, meetings and calls Echo tells the speakers apart, starts a new paragraph when the
-speaker changes, and shows their names beside the text. It needs a small extra download (33 MB),
+speaker changes, and shows each speaker's name over their turn. It needs a small extra download (33 MB),
 offered under Help → Transcription model. Monologues are left alone, and ⋯ → Label speakers
 turns it off for a recording.
 
@@ -135,7 +147,7 @@ every recorded call. Other people are always suggested for you to confirm.
   a break.
 
 **Echo learns from your fixes.** After a Said by, the other paragraphs that clearly sound like
-the one you fixed follow it, and the status bar says how many moved; "Back to the speakers Echo
+the one you fixed follow it, and a message says how many moved; "Back to the speakers Echo
 found" on a name undoes that. This works on recordings transcribed with Echo 1.2 or later. Fixes
 are kept with the recording, also after transcribing again.
 
@@ -150,31 +162,38 @@ Transcribing again finds the speakers afresh.
 under the text offers to add it to the dictionary; one click, and Echo spells it that way in new
 transcripts and fixes the old spelling in existing ones. Corrections Echo makes are underlined;
 right-click one to undo it. "Not this word" stops the suggestion for good. Names typed into a
-title are suggested the same way. The line under the title, "Who is speaking, what about", is
+title are suggested the same way. The line in Details, "Who is speaking, what about", is
 optional context for that recording. Settings → Dictionary lists everything for removing or
 merging, and imports a list from a text file.
 
-**People.** View → People (Ctrl+Shift+P), or "Open profile" on a speaker's name, lists everyone
+**People.** The People button at the top of the sidebar (Ctrl+Shift+P), or "Open profile" on a
+speaker's name, lists everyone
 Echo knows: people in the dictionary and everyone you named as a speaker. A profile keeps notes,
 aliases (other spellings transcription corrects to their name) and tags; lists every recording
 they speak in with how long they spoke (double-click to open it); plays a few seconds of their
 voice; and forgets a voice Echo learned wrong. Profiles are files in the data folder
 (`people/`), so they are backed up and synced with your recordings.
 
-**Tags and notes.** Under the title, add tags ("+ tag", with completion) and a note. The most
-used tags show as chips above the list; click one to filter, click again to clear. A tag with a
+**Tags and notes.** Beside the date under the title, add tags ("+ tag", with completion); notes
+are in Details. The filter button in the search field shows the most used tags as chips above
+the list; click one to filter, click again to clear. While a tag filters the list its chips stay
+shown. A tag with a
 colon has a category: `client:Acme`, `project:Echo`, `type:standup`. A category's tags share one
 chip ("client ▾") that lists its values and "Any client". A person's tags count for their
 recordings: tag Ana `client:Acme` and `#client:acme` also finds every call she is in.
 
-The list is grouped by month, and each transcribed recording shows its word count, speaking rate
-and share of silence. Settings → Appearance switches between light, dark and the system's theme.
+The list is grouped by Today, Yesterday, This week and then by month. A row shows the time or
+day, the length and how many people speak; a status appears only when something is happening or
+needs you (recording, transcribing, waiting, failed, not transcribed). Details shows a
+recording's word count, speaking rate and share of silence. Settings → Appearance switches
+between light, dark and the system's theme.
 
 ## Playing, cropping and linking
 
-**Volume and speed.** The slider next to the speed goes up to 400% for quiet recordings; a
-limiter keeps loud moments from distorting. Each recording remembers its own volume. Click the
-percentage, or double-click the slider, to go back to 100%. Only playback changes: the audio
+**Volume and speed.** The speed button in the player steps through 1×, 1.25×, 1.5× and 2×. The
+volume button opens a slider that goes up to 400% for quiet recordings; a limiter keeps loud
+moments from distorting, and the button shows the volume when it is not 100%. Each recording
+remembers its own volume. Click the percentage, or double-click the slider, to go back to 100%. Only playback changes: the audio
 file, exports and transcription stay as they were.
 
 **Crop.** Drag the edges of the waveform, or press `[` and `]` at the playhead; it snaps to

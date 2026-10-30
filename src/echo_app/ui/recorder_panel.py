@@ -7,8 +7,8 @@ import time
 
 from PySide6.QtCore import QEvent, QPointF, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QKeySequence, QLinearGradient, QPainter, QShortcut
-from PySide6.QtWidgets import (QComboBox, QGraphicsDropShadowEffect, QHBoxLayout, QLabel, QLineEdit, QSizePolicy,
-                               QSlider, QStyledItemDelegate, QToolButton, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QComboBox, QFrame, QGraphicsDropShadowEffect, QHBoxLayout, QLabel, QLineEdit,
+                               QSizePolicy, QSlider, QStyledItemDelegate, QToolButton, QVBoxLayout, QWidget)
 
 from .. import recorder, settings
 from ..audio import backend, levels, monitor
@@ -125,6 +125,27 @@ class SourceCombo(QComboBox):
         super().showPopup()
 
 
+class InputPanel(QFrame):
+    """A popup under the input's name: the input list, listen, level, gain and computer audio."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent, Qt.WindowType.Popup | Qt.WindowType.FramelessWindowHint)
+        self.setObjectName("sidebar")  # styled as the sidebar it opens from
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.body = QVBoxLayout(self)
+        self.body.setContentsMargins(16, 14, 16, 16)
+        self.body.setSpacing(10)
+
+    def paintEvent(self, _):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        r = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+        p.setPen(theme.color("on_deep", 0.18))
+        p.setBrush(theme.deep_gradient(r))
+        p.drawRoundedRect(r, 14, 14)
+        p.end()
+
+
 class RecorderPanel(QWidget):
     started = Signal(str)  # recording id
     stopped = Signal(str)
@@ -159,20 +180,112 @@ class RecorderPanel(QWidget):
         lay.setSpacing(10)
 
         brand = QHBoxLayout()
-        brand.setSpacing(8)
+        brand.setSpacing(2)
         self.wordmark = Wordmark(2.1)
         brand.addWidget(self.wordmark)
         brand.addStretch(1)
-        self.state_label = QLabel("")
-        self.state_label.setFont(theme.display_font(0.9, QFont.Weight.Bold))
-        brand.addWidget(self.state_label)
+        self.corner = brand  # the window adds its People and menu buttons here
         lay.addLayout(brand)
 
+        # At rest the block is only the Record button; while recording it is a coral card with the
+        # state, the time, the level and Pause, Stop and Marker.
+        self.block = QFrame()
+        self.block.setObjectName("recblock")
+        bl = QVBoxLayout(self.block)
+        bl.setContentsMargins(0, 0, 0, 0)
+        bl.setSpacing(10)
+        self.state_label = QLabel("")
+        self.state_label.setFont(theme.display_font(0.82, QFont.Weight.ExtraBold))
+        bl.addWidget(self.state_label)
+        self.elapsed = QLabel("0:00:00")
+        self.elapsed.setFont(theme.display_font(2.5, QFont.Weight.Light, tabular=True))
+        self.elapsed.setAccessibleName("Recorded time")
+        bl.addWidget(self.elapsed)
+        self.meter = LevelMeter()
+        bl.addWidget(self.meter)
+        self.call_meter = LevelMeter()  # the computer audio while a call is recorded
+        self.call_meter.setToolTip("Computer audio level: what the default output is playing.")
+        self.call_meter.setAccessibleName("Computer audio level")
+        bl.addWidget(self.call_meter)
+
+        ctl = QHBoxLayout()
+        ctl.setSpacing(8)
+        self.record_btn = QToolButton()
+        self.record_btn.setObjectName("record")
+        self.record_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.record_btn.setIconSize(QSize(18, 18))
+        self.record_btn.setFixedHeight(46)
+        self.record_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.record_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.record_btn.clicked.connect(self.toggle_record)
+        self._glow = QGraphicsDropShadowEffect(self.record_btn, blurRadius=28, offset=QPointF(0, 6))
+        self.record_btn.setGraphicsEffect(self._glow)
+        self.pause_btn = QToolButton()
+        self.pause_btn.setObjectName("pause")
+        self.pause_btn.setIcon(icon("pause", "on_deep"))
+        self.pause_btn.setIconSize(QSize(18, 18))
+        self.pause_btn.setFixedSize(46, 46)
+        self.pause_btn.setToolTip("Pause recording (Ctrl+Shift+R)")
+        self.pause_btn.setAccessibleName("Pause recording")
+        self.pause_btn.clicked.connect(self.toggle_pause)
+        ctl.addWidget(self.pause_btn)
+        ctl.addWidget(self.record_btn, 1)
+        self.mark_btn = QToolButton()
+        self.mark_btn.setObjectName("pause")
+        self.mark_btn.setIcon(icon("bookmark", "on_deep"))
+        self.mark_btn.setIconSize(QSize(18, 18))
+        self.mark_btn.setFixedSize(46, 46)
+        self.mark_btn.setToolTip("Add a marker (M)")
+        self.mark_btn.setAccessibleName("Add marker")
+        self.mark_btn.clicked.connect(self.add_marker)
+        ctl.addWidget(self.mark_btn)
+        bl.addLayout(ctl)
+
+        self.warning = QLabel("")
+        self.warning.setWordWrap(True)
+        theme.set_role(self.warning, warn=True)
+        self.warning.hide()
+        bl.addWidget(self.warning)
+
+        # After a marker: an optional note, typed without stopping the recording.
+        self.note = QLineEdit()
+        self.note.setObjectName("markernote")
+        self.note.setPlaceholderText("Note for this marker (Enter to save, Esc to skip)")
+        self.note.setAccessibleName("Marker note")
+        self.note.addAction(icon("bookmark", "on_deep"), QLineEdit.ActionPosition.LeadingPosition)
+        self.note.returnPressed.connect(self._save_note)
+        self.note.textEdited.connect(lambda _t: self._note_timer.start())
+        self.note.hide()
+        bl.addWidget(self.note)
+        self._note_timer = QTimer(self, singleShot=True, interval=NOTE_IDLE_MS, timeout=self._close_note)
+        esc = QShortcut(QKeySequence(Qt.Key.Key_Escape), self.note, activated=self._close_note,
+                        context=Qt.ShortcutContext.WidgetShortcut)
+        self._note_esc = esc
+        lay.addWidget(self.block)
+
+        # The input, named under Record; a click opens everything about it.
+        self.source_btn = QToolButton()
+        self.source_btn.setObjectName("sourcebtn")
+        self.source_btn.setIcon(icon("mic", "on_deep_muted"))
+        self.source_btn.setIconSize(QSize(14, 14))
+        self.source_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.source_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.source_btn.setToolTip("Input, level, gain and computer audio")
+        self.source_btn.setAccessibleName("Input settings")
+        self.source_btn.clicked.connect(self.show_inputs)
+        lay.addWidget(self.source_btn, 0, Qt.AlignmentFlag.AlignHCenter)
+
+        self.input_panel = InputPanel(self)
+        il = self.input_panel.body
+        head = QLabel("INPUT")
+        head.setFont(theme.display_font(0.78, QFont.Weight.ExtraBold))
+        theme.set_role(head, eyebrow=True)
+        il.addWidget(head)
         row = QHBoxLayout()
         row.setSpacing(8)
         self.source = SourceCombo()
         self.source.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
-        self.source.setMinimumContentsLength(10)
+        self.source.setMinimumContentsLength(14)
         self.source.setToolTip("Input to record from")
         self.source.setAccessibleName("Input source")
         self.source.aboutToShow.connect(self.reload_sources)
@@ -191,10 +304,9 @@ class RecorderPanel(QWidget):
             self.listen.setVisible(backend.get().can_listen)
         except backend.BackendMissing:
             self.listen.hide()
-        lay.addLayout(row)
-
-        self.meter = LevelMeter()
-        lay.addWidget(self.meter)
+        il.addLayout(row)
+        self.input_meter = LevelMeter()
+        il.addWidget(self.input_meter)
 
         # The input's gain: the device's own volume, so it works while recording and the meter
         # above shows the effect at once. Hidden where the backend cannot set it.
@@ -221,19 +333,19 @@ class RecorderPanel(QWidget):
         self.gain_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         gl.addWidget(self.gain_label)
         self.gain_row.hide()
-        lay.addWidget(self.gain_row)
+        il.addWidget(self.gain_row)
         self._gain_timer = QTimer(self, singleShot=True, interval=60, timeout=self._apply_gain)
 
         # A call: what the computer plays, recorded as a second track next to the microphone.
         self.computer_row = QWidget()
-        cl = QHBoxLayout(self.computer_row)
-        cl.setContentsMargins(0, 0, 0, 0)
+        cl = QVBoxLayout(self.computer_row)
+        cl.setContentsMargins(0, 4, 0, 0)
         cl.setSpacing(8)
         self.computer = QToolButton()
         self.computer.setCheckable(True)
         self.computer.setIcon(icon("volume", "on_deep"))
         self.computer.setIconSize(QSize(16, 16))
-        self.computer.setText("Computer audio")
+        self.computer.setText("Also record computer audio")
         self.computer.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self.computer.setToolTip("Also record what the computer plays, such as the other side of a call, as a "
                                  "second track. The call app keeps its microphone and sound. Use headphones.")
@@ -245,60 +357,34 @@ class RecorderPanel(QWidget):
         self.out_meter.setToolTip("Computer audio level: what the default output is playing.")
         self.out_meter.setAccessibleName("Computer audio level")
         self.out_meter.setVisible(self.computer.isChecked())
-        cl.addWidget(self.out_meter, 1)
+        cl.addWidget(self.out_meter)
         self.computer_row.hide()
-        lay.addWidget(self.computer_row)
-
-        ctl = QHBoxLayout()
-        ctl.setSpacing(8)
-        self.record_btn = QToolButton()
-        self.record_btn.setObjectName("record")
-        self.record_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-        self.record_btn.setIconSize(QSize(18, 18))
-        self.record_btn.setFixedHeight(46)
-        self.record_btn.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self.record_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.record_btn.clicked.connect(self.toggle_record)
-        self._glow = QGraphicsDropShadowEffect(self.record_btn, blurRadius=28, offset=QPointF(0, 6))
-        self.record_btn.setGraphicsEffect(self._glow)
-        ctl.addWidget(self.record_btn, 1)
-        self.pause_btn = QToolButton()
-        self.pause_btn.setObjectName("pause")
-        self.pause_btn.setIcon(icon("pause", "on_deep"))
-        self.pause_btn.setIconSize(QSize(18, 18))
-        self.pause_btn.setFixedSize(46, 46)
-        self.pause_btn.setToolTip("Pause recording (Ctrl+Shift+R)")
-        self.pause_btn.setAccessibleName("Pause recording")
-        self.pause_btn.clicked.connect(self.toggle_pause)
-        ctl.addWidget(self.pause_btn)
-        lay.addLayout(ctl)
-
-        self.elapsed = QLabel("0:00:00")
-        self.elapsed.setFont(theme.display_font(2.3, QFont.Weight.Light, tabular=True))
-        self.elapsed.setAccessibleName("Recorded time")
-        lay.addWidget(self.elapsed)
-
-        self.warning = QLabel("")
-        self.warning.setWordWrap(True)
-        theme.set_role(self.warning, warn=True)
-        self.warning.hide()
-        lay.addWidget(self.warning)
-
-        # After a marker: an optional note, typed without stopping the recording.
-        self.note = QLineEdit()
-        self.note.setObjectName("markernote")
-        self.note.setPlaceholderText("Note for this marker (Enter to save, Esc to skip)")
-        self.note.setAccessibleName("Marker note")
-        self.note.addAction(icon("bookmark", "on_deep"), QLineEdit.ActionPosition.LeadingPosition)
-        self.note.returnPressed.connect(self._save_note)
-        self.note.textEdited.connect(lambda _t: self._note_timer.start())
-        self.note.hide()
-        lay.addWidget(self.note)
-        self._note_timer = QTimer(self, singleShot=True, interval=NOTE_IDLE_MS, timeout=self._close_note)
-        esc = QShortcut(QKeySequence(Qt.Key.Key_Escape), self.note, activated=self._close_note,
-                        context=Qt.ShortcutContext.WidgetShortcut)
-        self._note_esc = esc
+        il.addWidget(self.computer_row)
         self._update_buttons()
+
+    def add_corner(self, widget: QWidget):
+        """A button in the top row, beside the wordmark."""
+        self.corner.addWidget(widget)
+
+    def show_inputs(self):
+        """The input panel, under the input's name."""
+        self.reload_sources()
+        self.input_panel.setFixedWidth(max(280, self.width() - 16))
+        self.input_panel.adjustSize()
+        at = self.source_btn.mapToGlobal(self.source_btn.rect().bottomLeft())
+        left = self.mapToGlobal(self.rect().topLeft()).x() + 8
+        self.input_panel.move(left, at.y() + 6)
+        self.input_panel.show()
+
+    def _update_source_btn(self):
+        s = self.current_source()
+        name = s.short_label if s is not None else (self.source.currentText() or "No input")
+        if self.computer_audio_on():
+            name += " + computer audio"
+        silent = self.meter._note
+        self.source_btn.setText(f"{name} · {silent.lower()}" if silent else name)
+        theme.set_role(self.source_btn, warn=bool(silent))
+        self.source_btn.setIcon(icon("mic", "amber" if silent else "on_deep_muted"))
 
     # ---- waves ----
     def _animate(self):
@@ -345,6 +431,7 @@ class RecorderPanel(QWidget):
             self.source.addItem("No inputs found")
             self.source.setEnabled(False)
             self.source.blockSignals(False)
+            self._update_source_btn()
             return
         self.source.setEnabled(self.session is None)
         last_kind = None
@@ -367,6 +454,7 @@ class RecorderPanel(QWidget):
         self._show_computer_row()
         self._restart_monitor()
         self._load_gain()
+        self._update_source_btn()
 
     def current_source_name(self) -> str:
         return self.source.currentData() or ""
@@ -385,6 +473,7 @@ class RecorderPanel(QWidget):
         self._load_gain()
         if self.listen.isChecked():
             self._listener.start(self.current_source())
+        self._update_source_btn()
 
     # ---- computer audio ----
     def _show_computer_row(self):
@@ -405,6 +494,7 @@ class RecorderPanel(QWidget):
         settings.save(cfg)
         self.out_meter.setVisible(on)
         self._restart_monitor()
+        self._update_source_btn()
 
     # ---- gain ----
     def _load_gain(self):
@@ -504,6 +594,9 @@ class RecorderPanel(QWidget):
         # A recording started elsewhere (the CLI, a shortcut) shows what it records.
         two = sess is not None and bool((recorder.load_session(sess.rec) or {}).get("computer_audio"))
         self.out_meter.setVisible(two if sess is not None else self.computer.isChecked())
+        self._two_tracks = two
+        if sess is not None:
+            self.input_panel.hide()
         self._update_buttons()
         self.recording_changed.emit(sess is not None)
 
@@ -601,11 +694,19 @@ class RecorderPanel(QWidget):
     def _update_buttons(self):
         rec = self.session is not None
         t = theme.current()
+        theme.set_role(self.block, recording=rec)
+        self.block.layout().setContentsMargins(*((16, 14, 16, 16) if rec else (0, 0, 0, 0)))
+        for w in (self.state_label, self.elapsed, self.meter, self.mark_btn):
+            w.setVisible(rec)
+        self.call_meter.setVisible(rec and getattr(self, "_two_tracks", False))
+        self.source_btn.setVisible(not rec)
+        self.mark_btn.setEnabled(rec and not self._busy)
         if rec:
-            self.record_btn.setIcon(icon("stop", "coral_deep"))
+            self.record_btn.setIcon(icon("stop", "deep_top"))
             self.record_btn.setText("Stop")
             self.record_btn.setToolTip("Stop and save (Ctrl+R)")
-            glow = theme.color("on_deep", 0.35)
+            glow = QColor(t.coral_deep)
+            glow.setAlphaF(0.3)
         else:
             self.record_btn.setIcon(dot_icon(QColor("#ffffff"), 44, ring=False))
             self.record_btn.setText("Record")
@@ -640,8 +741,9 @@ class RecorderPanel(QWidget):
             paused = st.get("state") == recorder.S_PAUSED
             if st.get("state") != self._state:
                 self._state = st.get("state") or ""
-                self.state_label.setText("PAUSED" if paused else "● REC")
-                self.state_label.setStyleSheet("" if paused else f"color: {theme.current().coral};")
+                self.state_label.setText("PAUSED" if paused else "● RECORDING")
+                tone = theme.current().amber if paused else "#ffb4b4"
+                self.state_label.setStyleSheet(f"color: {tone}; letter-spacing: 1px;")
                 self.pause_btn.setIcon(icon("record") if paused else icon("pause", "on_deep"))
                 self._wake_waves()
             self.pause_btn.setToolTip("Resume recording (Ctrl+Shift+R)" if paused else "Pause recording (Ctrl+Shift+R)")
@@ -657,6 +759,7 @@ class RecorderPanel(QWidget):
                 self.out_meter.set_level(*levels.tail_peak(sess.rec.takes_dir / out, st.get("rate", 48000), 1))
             else:
                 self.out_meter.set_level(FLOOR_DB)
+            self.call_meter.set_level(self.out_meter._level)
             self._show_warning(st.get("warning") or "")
             self._show_silence(self._silence_hint(db))
         else:
@@ -664,11 +767,14 @@ class RecorderPanel(QWidget):
             db = None
             if self._monitor and self._monitor.running():
                 db = self._monitor.level
-                self.meter.set_level(db, self._monitor.take_clip())
+                clip = self._monitor.take_clip()
+                self.meter.set_level(db, clip)
+                self.input_meter.set_level(db, clip)
                 if db > FLOOR_DB:
                     self._wake_waves()
             else:
                 self.meter.set_level(FLOOR_DB)
+                self.input_meter.set_level(FLOOR_DB)
             if self._out_monitor and self._out_monitor.running():
                 self.out_meter.set_level(self._out_monitor.level, self._out_monitor.take_clip())
             else:
@@ -690,7 +796,12 @@ class RecorderPanel(QWidget):
     def _show_silence(self, hint: str):
         self.silence = hint
         secs = int(time.monotonic() - self._silent_since) if hint and self._silent_since is not None else 0
-        self.meter.set_note(SILENT_NOTE.format(s=secs) if hint else "", hint)
+        note = SILENT_NOTE.format(s=secs) if hint else ""
+        changed = note != self.meter._note
+        self.meter.set_note(note, hint)
+        self.input_meter.set_note(note, hint)
+        if changed:
+            self._update_source_btn()
 
     def _show_warning(self, text: str):
         if text != self.warning.text():

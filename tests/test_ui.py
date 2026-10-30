@@ -100,10 +100,10 @@ def test_empty_state_then_drop_import(window, lib, tmp_path):
     ev = QDropEvent(QPointF(100, 100), Qt.DropAction.CopyAction, mime, Qt.MouseButton.NoButton,
                     Qt.KeyboardModifier.NoModifier)
     window.dropEvent(ev)
-    assert wait_until(lambda: window.model.rowCount() == 2)
+    assert wait_until(lambda: window.model.shown() == 2)
     assert not window.empty.isVisible()
     assert window.current() is not None
-    titles = {window.model.recording(r).meta.title for r in range(2)}
+    titles = {r.meta.title for r in (window.model.recording(i) for i in range(window.model.rowCount())) if r}
     assert "nota" in titles and any(t.startswith("WhatsApp voice note") for t in titles)
 
 
@@ -116,7 +116,7 @@ def test_drop_a_screen_recording(window, lib, tmp_path):
     mime.setUrls([QUrl.fromLocalFile(str(video))])
     window.dropEvent(QDropEvent(QPointF(100, 100), Qt.DropAction.CopyAction, mime, Qt.MouseButton.NoButton,
                                 Qt.KeyboardModifier.NoModifier))
-    assert wait_until(lambda: window.model.rowCount() == 1)
+    assert wait_until(lambda: window.model.shown() == 1)
     rec = window.current()
     assert rec.meta.title == "Screen recording 2026-09-23 15:02"
     assert rec.audio_path.suffix == ".m4a" and rec.meta.extracted_from["method"] == "copy"
@@ -205,9 +205,9 @@ def test_search_filters_by_transcript(window, lib, tmp_path):
     importer.import_file(lib, wav(tmp_path / "otro.wav", 1, 700))
     window.model.refresh()
     window.search.setText("segunda")
-    assert wait_until(lambda: window.model.rowCount() == 1)
+    assert wait_until(lambda: window.model.shown() == 1)
     window.search.setText("")
-    assert wait_until(lambda: window.model.rowCount() == 2)
+    assert wait_until(lambda: window.model.shown() == 2)
 
 
 def test_search_result_opens_with_its_words_found(window, lib, tmp_path):
@@ -216,9 +216,9 @@ def test_search_result_opens_with_its_words_found(window, lib, tmp_path):
     importer.import_file(lib, wav(tmp_path / "otro.wav", 1, 700))
     window.model.refresh()
     window.list.setFocus()
-    assert wait_until(lambda: window.model.rowCount() == 2)
+    assert wait_until(lambda: window.model.shown() == 2)
     window.search.setText("precio")
-    assert wait_until(lambda: window.model._filter is not None and window.model.rowCount() == 1)
+    assert wait_until(lambda: window.model._filter is not None and window.model.shown() == 1)
     window._select(rec.id)
     pump(100)
     tp = window.transcript
@@ -246,7 +246,7 @@ def test_search_finds_in_the_open_recording(window, lib, tmp_path):
     rec.save_edited("Hablamos del precio.")
     importer.import_file(lib, wav(tmp_path / "otro.wav", 1, 700))  # filtered out: the list resets
     window.model.refresh()
-    assert wait_until(lambda: window.model.rowCount() == 2)
+    assert wait_until(lambda: window.model.shown() == 2)
     window._select(rec.id)
     pump(100)
     window.search.setText("precio")
@@ -294,7 +294,7 @@ def test_delete_moves_to_trash(window, lib, tmp_path, monkeypatch):
     window._select(rec.id)
     monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.Yes)
     window.delete_selected()
-    assert lib.get(rec.id) is None and window.model.rowCount() == 0
+    assert lib.get(rec.id) is None and window.model.shown() == 0
 
 
 def test_settings_dialog_roundtrip(qapp, lib):
@@ -416,7 +416,7 @@ def test_input_gain_slider(window):
 
     assert pipewire.parse_volume("Volume: 0.85 [MUTED]\n") == 0.85 and pipewire.parse_volume("") is None
     panel = window.recorder_panel
-    assert wait_until(lambda: panel.gain_row.isVisible())
+    assert wait_until(lambda: panel.gain_row.isVisibleTo(panel.input_panel))
     assert panel.gain.value() == 100 and panel.gain_label.text() == "100%"
     panel.gain.setValue(72)
     assert panel.gain_label.text() == "72%"

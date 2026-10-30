@@ -8,7 +8,7 @@ from test_ui import lib, pump, qapp, wait_until, window  # noqa: F401 - fixtures
 
 
 def _labels(tp):
-    return [name for _a, name, _c, _n in tp.editor.margin.labels]
+    return [name for _a, name, _c, _n in tp.editor.labels]
 
 
 def _open(window, lib):

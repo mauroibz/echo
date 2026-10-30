@@ -8,7 +8,7 @@ from pathlib import Path
 from PySide6.QtCore import QEvent, QItemSelectionModel, QObject, QSize, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QAction, QCloseEvent, QDesktopServices, QFont, QKeySequence, QShortcut
 from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCompleter, QFileDialog, QFrame, QHBoxLayout, QLabel, QLineEdit,
-                               QListView, QMainWindow, QMenu, QMessageBox, QSplitter, QStackedWidget, QStatusBar,
+                               QListView, QMainWindow, QMenu, QMessageBox, QSplitter, QStackedWidget,
                                QSystemTrayIcon, QToolButton, QVBoxLayout, QWidget)
 
 from .. import APP_NAME, export, features, importer, recorder, sets, settings, transcription
@@ -65,6 +65,31 @@ class DropOverlay(QLabel):
         super().showEvent(e)
 
 
+class Toast(QLabel):
+    """A short message over the bottom of the content, gone after a few seconds."""
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.setObjectName("toast")
+        self.setWordWrap(True)
+        self.setMaximumWidth(560)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self._timer = QTimer(self, singleShot=True, timeout=self.hide)
+        self.hide()
+
+    def show_text(self, text: str, ms: int | None = None):
+        self.setText(text)
+        self.adjustSize()
+        self.place()
+        self.show()
+        self.raise_()
+        self._timer.start(ms or (4000 if len(text) < 70 else 6500))
+
+    def place(self):
+        p = self.parentWidget()
+        self.move((p.width() - self.width()) // 2, p.height() - self.height() - 104)
+
+
 class ViewSwitch(QWidget):
     """The transcript, and the views extensions add beside it, one shown at a time. With no
     added view there is no switch: the transcript card alone, as in Echo without extensions."""
@@ -76,7 +101,7 @@ class ViewSwitch(QWidget):
         lay.setSpacing(8)
         self.bar = QWidget()
         bl = QHBoxLayout(self.bar)
-        bl.setContentsMargins(0, 0, 0, 0)
+        bl.setContentsMargins(16, 12, 16, 0)
         bl.setSpacing(4)
         bl.addStretch(1)
         self.bar.hide()
@@ -99,7 +124,6 @@ class ViewSwitch(QWidget):
         self.buttons.append(b)
 
     def add(self, title: str, widget: QWidget):
-        widget.setObjectName("card")
         widget.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self._add_page(title, widget)
         self.bar.show()
@@ -165,9 +189,17 @@ class MainWindow(QMainWindow):
         self.recorder_panel.started.connect(self._recording_started)
         self.recorder_panel.stopped.connect(self._recording_stopped)
         self.recorder_panel.recording_changed.connect(lambda _r: self._update_title())
+        self.people_btn = self._corner_button("users", "People (Ctrl+Shift+P)")
+        self.people_btn.clicked.connect(lambda: self.open_people())
+        self.menu_btn = self._corner_button("menu", "Menu (F10)")
+        self.app_menu = QMenu(self)
+        self.menu_btn.setMenu(self.app_menu)
+        self.menu_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.recorder_panel.add_corner(self.people_btn)
+        self.recorder_panel.add_corner(self.menu_btn)
 
         self.search = QLineEdit()
-        self.search.setPlaceholderText("Search all recordings (Ctrl+Shift+F)")
+        self.search.setPlaceholderText("Search    Ctrl+K")
         self.search.setAccessibleName("Search recordings")
         self.search.addAction(icon("find", "on_deep_muted"), QLineEdit.ActionPosition.LeadingPosition)
         self._clear_search = self.search.addAction(icon("close", "on_deep"), QLineEdit.ActionPosition.TrailingPosition)
@@ -175,6 +207,11 @@ class MainWindow(QMainWindow):
         self._clear_search.triggered.connect(self.search.clear)
         self._clear_search.setVisible(False)
         self.search.textChanged.connect(lambda t: self._clear_search.setVisible(bool(t)))
+        self._tags_open = False
+        self.filter_action = self.search.addAction(icon("filter", "on_deep_muted"),
+                                                   QLineEdit.ActionPosition.TrailingPosition)
+        self.filter_action.setToolTip("Filter by tag")
+        self.filter_action.triggered.connect(self.toggle_tag_bar)
         self.search.textChanged.connect(lambda _t: self._search_timer.start())
         # "@" offers the people who speak in the library; the rest of the search is left as typed.
         self._people = QCompleter([], self)
@@ -221,6 +258,7 @@ class MainWindow(QMainWindow):
 
         self.tag_bar = TagBar()
         self.tag_bar.toggled.connect(self._toggle_tag)
+        self.tag_bar.hide()
         # After an import: notes that look like one burst, offered for linking in one click.
         self.banner = QFrame()
         self.banner.setObjectName("banner")
@@ -277,7 +315,8 @@ class MainWindow(QMainWindow):
         bl.addWidget(self.bar_delete)
         self.selection_bar.hide()
 
-        self.player = PlayerPanel()
+        self.player = PlayerPanel(self)
+        self.player.hide()  # its parts are laid out one by one: header, dock, details
         self.player.message.connect(self.show_message)
         self.player.renamed.connect(lambda rid, _t: self.model.reload(rid))
         self.player.meta_changed.connect(self._meta_changed)
@@ -296,16 +335,36 @@ class MainWindow(QMainWindow):
         self.player.position_changed.connect(self.transcript.follow)
         self.transcript.attach_player(self.player)
         self.player.markers_changed.connect(lambda _rid: self.transcript.reload_markers())
+        self.player.markers_changed.connect(lambda _rid: self.details.refresh())
         self.transcript.marker_clicked.connect(self._seek_and_play)
-        for card in (self.player, self.transcript):
-            card.setObjectName("card")
-            card.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         # The transcript and the views extensions add next to it (add_view), one shown at a time.
         self.views = ViewSwitch(self.transcript)
 
-        self.setStatusBar(QStatusBar())
-        self.worker_label = QLabel("")
-        self.statusBar().addPermanentWidget(self.worker_label)
+        # The header's actions: copy, export (transcript or audio), Details, and the transcript's menu.
+        self.copy_btn = self._head_button("copy", "Copy", "Copy the whole transcript (Ctrl+Shift+C)")
+        self.copy_btn.clicked.connect(self.transcript.copy_all)
+        self.export_btn = self._head_button("export", "Export", "Export the transcript or the audio")
+        export_menu = QMenu(self.export_btn)
+        export_menu.addAction(icon("export"), "Transcript…  (Ctrl+E)", self.transcript.export_text)
+        self.export_audio_entry = export_menu.addAction(icon("export"), "Audio…", self.export_audio)
+        self.export_btn.setMenu(export_menu)
+        self.export_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.export_btn.setStyleSheet("QToolButton::menu-indicator { image: none; width: 0; }")
+        self.details_btn = self._head_button("details", "", "Details: notes, markers, file (Ctrl+I)")
+        self.details_btn.setCheckable(True)
+        self.details_btn.toggled.connect(self.show_details)
+        self.more_btn = self.transcript.more_btn
+        self.more_btn.setObjectName("headbtn")
+        self.transcript.toolbar.hide()  # its status goes to Details, its buttons to the header
+        from .details import DetailsPanel
+
+        self.details = DetailsPanel(self.player, self.transcript)
+        self.details.seek_requested.connect(self._seek_and_play)
+        self.details.hide()
+
+        self.worker_label = QLabel("", self)  # what the worker does; the rows show it, so it is not laid out
+        self.worker_label.hide()
+        self.toast = Toast(self)
         self.overlay = DropOverlay(self)
 
         self._space = _SpaceFilter(self.player.toggle_play)
@@ -313,7 +372,8 @@ class MainWindow(QMainWindow):
         self.player.wave.installEventFilter(self._space)
 
     def _build_layout(self):
-        """The sidebar (recorder, search, tags, list) beside the player over the transcript."""
+        """The sidebar (recorder, search, tags, list) beside the selected recording: its header,
+        the transcript over the player, and Details at the right."""
         left = theme.DeepBackground()
         left.setObjectName("sidebar")
         ll = QVBoxLayout(left)
@@ -322,25 +382,42 @@ class MainWindow(QMainWindow):
         ll.addWidget(self.recorder_panel)
         sw = QWidget()
         sl = QVBoxLayout(sw)
-        sl.setContentsMargins(14, 2, 14, 4)
-        sl.setSpacing(12)
-        for w in (self.search, self.tag_bar, self.banner, self.list_label):
+        sl.setContentsMargins(14, 2, 14, 6)
+        sl.setSpacing(10)
+        for w in (self.search, self.tag_bar, self.banner):
             sl.addWidget(w)
         ll.addWidget(sw)
         ll.addWidget(self.list, 1)
         ll.addWidget(self.selection_bar)
 
-        self.right_split = QSplitter(Qt.Orientation.Vertical)
-        self.right_split.setObjectName("content")
-        self.right_split.addWidget(self.player)
-        self.right_split.addWidget(self.views)
-        self.right_split.setStretchFactor(0, 0)
-        self.right_split.setStretchFactor(1, 1)
-        self.right_split.setChildrenCollapsible(False)
         right = QWidget()
+        right.setObjectName("content")
         rl = QVBoxLayout(right)
-        rl.setContentsMargins(14, 14, 14, 8)
-        rl.addWidget(self.right_split)
+        rl.setContentsMargins(28, 22, 24, 18)
+        rl.setSpacing(16)
+        head = QHBoxLayout()
+        head.setSpacing(6)
+        head.addWidget(self.player.header, 1)
+        for b in (self.copy_btn, self.export_btn, self.details_btn, self.more_btn):
+            head.addWidget(b, 0, Qt.AlignmentFlag.AlignTop)
+        rl.addLayout(head)
+        body = QHBoxLayout()
+        body.setSpacing(16)
+        self.reader = QFrame()
+        self.reader.setObjectName("card")
+        self.reader.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        rd = QVBoxLayout(self.reader)
+        rd.setContentsMargins(0, 0, 0, 0)
+        rd.setSpacing(0)
+        rd.addWidget(self.views, 1)
+        rd.addWidget(self.player.dock)
+        body.addWidget(self.reader, 1)
+        self.details.setObjectName("card")
+        body.addWidget(self.details)
+        rl.addLayout(body, 1)
+        self.content = right
+        self.toast.setParent(right)
+
         self.split = QSplitter(Qt.Orientation.Horizontal)
         self.split.setObjectName("main")
         self.split.setHandleWidth(1)
@@ -353,12 +430,54 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(self.split)
 
     def _restore_layout(self):
-        self.split.setSizes(self.state.get("split") or [330, 850])
-        self.right_split.setSizes(self.state.get("right_split") or [200, 560])
+        self.split.setSizes(self.state.get("split") or [310, 870])
+        self.details_btn.setChecked(bool(self.state.get("details")))
 
     def _save_layout(self):
         self.state.set("split", self.split.sizes())
-        self.state.set("right_split", self.right_split.sizes())
+        self.state.set("details", self.details_btn.isChecked())
+
+    def _corner_button(self, ic: str, tip: str) -> QToolButton:
+        b = QToolButton()
+        b.setObjectName("flat")
+        b.setIcon(icon(ic, "on_deep_muted"))
+        b.setIconSize(QSize(18, 18))
+        b.setFixedSize(36, 36)
+        b.setToolTip(tip)
+        b.setAccessibleName(tip.split(" (")[0])
+        b.setCursor(Qt.CursorShape.PointingHandCursor)
+        return b
+
+    def _head_button(self, ic: str, text: str, tip: str) -> QToolButton:
+        b = QToolButton()
+        b.setObjectName("headbtn" if text else "headicon")
+        b.setIcon(icon(ic))
+        b.setText(text)
+        b.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon if text else
+                             Qt.ToolButtonStyle.ToolButtonIconOnly)
+        b.setToolTip(tip)
+        b.setAccessibleName(text or tip.split(":")[0])
+        b.setCursor(Qt.CursorShape.PointingHandCursor)
+        return b
+
+    def show_details(self, on: bool):
+        """Details at the right of the transcript, open or closed (Ctrl+I)."""
+        self.details.setVisible(on)
+        if self.details_btn.isChecked() != on:
+            self.details_btn.setChecked(on)
+        if hasattr(self, "a_details"):
+            self.a_details.setChecked(on)
+        if on:
+            self.details.refresh()
+
+    def toggle_tag_bar(self):
+        self._tags_open = not self._tags_open
+        self._update_tags()
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        if self.toast.isVisible():
+            self.toast.place()
 
     def add_view(self, title: str, widget: QWidget):
         """A view an extension shows instead of the transcript, chosen with a switch over it."""
@@ -377,7 +496,9 @@ class MainWindow(QMainWindow):
         return a
 
     def _build_menus(self):
-        mb = self.menuBar()
+        """The application menu, in the button at the top of the sidebar. The window holds every
+        action too, so its shortcut works without the menu."""
+        mb = self.app_menu
         f = mb.addMenu("&File")
         self._act(f, "&Import audio…", self.import_dialog, "Ctrl+O", "import")
         self.a_export_text = self._act(f, "&Export transcript…", self.transcript.export_text, "Ctrl+E", "export")
@@ -419,6 +540,11 @@ class MainWindow(QMainWindow):
         self.a_times.setCheckable(True)
         self.a_times.setChecked(self.transcript.show_timestamps)
         self.transcript.timestamps_toggled.connect(self.a_times.setChecked)
+        self.a_details = self._act(v, "&Details", lambda on: self.show_details(on), "Ctrl+I", "details")
+        self.a_details.setCheckable(True)
+        self.a_details.setChecked(self.details_btn.isChecked())
+        first = self.transcript.more_menu.actions()[0]
+        self.transcript.more_menu.insertAction(first, self.a_times)
         v.addSeparator()
         self._act(v, "P&eople…", self.open_people, "Ctrl+Shift+P", "users")
 
@@ -447,6 +573,7 @@ class MainWindow(QMainWindow):
 
         QShortcut(QKeySequence("Escape"), self.search, activated=self.search.clear,
                   context=Qt.ShortcutContext.WidgetShortcut)
+        QShortcut(QKeySequence("F10"), self, activated=self.menu_btn.showMenu)
 
     def _build_tray(self):
         self.tray = QSystemTrayIcon(dot_icon(RECORD_RED, 64), self)
@@ -565,6 +692,7 @@ class MainWindow(QMainWindow):
         self._update_title()
         self._update_worker_label()
         self._update_actions()
+        self.details.refresh()
 
     def _recover_orphans(self, recording):
         """A recording whose recorder died while the window is open is repaired right away."""
@@ -595,6 +723,8 @@ class MainWindow(QMainWindow):
         counts = self.model.tag_counts()
         active = {fold_tag(t) for t in parse_query(self.search.text())[1]}
         self.tag_bar.set_tags(counts, active, self.model.category_totals())
+        # Behind the filter button, but never hidden while a tag filters the list.
+        self.tag_bar.setVisible(bool(counts) and (self._tags_open or bool(active)))
         self.player.tags.set_known([t for t, _n in counts])
 
     def _toggle_tag(self, tag: str, on: bool):
@@ -662,6 +792,9 @@ class MainWindow(QMainWindow):
         for a in (self.a_export_audio, self.a_transcribe):
             a.setEnabled(ready)
         self.a_export_text.setEnabled(self.transcript.has_text())
+        self.copy_btn.setEnabled(self.transcript.has_text())
+        self.export_audio_entry.setEnabled(ready)
+        self.export_btn.setEnabled(ready or self.transcript.has_text())
         self.a_copy.setEnabled(self.transcript.has_text())
         self.a_copy_times.setEnabled(self.transcript.has_text())
         self.a_cancel.setEnabled(ready and rec.transcript_status() in (T_RUNNING, T_QUEUED))
@@ -761,6 +894,7 @@ class MainWindow(QMainWindow):
             self.player.set_recording(rec)
             self.transcript.set_recording(rec)
         self.views.show_subject(self.current(), linked)
+        self.details.refresh()
         self._carry_search()
         self._update_actions()
 
@@ -918,7 +1052,7 @@ class MainWindow(QMainWindow):
             if name:
                 # A long video whose sound is converted rather than copied takes a while: show how far.
                 pct = f" ({frac:.0%})" if frac is not None else ""
-                self.statusBar().showMessage(f"Importing {i + 1} of {n}: {name}{pct}")
+                self.show_message(f"Importing {i + 1} of {n}: {name}{pct}", 10_000)
 
         def done(results):
             imported = [r for r in results if r.status == importer.IMPORTED]
@@ -1456,8 +1590,8 @@ class MainWindow(QMainWindow):
         self.transcript.refresh()
 
     # ---- window lifecycle ----
-    def show_message(self, text: str):
-        self.statusBar().showMessage(text, 8000)
+    def show_message(self, text: str, ms: int | None = None):
+        self.toast.show_text(text, ms)
 
     def show_window(self):
         self.showNormal() if self.isMinimized() else self.show()

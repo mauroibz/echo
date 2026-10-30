@@ -15,6 +15,11 @@ from test_ui import lib, pump, qapp, wait_until, wav, window  # noqa: F401 - fix
 TEXTS = [["Hola, te cuento.", "El envío llegó tarde."], ["Y vino incompleto."], ["Avisame cuando sepas."]]
 
 
+
+def _items(model):
+    """The list's rows without its date headings."""
+    return [r for r in model._rows if not r.startswith("§")]
+
 def _parts(lib, tmp_path, n=3):
     out = []
     for k, texts in enumerate(TEXTS[:n]):
@@ -43,7 +48,7 @@ def _body_pos(tp, k: int) -> int:
 def test_set_row_shows_the_parts_stacked_and_on_one_timeline(window, lib, tmp_path):
     st, parts, other = _linked(window, lib, tmp_path)
     m = window.model
-    assert m._rows == [other.id, st.id]  # one row for the set, placed by its newest part
+    assert _items(m) == [other.id, st.id]  # one row for the set, placed by its newest part
     assert window.current_set()[0].id == st.id and window.current() is None
     tp = window.transcript
     text = tp.editor.toPlainText()
@@ -69,7 +74,7 @@ def test_expanding_shows_parts_and_a_part_alone(window, lib, tmp_path):
     m = window.model
     rect = window.list.visualRect(m.index(m.row_of(st.id)))
     QTest.mouseClick(window.list.viewport(), Qt.MouseButton.LeftButton, pos=window.delegate.chevron_rect(rect).center())
-    assert m._rows == [other.id, st.id, *[r.id for r in parts]]
+    assert _items(m) == [other.id, st.id, *[r.id for r in parts]]
     assert window.current_set()[0].id == st.id  # still selected after the list was rebuilt
     window._select(parts[1].id)
     pump(100)
@@ -79,9 +84,9 @@ def test_expanding_shows_parts_and_a_part_alone(window, lib, tmp_path):
     QTest.keyClick(window.list, Qt.Key.Key_Left)
     assert window.current_set()[0].id == st.id
     QTest.keyClick(window.list, Qt.Key.Key_Left)
-    assert m._rows == [other.id, st.id]
+    assert _items(m) == [other.id, st.id]
     QTest.keyClick(window.list, Qt.Key.Key_Right)
-    assert len(m._rows) == 5 and window.model.expanded == {st.id}
+    assert len(_items(m)) == 5 and window.model.expanded == {st.id}
 
 
 def test_editing_a_part_saves_only_that_part(window, lib, tmp_path):
@@ -173,7 +178,7 @@ def test_link_from_a_selection_then_unlink(window, lib, tmp_path):
     assert st.members == [parts[0].id, parts[1].id]
     assert window.current_set()[0].id == st.id and not window.selection_bar.isVisible()
     window.unlink_set(st.id)
-    assert sets.load_all(lib) == [] and window.model._rows == [parts[1].id, parts[0].id]
+    assert sets.load_all(lib) == [] and _items(window.model) == [parts[1].id, parts[0].id]
 
 
 def _drop(window, ids, pos: QPoint):
@@ -242,7 +247,7 @@ def test_heading_click_opens_the_part_and_search_finds_in_a_set(window, lib, tmp
     a, b = tp._find_matches[tp._find_index]
     assert tp.editor.toPlainText()[a:b] == "incompleto"
     # While searching, the set shows the part that matches.
-    assert window.model._rows[-1] == parts[1].id
+    assert _items(window.model)[-1] == parts[1].id
 
 
 def test_set_copy_and_title(window, lib, tmp_path):

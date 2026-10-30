@@ -5,14 +5,19 @@ from test_speaker_search import meeting
 from test_ui import lib, pump, qapp, wait_until, window  # noqa: F401 - fixtures
 
 
+
+def _first(window):
+    """The recording in the list's first row under its date heading."""
+    return window.model.recording(window.model.first_row())
+
 def test_what_ana_said_about_the_price(window, lib):
     a = meeting(lib, "Weekly", [(1, "El precio sube en enero."), (2, "Y el precio de febrero?")],
                 {1: "Ana López", 2: "Pedro"})
     meeting(lib, "Globex", [(1, "Hablemos del precio."), (2, "Bien.")], {1: "Pedro", 2: "Ana López"})
     window.model.refresh()
     window.search.setText("@ana precio")
-    assert wait_until(lambda: window.model.rowCount() == 1 and window.model.recording(0).id == a.id)
-    snippet = window.model.data(window.model.index(0), ROLE_SNIPPET)
+    assert wait_until(lambda: window.model.shown() == 1 and _first(window).id == a.id)
+    snippet = window.model.data(window.model.index(window.model.first_row()), ROLE_SNIPPET)
     assert snippet.startswith("Ana López: El precio sube")
     window.list.grab()  # paints the third line
     window._select(a.id)
@@ -24,8 +29,8 @@ def test_what_ana_said_about_the_price(window, lib):
     tp.find_edit.textEdited.emit("precio")  # typed in the find bar: everyone's words again
     assert len(tp._find_matches) == 2
     window.search.setText("precio")
-    assert wait_until(lambda: window.model.rowCount() == 2)
-    assert window.model.data(window.model.index(0), ROLE_SNIPPET) is None
+    assert wait_until(lambda: window.model.shown() == 2)
+    assert window.model.data(window.model.index(window.model.first_row()), ROLE_SNIPPET) is None
 
 
 def test_at_offers_the_people_who_speak(window, lib):

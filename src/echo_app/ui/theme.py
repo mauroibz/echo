@@ -49,6 +49,9 @@ class Tokens:
     coral_deep: str
     amber: str
     find: str
+    orange: str  # speakers: text-safe on surface
+    violet: str
+    prose: str  # the transcript's text, a little softer than titles in dark
 
 
 LAGOON_LIGHT = Tokens(
@@ -56,6 +59,7 @@ LAGOON_LIGHT = Tokens(
     muted="#5a7883", accent="#0e9db7", accent_deep="#0a6f86", accent_soft="#d3f0f5", on_accent="#ffffff",
     deep_top="#05303f", deep_mid="#09566b", deep_bottom="#0f8299", on_deep="#e8f8fb", on_deep_muted="#93c9d4",
     foam="#7fe3ee", coral="#ff6b6b", coral_deep="#f43f5e", amber="#f2a33a", find="#ffd36e",
+    orange="#c2410c", violet="#6d28d9", prose="#0b2a35",
 )
 
 LAGOON_DARK = Tokens(
@@ -63,6 +67,7 @@ LAGOON_DARK = Tokens(
     muted="#8aacb6", accent="#2cc7df", accent_deep="#1aa3bb", accent_soft="#123f4a", on_accent="#04232b",
     deep_top="#020e12", deep_mid="#042630", deep_bottom="#073f4d", on_deep="#e2f6fa", on_deep_muted="#7fb3bf",
     foam="#6fdcea", coral="#ff6b6b", coral_deep="#f43f5e", amber="#f2a33a", find="#b88a1e",
+    orange="#f2a33a", violet="#b69cff", prose="#d6eaee",
 )
 
 _current = LAGOON_LIGHT
@@ -284,11 +289,6 @@ def stylesheet(t: Tokens) -> str:
 QMainWindow, QDialog {{ background: {t.canvas}; }}
 QDialog {{ background: {t.surface}; }}
 QToolTip {{ background: {t.deep_mid}; color: {t.on_deep}; border: none; border-radius: 8px; padding: 6px 9px; }}
-QStatusBar {{ background: {t.canvas}; color: {t.muted}; }}
-QStatusBar::item {{ border: none; }}
-QMenuBar {{ background: {t.canvas}; color: {t.ink}; padding: 2px 4px; }}
-QMenuBar::item {{ padding: 5px 10px; border-radius: 6px; background: transparent; }}
-QMenuBar::item:selected {{ background: {t.accent_soft}; }}
 QMenu {{ background: {t.surface}; color: {t.ink}; border: 1px solid {t.line}; padding: 6px; }}
 QMenu::item {{ padding: 6px 22px 6px 10px; border-radius: 6px; }}
 QMenu::item:selected {{ background: {t.accent_soft}; color: {t.ink}; }}
@@ -377,7 +377,7 @@ QPlainTextEdit#notes {{ background: transparent; border: 1px solid transparent; 
     padding: 0 2px; }}
 QPlainTextEdit#notes:hover {{ border-color: {t.line}; }}
 QPlainTextEdit#notes:focus {{ background: {t.raised}; border-color: {t.accent}; }}
-QPlainTextEdit#editor {{ background: {t.surface}; color: {t.ink}; border: none;
+QPlainTextEdit#editor {{ background: {t.surface}; color: {t.prose}; border: none;
     selection-background-color: {t.accent_soft}; selection-color: {t.ink}; }}
 QLineEdit#title {{ background: transparent; border: 1px solid transparent; color: {t.ink}; padding: 2px 4px; }}
 QLineEdit#title:hover {{ border-color: {t.line}; }}
@@ -388,6 +388,28 @@ QLineEdit#context:focus {{ background: {t.raised}; border-color: {t.accent}; col
 QToolButton#play {{ background: {t.accent}; border: none; border-radius: 21px; padding: 0; }}
 QToolButton#play:hover {{ background: {t.accent_deep}; }}
 QToolButton#play:disabled {{ background: {t.line}; }}
+
+/* The selected recording: header, reading card with the player docked at its foot, Details */
+QWidget#content {{ background: {t.canvas}; }}
+QWidget#dock {{ background: transparent; border-top: 1px solid {t.line}; }}
+QToolButton#headbtn {{ background: {t.surface}; border: 1px solid {t.line}; border-radius: 12px;
+    padding: 7px 13px; font-weight: 700; }}
+QToolButton#headbtn:hover {{ border-color: {t.accent}; background: {t.surface}; }}
+QToolButton#headbtn::menu-indicator {{ image: none; width: 0; }}
+QToolButton#headicon {{ border-radius: 12px; padding: 8px; }}
+QToolButton#headicon:checked {{ background: {t.accent_soft}; border-color: transparent; }}
+QToolButton#pill {{ background: {t.raised}; border: none; border-radius: 8px; padding: 5px 10px; }}
+QToolButton#pill:hover {{ background: {t.accent_soft}; }}
+QPushButton#markerrow {{ text-align: left; padding: 6px 8px; border: none; border-radius: 8px;
+    background: transparent; }}
+QPushButton#markerrow:hover {{ background: {t.raised}; }}
+QWidget#detailsbody QPlainTextEdit#notes {{ background: {t.raised}; border-radius: 10px; padding: 4px 6px; }}
+QWidget#detailsbody QLineEdit#context {{ background: {t.raised}; border-radius: 10px; padding: 6px 8px; }}
+QScrollArea#card {{ background: {t.surface}; }}
+QWidget#detailsbody {{ background: transparent; }}
+QFrame#popup {{ background: {t.surface}; border: 1px solid {t.line}; border-radius: 12px; }}
+QLabel#toast {{ background: {t.deep_mid}; color: {t.on_deep}; border-radius: 12px; padding: 10px 16px;
+    font-weight: 600; }}
 
 /* The deep sidebar */
 QWidget#sidebar QLabel {{ color: {t.on_deep}; background: transparent; }}
@@ -411,8 +433,19 @@ QWidget#sidebar QListView {{ background: transparent; border: none; }}
 QWidget#sidebar QToolButton#record {{ color: white; border: none; border-radius: 23px; font-weight: 800; font-size: 12pt;
     padding: 0 18px; background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 {t.coral}, stop:1 {t.coral_deep}); }}
 QWidget#sidebar QToolButton#record:hover {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #ff7f7f, stop:1 #e11d48); }}
-QWidget#sidebar QToolButton#record[recording="true"] {{ background: {t.on_deep}; color: {t.coral_deep}; }}
-QWidget#sidebar QToolButton#record[recording="true"]:hover {{ background: #ffffff; }}
+QWidget#sidebar QToolButton#record[recording="true"] {{ background: {t.coral}; color: {t.deep_top}; }}
+QWidget#sidebar QToolButton#record[recording="true"]:hover {{ background: #ff8a8a; }}
+QWidget#sidebar QFrame#recblock[recording="true"] {{ background: {rgba('coral', 0.14)};
+    border: 1px solid {rgba('coral', 0.28)}; border-radius: 18px; }}
+QWidget#sidebar QFrame#recblock[recording="true"] QToolButton#pause {{ background: {glass_hover}; border: none; }}
+QWidget#sidebar QFrame#recblock[recording="true"] QToolButton#pause:hover {{
+    background: {rgba('on_deep', 0.24)}; }}
+QWidget#sidebar QToolButton#sourcebtn, QWidget#sidebar QToolButton#flat {{ background: transparent; border: none;
+    color: {t.on_deep_muted}; font-weight: 600; padding: 4px 8px; }}
+QWidget#sidebar QToolButton#sourcebtn:hover, QWidget#sidebar QToolButton#flat:hover {{ color: {t.on_deep};
+    background: {glass}; }}
+QWidget#sidebar QToolButton#sourcebtn[warn="true"] {{ color: #ffc56b; }}
+QWidget#sidebar QToolButton#flat::menu-indicator {{ image: none; width: 0; }}
 QWidget#sidebar QToolButton#record:disabled {{ background: {glass}; color: {t.on_deep_muted}; }}
 QWidget#sidebar QToolButton#pause {{ border-radius: 23px; }}
 QWidget#sidebar QFrame#banner {{ background: {rgba('foam', 0.16)}; border: 1px solid {rgba('foam', 0.45)};

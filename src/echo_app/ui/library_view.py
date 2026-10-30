@@ -9,11 +9,11 @@ from PySide6.QtCore import QAbstractListModel, QModelIndex, QRect, QRectF, QSize
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter
 from PySide6.QtWidgets import QStyle, QStyledItemDelegate, QStyleOptionViewItem
 
-from .. import recorder, sets
+from .. import features, recorder, sets
 from ..library import (FAILED, NEEDS_FINALIZE, READY, RECORDING, T_DONE, T_FAILED, T_QUEUED, T_RUNNING,
                        Library, Recording)
 from . import theme
-from .common import fmt_date, fmt_duration, fmt_eta
+from .common import date_group, fmt_date, fmt_duration, fmt_eta, fmt_length, fmt_when
 from .common import icon as tinted_icon
 
 ROLE_REC = Qt.ItemDataRole.UserRole + 1
@@ -26,9 +26,8 @@ ROLE_SNIPPET = Qt.ItemDataRole.UserRole + 7  # "Ana: …el precio sube…" under
 
 ROW_HEADER, ROW_REC, ROW_SET, ROW_PART = "header", "rec", "set", "part"
 
-HEADER = "§"  # row ids starting with this are month headings
-GROUP_AFTER = 30  # recordings in the list before it is grouped by month...
-GROUP_MONTHS = 2  # ...or months it spans
+HEADER = "§"  # row ids starting with this are date headings
+GROUPS = {"today": "Today", "yesterday": "Yesterday", "week": "This week"}
 MONTHS = ("January", "February", "March", "April", "May", "June", "July", "August", "September", "October",
           "November", "December")
 
@@ -43,6 +42,8 @@ class Status:
     kind: str
     progress: float | None = None  # 0..1 for a thin bar
     recovered: bool = False
+    people: int = 0  # speakers in the transcript, when it has labels
+    flags: int = 0  # passages to check
 
 
 def status_of(rec: Recording) -> Status:
@@ -80,11 +81,23 @@ def status_of(rec: Recording) -> Status:
     if t == T_FAILED:
         return Status("Transcription failed", K_ERROR, None, m.recovered)
     if t == T_DONE:
+        tr = rec.transcript() or {}
+        people = len(rec.speaker_numbers()) if tr.get("speakers") and not m.speakers_off else 0
         if rec.is_edited():
-            return Status("Edited", K_EDITED, None, m.recovered)
-        n = sum(1 for s in (rec.transcript() or {}).get("segments", []) if s.get("flags"))
-        return Status(f"Transcribed · ⚑ {n}" if n else "Transcribed", K_DONE, None, m.recovered)
-    return Status("", K_NONE, None, m.recovered)
+            return Status("Edited", K_EDITED, None, m.recovered, people)
+        n = sum(1 for s in tr.get("segments", []) if s.get("flags"))
+        return Status(f"Transcribed · ⚑ {n}" if n else "Transcribed", K_DONE, None, m.recovered, people, n)
+    return Status("Not transcribed" if _installed() else "", K_NONE, None, m.recovered)
+
+
+_INSTALLED: list[bool] = []
+
+
+def _installed() -> bool:
+    """Whether transcription is installed, looked up once: rows ask on every refresh."""
+    if not _INSTALLED:
+        _INSTALLED.append(features.transcription_installed())
+    return _INSTALLED[0]
 
 
 def set_status(statuses: list[Status | None]) -> Status:
@@ -109,6 +122,20 @@ def set_status(statuses: list[Status | None]) -> Status:
         flags = sum(int(st.text.rsplit("⚑", 1)[1]) for st in sts if "⚑" in st.text)
         return Status(f"Transcribed · ⚑ {flags}" if flags else "Transcribed", K_DONE)
     return Status("", K_NONE)
+
+
+def group_title(group: str) -> str:
+    """A heading's text: "Today", "This week", "September", "March 2025"."""
+    if group in GROUPS:
+        return GROUPS[group]
+    try:
+        y, m = group.split("-")
+        name = MONTHS[int(m) - 1]
+    except (ValueError, IndexError):
+        return group
+    from datetime import date
+
+    return name if int(y) == date.today().year else f"{name} {y}"
 
 
 class LibraryModel(QAbstractListModel):
@@ -147,8 +174,7 @@ class LibraryModel(QAbstractListModel):
             return self.kind(index.row())
         if rid.startswith(HEADER):
             if role in (Qt.ItemDataRole.DisplayRole, ROLE_HEADER):
-                y, m = rid[1:].split("-")
-                return f"{MONTHS[int(m) - 1]} {y}"
+                return group_title(rid[1:])
             return None
         if rid in self._parts:
             return self._set_data(rid, role)
@@ -431,12 +457,12 @@ class LibraryModel(QAbstractListModel):
                 # While filtering, a set shows the parts that match; otherwise all of them when expanded.
                 shown_parts[sid] = hits if self._filter is not None else (ms if sid in self.expanded else [])
         top.sort(reverse=True)
-        grouping = len(top) > GROUP_AFTER or len({c[:7] for c, _ in top}) > GROUP_MONTHS
         ids, last = [], None
         for created, key in top:
-            if grouping and created[:7] != last:
-                ids.append(HEADER + created[:7])
-                last = created[:7]
+            group = date_group(created)
+            if group != last:
+                ids.append(HEADER + group)
+                last = group
             ids.append(key)
             ids.extend(shown_parts.get(key, []))
         if ids == self._rows:
@@ -446,6 +472,10 @@ class LibraryModel(QAbstractListModel):
         self.beginResetModel()
         self._rows = ids
         self.endResetModel()
+
+    def shown(self) -> int:
+        """Rows that are recordings or sets, not date headings."""
+        return sum(1 for r in self._rows if not r.startswith(HEADER))
 
     @property
     def total(self) -> int:
@@ -571,15 +601,21 @@ class RowDelegate(QStyledItemDelegate):
         p.setFont(option.font)
         if linked is not None:
             st_set, parts = linked
-            left = f"{fmt_date(parts[0].meta.created)}  ·  {sets.summary(st_set, parts)}"
+            left = f"{fmt_when(max(r.meta.created for r in parts))} · {sets.summary(st_set, parts)}"
         else:
-            left = fmt_date(rec.meta.created)
+            bits = [fmt_when(rec.meta.created)]
             if rec.meta.duration and not live:
-                left += f"  ·  {fmt_duration(rec.meta.duration)}"
+                bits.append(fmt_length(rec.meta.duration))
+            if st is not None and st.people > 1:
+                bits.append(f"{st.people} speakers")
+            left = " · ".join(bits)
+        kind = st.kind if st else K_NONE
+        # A finished transcript says nothing; only passages left to check do.
         status_text = st.text if st else ""
+        if kind in (K_DONE, K_EDITED):
+            status_text = "⚑ " + status_text.rsplit("⚑", 1)[1].strip() if "⚑" in status_text else ""
         if st and st.recovered and st.kind != K_RECORDING:
             status_text = ("Recovered · " + status_text) if status_text else "Recovered"
-        kind = st.kind if st else K_NONE
         pill = kind in (K_RECORDING, K_BUSY, K_WAIT, K_ERROR)
         small = QFont(option.font)
         if pill:

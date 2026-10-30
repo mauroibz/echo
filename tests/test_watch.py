@@ -127,8 +127,8 @@ def test_window_imports_from_a_watched_folder(window, lib, tmp_path):
     window.watcher.configure([str(folder)])
     wav(folder / "voz.wav", 1)
     assert wait_until(lambda: any(r.meta.title == "voz" for r in lib.all()), 15)
-    assert wait_until(lambda: window.model.rowCount() == 1, 5)
-    assert "Imported 1 new file" in window.statusBar().currentMessage()
+    assert wait_until(lambda: window.model.shown() == 1, 5)
+    assert "Imported 1 new file" in window.toast.text()
 
 
 def test_settings_page_saves_folders(qapp, lib, tmp_path):

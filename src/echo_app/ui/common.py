@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import traceback
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Callable
 
 from PySide6.QtCore import QObject, QRectF, QRunnable, QSize, QThreadPool, Qt, Signal
@@ -26,7 +26,7 @@ _ICONS = {
     "settings": "settings", "crop": "crop", "clear": "eraser", "help": "circle-help", "warning": "triangle-alert",
     "error": "circle-alert", "ok": "circle-check", "download": "download", "more": "ellipsis", "mic": "mic",
     "set": "layers", "link": "link", "unlink": "unlink", "expand": "chevron-right", "collapse": "chevron-down",
-    "volume": "volume-2",
+    "volume": "volume-2", "menu": "menu", "filter": "list-filter", "details": "panel-right",
 }
 
 
@@ -142,6 +142,49 @@ def fmt_eta(sec: float | None) -> str:
         return "less than a minute left"
     m = round(sec / 60)
     return f"about {m} min left" if m < 60 else f"about {m // 60} h {m % 60:02d} min left"
+
+
+def fmt_length(sec: float | None) -> str:
+    """A length in words for the list: "41 s", "33 min", "1 h 30 min"."""
+    if not sec:
+        return ""
+    sec = int(round(sec))
+    if sec < 60:
+        return f"{sec} s"
+    m = round(sec / 60)
+    return f"{m} min" if m < 60 else f"{m // 60} h" + (f" {m % 60} min" if m % 60 else "")
+
+
+def fmt_when(iso: str) -> str:
+    """When, under a list heading that already says the day: "23:47", "Mon 10:15", "Oct 20"."""
+    try:
+        dt = datetime.fromisoformat(iso)
+    except (TypeError, ValueError):
+        return iso or ""
+    now = datetime.now(dt.tzinfo)
+    days = (now.date() - dt.date()).days
+    if days <= 1:
+        return f"{dt:%H:%M}"
+    if days < 7 and dt.date() >= now.date() - timedelta(days=now.weekday()):
+        return f"{dt:%a %H:%M}"
+    return f"{dt:%b %-d}" if dt.year == now.year else f"{dt:%b %-d %Y}"
+
+
+def date_group(iso: str) -> str:
+    """The list heading a recording falls under: "today", "yesterday", "week", or "YYYY-MM"."""
+    try:
+        dt = datetime.fromisoformat(iso)
+    except (TypeError, ValueError):
+        return (iso or "")[:7]
+    now = datetime.now(dt.tzinfo)
+    days = (now.date() - dt.date()).days
+    if days <= 0:
+        return "today"
+    if days == 1:
+        return "yesterday"
+    if dt.date() >= now.date() - timedelta(days=now.weekday()):
+        return "week"
+    return f"{dt:%Y-%m}"
 
 
 def fmt_date(iso: str) -> str:

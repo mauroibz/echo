@@ -10,13 +10,17 @@ from test_ui import FAKE, lib, pump, qapp, wait_until, window  # noqa: F401 - fi
 def test_toggle_records_a_call_with_two_meters(window, lib, monkeypatch):
     monkeypatch.setenv("ECHO_CAPTURE_OUT_CMD", f"{sys.executable} -P {FAKE} {{path}} {{bps}} negative")
     panel = window.recorder_panel
-    assert panel.computer_row.isVisible() and not panel.computer.isChecked()
-    assert not panel.out_meter.isVisible()
+    # In the input panel under Record; while recording, the block shows the second meter.
+    inputs = panel.input_panel
+    assert panel.computer_row.isVisibleTo(inputs) and not panel.computer.isChecked()
+    assert not panel.out_meter.isVisibleTo(inputs)
     panel.computer.setChecked(True)
-    assert settings.load()[0].computer_audio and panel.out_meter.isVisible()
+    assert settings.load()[0].computer_audio and panel.out_meter.isVisibleTo(inputs)
+    assert "computer audio" in panel.source_btn.text()
     panel.start()
     assert wait_until(lambda: panel.session is not None)
     assert not panel.computer.isEnabled()
+    assert panel.call_meter.isVisibleTo(panel)
     assert wait_until(lambda: panel.out_meter._level > -60, 5), "the computer-audio meter moves"
     pump(800)
     panel.stop()

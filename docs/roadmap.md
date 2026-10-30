@@ -327,6 +327,9 @@ no folder yet; it waits for the dictionary to be in daily use. Summaries are Ech
 | 7 | `change-silence-note` | product | archived |
 | 7 | `add-call-turns` | AI | done; a check on a real call is open |
 | 8 | `add-extension-points` | product | archived |
+| 9 | `refine-window` | product | done; the user's comparison with the approved design is open |
+| 9 | `add-motion` | product | planned (no folder yet) |
+| 9 | `add-record-dock` | product | planned (no folder yet) |
 
 The open items are listed under "Blocked" in each change's `tasks.md`, with what a person has
 to run and look for.
@@ -344,3 +347,6 @@ in, so this does not wait for its archive. `add-call-recording` before `add-spea
 `add-speaker-search` before `add-people-profiles` (a person's recordings come from its speakers table).
 `add-speaker-turns` before `add-speaker-relabel` (it reassigns the cut pieces too); its code is
 in, so this does not wait for its archive.
+`refine-window` before `add-motion` and `add-record-dock`: both animate and reuse the parts it
+lays out (the recorder block, the player dock). The dock's "always on top" must be checked on
+GNOME and KDE under Wayland before its design is final.

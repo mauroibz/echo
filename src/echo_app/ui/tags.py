@@ -252,18 +252,23 @@ class NotesEdit(QPlainTextEdit):
         self.setTabChangesFocus(True)
         self.setLineWrapMode(QPlainTextEdit.LineWrapMode.WidgetWidth)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.rest_lines = 1  # lines shown while not editing
         self._lines(1)
+
+    def set_rest_lines(self, n: int):
+        self.rest_lines = n
+        self._lines(n)
 
     def _lines(self, n: int):
         h = self.fontMetrics().lineSpacing() * n + 2 * int(self.document().documentMargin()) + 6
         self.setFixedHeight(h)
 
     def focusInEvent(self, e):
-        self._lines(3)
+        self._lines(max(3, self.rest_lines))
         super().focusInEvent(e)
 
     def focusOutEvent(self, e):
-        self._lines(1)
+        self._lines(self.rest_lines)
         super().focusOutEvent(e)
         self.edited.emit(self.toPlainText().strip())
 

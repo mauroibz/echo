@@ -7,6 +7,11 @@ from echo_app.ui.player import statistics
 from test_ui import _transcribed, lib, pump, qapp, wait_until, wav, window  # noqa: F401 - fixtures
 
 
+
+def _first(window):
+    """The recording in the list's first row under its date heading."""
+    return window.model.recording(window.model.first_row())
+
 def test_tag_editor_notes_and_chip_filter(window, lib, tmp_path):
     rec = _transcribed(lib, tmp_path)
     other = lib.create("Otra", "imported")
@@ -24,14 +29,17 @@ def test_tag_editor_notes_and_chip_filter(window, lib, tmp_path):
     window.player.notes.setPlainText("Llamar a Ana el lunes")
     window.player.notes.edited.emit("Llamar a Ana el lunes")
     assert lib.get(rec.id).meta.notes == "Llamar a Ana el lunes"
-    # The chip bar lists the tag; clicking it filters the list through the search box.
+    # The chip bar opens from the filter in the search field, lists the tag, and clicking it
+    # filters the list through the search box.
     bar = window.tag_bar
+    assert not bar.isVisible()
+    window.filter_action.trigger()
     assert bar.isVisible() and bar.flow.count() == 1
     chip = bar.flow.itemAt(0).widget()
     assert chip.text().startswith("#entrevista")
     chip.click()
     assert window.search.text() == "#entrevista"
-    assert wait_until(lambda: window.model.rowCount() == 1 and window.model.recording(0).id == rec.id)
+    assert wait_until(lambda: window.model.shown() == 1 and _first(window).id == rec.id)
     chip = bar.flow.itemAt(0).widget()
     assert chip.isChecked()
     chip.click()
@@ -39,7 +47,7 @@ def test_tag_editor_notes_and_chip_filter(window, lib, tmp_path):
     assert wait_until(lambda: window.model.row_of(other.id) >= 0)
     # Notes are searchable.
     window.search.setText("lunes")
-    assert wait_until(lambda: window.model.rowCount() == 1)
+    assert wait_until(lambda: window.model.shown() == 1)
 
 
 def test_month_headings_when_the_library_spans_months(window, lib, monkeypatch):
@@ -79,13 +87,13 @@ def test_category_chip_groups_values(window, lib):
     assert actions == ["Any client  (2)", "Acme  (2)", "Globex  (1)"]
     next(x for x in chips[0].menu().actions() if x.text().startswith("Globex")).trigger()
     assert window.search.text() == "#client:Globex"
-    assert wait_until(lambda: window.model.rowCount() == 1 and window.model.recording(0).id == b.id)
+    assert wait_until(lambda: window.model.shown() == 1 and _first(window).id == b.id)
     chip = bar.flow.itemAt(0).widget()
     assert chip.isChecked()
     next(x for x in chip.menu().actions() if x.text().startswith("Globex")).trigger()
     next(x for x in bar.flow.itemAt(0).widget().menu().actions() if x.text().startswith("Any")).trigger()
     assert window.search.text() == "#client:"
-    assert wait_until(lambda: window.model.rowCount() == 2)
+    assert wait_until(lambda: window.model.shown() == 2)
     # The editor sets a category apart, and "client:" completes its values.
     window._select(a.id)
     pump(100)

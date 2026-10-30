@@ -144,16 +144,16 @@ def test_naming_in_the_editor(window, lib, tmp_path):
     window._select(rec.id)
     pump(200)
     tp = window.transcript
-    labels = tp.editor.margin.labels
+    labels = tp.editor.labels
     assert [(t, n) for _p, t, _c, n in labels] == [("Speaker 1", 1), ("Speaker 2", 2)]
     assert "2 speakers" in tp.status.text()
     tp.name_speaker(1, "Ana López")
     assert lib.get(rec.id).meta.speakers == {"1": "Ana López"}
     assert dictionary.load().find("Ana López").kind == dictionary.PEOPLE
     assert "Ana López" in dictionary.voices()
-    assert tp.editor.margin.labels[0][1] == "Ana López"
+    assert tp.editor.labels[0][1] == "Ana López"
     tp.set_speakers_off(True)
-    assert lib.get(rec.id).meta.speakers_off and not tp.editor.margin.labels
+    assert lib.get(rec.id).meta.speakers_off and not tp.editor.labels
     tp.editor.margin.grab()
 
 
