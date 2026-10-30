@@ -327,7 +327,7 @@ no folder yet; it waits for the dictionary to be in daily use. Summaries are Ech
 | 7 | `change-silence-note` | product | archived |
 | 7 | `add-call-turns` | AI | done; a check on a real call is open |
 | 8 | `add-extension-points` | product | archived |
-| 9 | `refine-window` | product | done; the user's comparison with the approved design is open |
+| 9 | `refine-window` | product | archived |
 | 9 | `add-motion` | product | planned (no folder yet) |
 | 9 | `add-record-dock` | product | planned (no folder yet) |
 

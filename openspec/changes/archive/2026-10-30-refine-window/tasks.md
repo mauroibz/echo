@@ -7,5 +7,5 @@
 - [x] 1.5 List: date groups always, second line with time or day, length and speakers, quiet statuses; tests for the groups and the row text
 - [x] 1.6 Header (title, line, tags, Copy, Export menu, Details, More), player dock (speed and volume buttons with popup), `DetailsPanel`, layout and its persistence; transcript toolbar hidden; tests
 - [x] 1.7 Speaker names above turns, click opens the speaker menu, margin fallback when no blank line precedes; tests
-- [ ] 1.8 Screenshots of the real window in light and dark sent to the user for comparison with the canvas
+- [x] 1.8 Screenshots of the real window in light and dark sent to the user for comparison with the canvas
 - [x] 1.9 `docs/guide.md`, `docs/design.md`, `README.md` screenshot, `CHANGELOG.md`, `docs/roadmap.md`
