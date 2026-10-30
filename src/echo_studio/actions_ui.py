@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import date
+
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QFrame, QHBoxLayout, QLabel, QLineEdit, QScrollArea,
@@ -14,6 +16,23 @@ from echo_app.ui import theme
 from echo_app.ui.common import fmt_date, icon
 
 from . import actions
+
+
+def fmt_due(day: str) -> str:
+    """A due date: "today", "tomorrow", "Fri Oct 31" within a week, else "Nov 14" (with the year
+    when it is not this one); late ones say so."""
+    try:
+        d = date.fromisoformat(day)
+    except ValueError:
+        return day
+    today = date.today()
+    delta = (d - today).days
+    if delta == 0:
+        return "due today"
+    if delta == 1:
+        return "due tomorrow"
+    when = f"{d:%a %b %-d}" if 0 < delta < 7 else f"{d:%b %-d}" if d.year == today.year else f"{d:%b %-d %Y}"
+    return f"late, was due {when}" if delta < 0 else f"due {when}"
 
 
 def _dim(text: str = "") -> QLabel:
@@ -59,7 +78,7 @@ class ActionList(QWidget):
         box.setChecked(bool(it.get("done")))
         box.toggled.connect(lambda on, rid=it["id"], k=it["index"]: self.toggled.emit(rid, k, on))
         col.addWidget(box)
-        bits = [b for b in (it.get("owner"), f"by {fmt_date(it['due'])}" if it.get("due") else "",
+        bits = [b for b in (it.get("owner"), fmt_due(it["due"]) if it.get("due") else "",
                             f"{it['title']} · {fmt_date(it['created'])}" if self.with_recording else "") if b]
         if bits:
             meta = _dim("  ·  ".join(bits))

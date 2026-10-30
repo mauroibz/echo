@@ -487,6 +487,18 @@ def test_ask_a_recording_and_the_library(window, lib, server, studio, capsys, mo
     assert "Lucía habló del precio [1]." in out and f"[1] Charla con Lucía ({rec.id}) at 0:" in out
 
 
+def test_due_dates_read_as_days():
+    from datetime import date, timedelta
+
+    from echo_studio.actions_ui import fmt_due
+
+    today = date.today()
+    assert fmt_due(today.isoformat()) == "due today"
+    assert fmt_due((today + timedelta(days=1)).isoformat()) == "due tomorrow"
+    assert fmt_due((today - timedelta(days=3)).isoformat()).startswith("late, was due ")
+    assert fmt_due("bad") == "bad"
+
+
 def test_split_at_paragraphs():
     paras = [("palabra " * 1200).strip() + "." for _ in range(20)]  # ~9,600 characters each
     parts = summary.split("\n\n".join(paras))
