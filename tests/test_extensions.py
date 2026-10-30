@@ -133,6 +133,52 @@ def test_added_view_follows_the_selection(window, lib):
     assert wait_until(lambda: len(view.calls) > n)
 
 
+def test_screen_and_show_recording(window, lib, monkeypatch):
+    from PySide6.QtWidgets import QLabel
+
+    a = lib.create("Uno", "imported", duration=30.0)
+    b = lib.create("Dos", "imported", duration=30.0)
+    window.model.refresh()
+    window._select(a.id)
+    screen = QLabel("Pendientes")
+    btn = window.add_screen("Pending", "list-filter", screen, "Ctrl+Shift+T")
+    assert window.screens.currentWidget() is window.content
+    btn.click()
+    assert window.screens.currentWidget() is screen and btn.isChecked()
+    btn.click()
+    assert window.screens.currentWidget() is window.content
+    btn.click()
+    played = []
+    monkeypatch.setattr(window, "_seek_and_play", played.append)
+    window.show_recording(b.id, at=12.5)  # a citation: back to the recording, playing from there
+    assert window.screens.currentWidget() is window.content and not btn.isChecked()
+    assert window.current().id == b.id and played == [12.5]
+    btn.click()
+    window.list.clicked.emit(window.model.index(window.model.row_of(a.id)))
+    assert window.screens.currentWidget() is window.content
+
+
+def test_person_sections(fake_ext, window, lib):
+    from test_ui_people import _two_meetings
+
+    fake_ext(FAKE + """
+from PySide6.QtWidgets import QLabel
+
+def person_sections(name):
+    return [("Pendientes", QLabel("abiertas de " + name))]
+""")
+    _two_meetings(lib)
+    window.model.refresh()
+    window.open_people("Pedro")
+    dlg = window._people_dialog
+    texts = [dlg.sections.itemAt(i).widget().text() for i in range(dlg.sections.count())]
+    assert texts == ["Pendientes", "abiertas de Pedro"]
+    dlg.select("Ana López")
+    pump(50)
+    assert dlg.sections.itemAt(1).widget().text() == "abiertas de Ana López"
+    dlg.close()
+
+
 def test_transcribed_signal(window, lib):
     from echo_app.library import TRANSCRIPT
 

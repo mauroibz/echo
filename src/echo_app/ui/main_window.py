@@ -8,7 +8,7 @@ from PySide6.QtCore import QEvent, QItemSelectionModel, QSize, Qt, QTimer, Signa
 from PySide6.QtGui import QAction, QCloseEvent, QFont, QKeySequence, QShortcut
 from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCompleter, QFrame, QHBoxLayout, QLabel,
                                QLineEdit, QListView, QMainWindow, QMenu, QMessageBox, QSplitter,
-                               QSystemTrayIcon, QToolButton, QVBoxLayout, QWidget)
+                               QStackedWidget, QSystemTrayIcon, QToolButton, QVBoxLayout, QWidget)
 
 from .. import APP_NAME, features, importer, recorder, sets, transcription
 from ..index import Index, parse_query
@@ -47,6 +47,7 @@ class MainWindow(LibraryActionsMixin, SearchImportMixin, CaptureMixin, QMainWind
         self.setWindowTitle(APP_NAME)
         self.setWindowIcon(app_icon())
         self.setAcceptDrops(True)
+        self._screen_buttons: dict[QWidget, QToolButton] = {}  # add_screen's
         self._build_parts()
         self._build_layout()
         self._build_menus()
@@ -139,6 +140,7 @@ class MainWindow(LibraryActionsMixin, SearchImportMixin, CaptureMixin, QMainWind
         self.list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.list.customContextMenuRequested.connect(self._context_menu)
         self.list.selectionModel().currentChanged.connect(self._selection_changed)
+        self.list.clicked.connect(lambda _i: self.show_screen(None))  # a screen hid the recording
         self.list.selectionModel().selectionChanged.connect(lambda *_a: self._update_selection_bar())
         self.model.drop_requested.connect(self._dropped)
         self.list.setAccessibleName("Recordings")
@@ -321,8 +323,11 @@ class MainWindow(LibraryActionsMixin, SearchImportMixin, CaptureMixin, QMainWind
         self.split = QSplitter(Qt.Orientation.Horizontal)
         self.split.setObjectName("main")
         self.split.setHandleWidth(1)
+        # The recording, or a screen an extension adds (add_screen) in its place.
+        self.screens = QStackedWidget()
+        self.screens.addWidget(right)
         self.split.addWidget(left)
-        self.split.addWidget(right)
+        self.split.addWidget(self.screens)
         self.split.setStretchFactor(0, 0)
         self.split.setStretchFactor(1, 1)
         self.split.setChildrenCollapsible(False)
@@ -393,6 +398,44 @@ class MainWindow(LibraryActionsMixin, SearchImportMixin, CaptureMixin, QMainWind
         """A view an extension shows instead of the transcript, chosen with a switch over it."""
         self.views.add(title, widget)
         self.views.show_subject(self.current(), self.current_set())
+
+    def add_screen(self, title: str, ic: str, widget: QWidget, shortcut: str | None = None) -> QToolButton:
+        """A screen an extension shows in place of the selected recording (a list across recordings,
+        a question box), opened by a button beside People. Pressing it again, or choosing a recording
+        in the list, goes back. Returns the button."""
+        tip = f"{title} ({shortcut})" if shortcut else title
+        b = self._corner_button(ic, tip)
+        b.setCheckable(True)
+        b.toggled.connect(lambda on, w=widget: self.show_screen(w if on else None))
+        self.recorder_panel.add_corner(b, before=self.menu_btn)
+        self.screens.addWidget(widget)
+        self._screen_buttons[widget] = b
+        if shortcut:
+            a = QAction(title, self)
+            a.setShortcut(QKeySequence(shortcut))
+            a.triggered.connect(lambda: b.toggle())
+            self.addAction(a)
+        return b
+
+    def show_screen(self, widget: QWidget | None):
+        """Show an extension's screen, or the selected recording (None)."""
+        widget = widget if widget is not None and self.screens.indexOf(widget) > 0 else None
+        self.screens.setCurrentWidget(widget or self.content)
+        for w, b in self._screen_buttons.items():
+            b.blockSignals(True)
+            b.setChecked(w is widget)
+            b.blockSignals(False)
+
+    def show_recording(self, rid: str, at: float | None = None):
+        """Select a recording and, with `at`, play it from there: for an extension that sends the user
+        to a passage (a citation, an action item). Goes back from a screen to the recording."""
+        if self.model.row_of(rid) < 0 and self.search.text():
+            self.search.clear()  # the search hid it
+            self._run_search()
+        self.show_screen(None)
+        self._select(rid)
+        if at is not None and self.current() is not None and self.current().id == rid:
+            self._seek_and_play(float(at))
 
     def _act(self, menu: QMenu, text: str, slot, shortcut=None, ic: str | None = None) -> QAction:
         a = QAction(text, self)

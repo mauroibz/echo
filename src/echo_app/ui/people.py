@@ -15,7 +15,7 @@ from PySide6.QtGui import QFont, QKeySequence, QShortcut
 from PySide6.QtWidgets import (QDialog, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
                                QPlainTextEdit, QPushButton, QSplitter, QVBoxLayout, QWidget)
 
-from .. import dictionary, people
+from .. import dictionary, extensions, people
 from ..audio.playback import Playback
 from ..index import Index
 from ..library import Library, fold_tag
@@ -98,6 +98,10 @@ class PeopleDialog(QDialog):
         self.notes.installEventFilter(self)
         form.addRow("Notes", self.notes)
         pl.addLayout(form)
+        # What extensions show about the person (person_sections), rebuilt for each person.
+        self.sections = QVBoxLayout()
+        self.sections.setSpacing(8)
+        pl.addLayout(self.sections)
         heading = QLabel("Recordings")
         heading.setFont(theme.display_font(1.0, QFont.Weight.Bold))
         pl.addWidget(heading)
@@ -113,6 +117,17 @@ class PeopleDialog(QDialog):
         outer.addWidget(split)
         QShortcut(QKeySequence("Ctrl+F"), self, activated=self.filter.setFocus)
         self.reload()
+
+    def _show_sections(self, name: str):
+        while self.sections.count():
+            w = self.sections.takeAt(0).widget()
+            if w is not None:
+                w.deleteLater()
+        for title, widget in extensions.gather("person_sections", name):
+            head = QLabel(title)
+            head.setFont(theme.display_font(1.0, QFont.Weight.Bold))
+            self.sections.addWidget(head)
+            self.sections.addWidget(widget)
 
     # ---- the list ----
     def reload(self, select: str | None = None):
@@ -175,6 +190,7 @@ class PeopleDialog(QDialog):
         self.tags.set_known(sorted({t for q in self._people if q.profile for t in q.profile.tags}))
         self.tags.set_tags(prof.tags)
         self.notes.setPlainText(prof.notes)
+        self._show_sections(p.name)
         idx = Index(self.library)
         try:
             self._recs = people.recordings_of(idx, p.name)

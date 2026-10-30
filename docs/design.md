@@ -647,8 +647,8 @@ Echo looks for the names in `extensions.KNOWN` and imports the ones present; ent
 need Echo installed as a distribution, which it is not. An extension's module defines any of a
 few hooks, each called where Echo already does that kind of work: `register_cli` (subcommands),
 `doctor_checks`, `markdown_sections` (sections in a recording's note, after its header),
-`settings_pages` (Settings tabs with an `apply()` run on OK), `window_class` and
-`attach_window`. An import or a hook that raises is logged and skipped, and a window class that
+`settings_pages` (Settings tabs with an `apply()` run on OK), `window_class`, `attach_window`
+and `person_sections` (sections under a person's notes in People, rebuilt for each person). An import or a hook that raises is logged and skipped, and a window class that
 fails falls back to Echo's own, so recording and transcription never depend on an extension's
 code. `ECHO_NO_EXTENSIONS=1` starts Echo without any, and the test suite always runs that way.
 
@@ -658,8 +658,15 @@ reading card and Details),
 so an extension's window can subclass it and lay the same parts out its own way without copying
 the wiring. `add_view(title, widget)` puts a view beside the transcript, chosen with a switch
 that only exists once a view is added; a view's `show_subject(rec, linked)` is called on every
-selection change and whenever the shown recording's files change. `transcribed(id)` is emitted
-when a recording's `transcript.json` is written while the window runs.
+selection change and whenever the shown recording's files change. `add_screen(title, icon, widget)`
+puts a screen in place of the selected recording (a list across recordings, a question box),
+opened by a checkable button beside People; the button again, or a click in the list, goes back.
+`show_recording(id, at)` selects a recording and plays it from `at`, for an extension that cites
+a passage. `transcribed(id)` is emitted when a recording's `transcript.json` is written while the
+window runs. `Index.passages(query)` returns the passages that match a search (recording, start
+and end, speaker, text with a passage either side), for an extension that quotes what was said:
+it reads the matching recordings' cues rather than indexing passages, so the index schema is
+unchanged.
 
 `tests/test_extensions.py` parses the core's modules and fails if one imports an extension, a
 network library (`socket`, `ssl`, `http`, `urllib.request`, `requests`, `httpx`) or Qt's

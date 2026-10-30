@@ -250,6 +250,41 @@ class Index:
                     out[r["id"]]["snippet"] = f"{r['name']}: {r['snip']}"
         return out
 
+    def passages(self, query: str, tags=(), limit: int = 40, context: int = 1) -> list[dict]:
+        """The passages that match a search, for extensions that quote what was said: per match, the
+        recording's id, title and date, the passage's start and end in seconds, the speaker's name
+        ("" when unnamed) and its text with `context` passages either side. Recordings come from
+        `list` (newest first); inside one, a passage matches when it holds every word of the query,
+        as prefixes, without case or accents. `@name` keeps that person's passages only."""
+        from . import export
+
+        words = [fold_tag(w) for w in parse_query(query)[0]]
+        groups = [self.match_names(p) for p in parse_people(query)]
+        people = set().union(*groups) if groups else None
+        out: list[dict] = []
+        for row in self.list(query, tags):
+            rec = self.library.get(row["id"])
+            if rec is None:
+                continue
+            try:
+                cs = export.cues(rec)
+            except (OSError, ValueError):
+                continue
+            names = [export.speaker_name(rec, who) or "" for *_x, who in cs]
+            for i, (start, end, text, _para, _who) in enumerate(cs):
+                if people is not None and fold_tag(names[i]) not in people:
+                    continue
+                have = re.findall(r"\w+", fold_tag(text))
+                if words and not all(any(h.startswith(w) for h in have) for w in words):
+                    continue
+                lo, hi = max(0, i - context), min(len(cs), i + context + 1)
+                out.append({"id": rec.id, "title": rec.meta.title, "created": rec.meta.created,
+                            "start": float(start), "end": float(cs[hi - 1][1]), "speaker": names[i],
+                            "text": " ".join(cs[k][2] for k in range(lo, hi)).strip()})
+                if len(out) >= limit:
+                    return out
+        return out
+
     def tag_counts(self) -> list[tuple[str, int]]:
         """(tag as most often typed, recordings) for every tag, most used first."""
         rows = self.db.execute("SELECT tag_folded, tag, COUNT(*) n FROM tags GROUP BY tag_folded, tag").fetchall()

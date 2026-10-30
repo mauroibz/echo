@@ -255,9 +255,10 @@ class RecorderPanel(QWidget):
         il.addWidget(self.computer_row)
         self._update_buttons()
 
-    def add_corner(self, widget: QWidget):
-        """A button in the top row, beside the wordmark."""
-        self.corner.addWidget(widget)
+    def add_corner(self, widget: QWidget, before: QWidget | None = None):
+        """A button in the top row, beside the wordmark (before another one, if given)."""
+        i = self.corner.indexOf(before) if before is not None else -1
+        self.corner.insertWidget(i, widget) if i >= 0 else self.corner.addWidget(widget)
 
     def show_inputs(self):
         """The input panel, under the input's name."""

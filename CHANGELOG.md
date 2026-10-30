@@ -5,6 +5,12 @@ tag.
 
 ## Unreleased
 
+### Added
+
+- For extensions: screens in place of the selected recording (`add_screen`), `show_recording` to
+  play a recording from a time, sections in a person's profile (`person_sections`), and
+  `Index.passages` to quote what was said. Without an extension nothing changes.
+
 ## 1.4.1 - 2026-10-30
 
 ### Added

@@ -49,6 +49,22 @@ def test_who_speaks_and_what_they_said(tmp_path):
     idx.close()
 
 
+def test_passages_for_extensions(tmp_path):
+    lib = _lib(tmp_path)
+    lines = [(1, "Arrancamos."), (1, "El precio sube en enero."), (2, "Y el precio de febrero?")]
+    a = meeting(lib, "Weekly", lines, {1: "Ana López", 2: "Pedro"})
+    meeting(lib, "Otra", [(1, "Nada que ver.")], {})
+    idx = Index(lib)
+    idx.sync()
+    got = idx.passages("precio enero")
+    assert len(got) == 1 and got[0]["id"] == a.id and got[0]["start"] == 2.0 and got[0]["speaker"] == "Ana López"
+    assert got[0]["text"] == "Arrancamos. El precio sube en enero. Y el precio de febrero?"  # one either side
+    assert got[0]["title"] == "Weekly" and got[0]["end"] == 5.5
+    assert [p["speaker"] for p in idx.passages("@pedro precio", context=0)] == ["Pedro"]
+    assert len(idx.passages("precio", limit=1)) == 1 and idx.passages("nadie dijo esto") == []
+    idx.close()
+
+
 def test_edited_text_renames_and_speakers_off(tmp_path):
     lib = _lib(tmp_path)
     a = meeting(lib, "Weekly", [(1, "El precio sube."), (2, "Otra cosa.")], {1: "Ana", 2: "Pedro"})

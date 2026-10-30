@@ -8,7 +8,9 @@ define any of these hooks, each called only where Echo already does that kind of
     markdown_sections(rec) -> [(heading, markdown)]   sections in a recording's exported note
     settings_pages() -> [(title, QWidget)]   Settings tabs; a page's apply() runs on OK
     window_class() -> type[MainWindow]  open this window instead (the first one returned wins)
-    attach_window(window)               called once the window is built
+    attach_window(window)               called once the window is built; it may call
+                                        window.add_view, add_screen and show_recording
+    person_sections(name) -> [(title, QWidget)]   sections under a person's notes in People
 
 The core never imports an extension directly (tests/test_extensions.py checks), and an extension
 that raises is logged and skipped, so recording and transcription never depend on its code.
