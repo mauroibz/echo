@@ -61,7 +61,7 @@ class Summarizer(QObject):
         if data is not None and not summary.stale(rec, data):
             return
         f = self._failures.get(rid)
-        if f and f[0] == summary.sha(text):
+        if f and f[0] == summary.source_sha(rec):
             return
         self._queue.append(rid)
         self.changed.emit(rid)
@@ -88,7 +88,7 @@ class Summarizer(QObject):
         def error(msg):
             self._running = None
             if rec is not None:
-                self._failures[rid] = (summary.sha(summary.source_text(rec)), msg)
+                self._failures[rid] = (summary.source_sha(rec), msg)
             self.changed.emit(rid)
             self.failed.emit(rid, msg)
             self._next()

@@ -341,7 +341,9 @@ you press Summarize.
 Once a server is set, a Transcript / Summary switch appears over the transcript. Summary shows
 the selected recording's summary, with Summarize (Summarize again once there is one) and Copy.
 The summary is grouped by topic and ends with the next steps and who does them, in the
-recording's language. Each recording is summarized as soon as its transcript is ready, one at a
+recording's language. Your notes and markers lead it: each note and marked moment is covered,
+expanded from what was said around it, and editing a note marks the summary out of date. Each
+recording is summarized as soon as its transcript is ready, one at a
 time; uncheck "Summarize each recording when its transcript is ready" in Settings → Summaries to
 summarize only when you press the button. If you edit the transcript afterwards, the view says
 so. A transcript of more than about an hour of talk (60,000 characters) is summarized in parts

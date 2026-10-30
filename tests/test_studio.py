@@ -250,6 +250,24 @@ def test_retry_without_max_tokens(tmp_path, server, monkeypatch):
     assert "max_tokens" in calls[0] and "max_tokens" not in calls[1]
 
 
+def test_notes_and_markers_lead_the_summary(tmp_path, server):
+    rec = _rec(Library(tmp_path / "data"))
+    assert summary.guide(rec) == "" and summary.source_sha(rec) == summary.sha(summary.source_text(rec))
+    summary.write(rec)
+    assert "Notes:" not in server.requests[-1]["messages"][-1]["content"]
+    assert summary.GUIDE.strip() not in server.requests[-1]["messages"][0]["content"]
+    rec.update(notes="Ver si aceptan el precio nuevo.")
+    rec.set_markers([{"at": 6.5, "note": "precio"}, {"at": 66.0, "note": ""}])
+    assert summary.stale(rec)  # a note or a marker changes what the summary is made from
+    g = summary.guide(rec)
+    assert g.startswith("Notes:\nVer si aceptan el precio nuevo.") and "- at 0:06: precio" in g
+    assert "- at 1:06: (no note)" in g and "Said around it:" in g
+    summary.write(rec)
+    req = server.requests[-1]
+    assert summary.GUIDE.strip() in req["messages"][0]["content"] and g in req["messages"][-1]["content"]
+    assert not summary.stale(rec)
+
+
 def test_split_at_paragraphs():
     paras = [("palabra " * 1200).strip() + "." for _ in range(20)]  # ~9,600 characters each
     parts = summary.split("\n\n".join(paras))

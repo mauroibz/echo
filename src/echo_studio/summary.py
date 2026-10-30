@@ -44,6 +44,13 @@ Rules:
   nothing is left, say only that.
 - Output only the summary, with no preamble and no closing remarks."""
 
+GUIDE = """
+
+The person who recorded this wrote notes and marked moments while it happened; they are what
+mattered to them. Build the summary around them: cover each one, expanded from what was said
+about it (for a marked moment, around the passage given with it), and fill in the rest of the
+transcript around them. Do not quote the notes as notes or mention that they exist."""
+
 PART_NOTE = ("\n\nThis is part {n} of {m} of one long transcript. Summarize only this part; "
              "the parts are merged afterwards.")
 
@@ -80,6 +87,39 @@ def source_text(rec: Recording) -> str:
 
 def sha(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+MARK_BEFORE_S, MARK_AFTER_S = 30.0, 15.0  # the passage sent with a marker: what led to it, and a little after
+MARK_PASSAGE_MAX = 600  # characters of it
+
+
+def guide(rec: Recording) -> str:
+    """The user's notes and markers, as sent ahead of the transcript; "" when there are none."""
+    lines = []
+    notes = (rec.meta.notes or "").strip()
+    if notes:
+        lines += ["Notes:", notes]
+    segs = (rec.transcript() or {}).get("segments") or []
+    marks = []
+    for m in rec.meta.markers or []:
+        at = float(m.get("at", 0))
+        near = " ".join((sg.get("text") or "").strip() for sg in segs
+                        if at - MARK_BEFORE_S <= float(sg.get("start", 0)) <= at + MARK_AFTER_S).strip()
+        if len(near) > MARK_PASSAGE_MAX:
+            near = "…" + near[-MARK_PASSAGE_MAX:]
+        note = (m.get("note") or "").strip() or "(no note)"
+        marks.append(f"- at {export.stamp(at)}: {note}" + (f"\n  Said around it: {near}" if near else ""))
+    if marks:
+        lines += ([""] if lines else []) + ["Marked moments:"] + marks
+    return "\n".join(lines)
+
+
+def source_sha(rec: Recording) -> str:
+    """The hash of what a summary is made from: the transcript and, when there are any, the notes and
+    markers, so editing a note marks the summary out of date. Without them, the transcript's alone,
+    as summaries made before notes were sent."""
+    text, g = source_text(rec), guide(rec)
+    return sha(f"{g}\n\n{text}" if g else text)
 
 
 def split(text: str, limit: int = PART_MAX) -> list[str]:
@@ -139,6 +179,11 @@ def write(rec: Recording, progress=None, cfg: config.Config | None = None) -> di
     lang = language(rec)
     system = PROMPT.format(next_steps=next_steps(lang), language=LANGUAGES.get(lang, lang))
     head = _header(rec)
+    made_from = source_sha(rec)  # before the requests: an edit made meanwhile leaves the summary stale
+    g = guide(rec)
+    if g:
+        system += GUIDE
+        head += f"\n\n{g}"
     if len(text) <= SINGLE_MAX:
         if progress:
             progress(0, 1)
@@ -156,12 +201,14 @@ def write(rec: Recording, progress=None, cfg: config.Config | None = None) -> di
             progress(len(parts), total)
         rules = system.split("Rules:\n", 1)[1]
         merged = "\n\n".join(f"Part {n}:\n\n{p}" for n, p in enumerate(pieces, 1))
-        out = llm.complete(MERGE.format(rules=rules, next_steps=next_steps(lang)), f"{head}\n\n{merged}", cfg)
+        merge = MERGE.format(rules=rules, next_steps=next_steps(lang)) + (GUIDE if g else "")
+        out = llm.complete(merge, f"{head}\n\n{merged}", cfg)
     out = _clean(out)
     if not out:
         raise llm.LLMError("the server returned an empty summary")
     data = {"version": VERSION, "text": out, "created": datetime.now().astimezone().isoformat(timespec="seconds"),
-            "model": cfg.llm_model, "server": config.host(cfg.llm_url), "language": lang, "source_sha256": sha(text)}
+            "model": cfg.llm_model, "server": config.host(cfg.llm_url), "language": lang,
+            "source_sha256": made_from}
     atomic_write_json(rec.path(FILE), data)
     return data
 
@@ -175,9 +222,9 @@ def load(rec: Recording) -> dict | None:
 
 
 def stale(rec: Recording, data: dict | None = None) -> bool:
-    """The transcript changed since the summary was made."""
+    """The transcript, notes or markers changed since the summary was made."""
     data = data if data is not None else load(rec)
-    return data is not None and data.get("source_sha256") != sha(source_text(rec))
+    return data is not None and data.get("source_sha256") != source_sha(rec)
 
 
 def demoted(text: str, levels: int = 2) -> str:
