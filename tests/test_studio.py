@@ -26,6 +26,7 @@ class FakeServer:
         self.models = ["modelo-a"]
         self.paths: list[str] = []
         self.stop_reason = "end_turn"
+        self.title = '"Precio nuevo con Lucía."'
         server = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -58,7 +59,9 @@ class FakeServer:
                                                  {"type": "text", "text": server.reply}],
                                      "stop_reason": server.stop_reason})
                     return
-                self._send(200, {"choices": [{"message": {"content": server.reply}}]})
+                first = (body.get("system") or body["messages"][0]["content"])
+                reply = server.title if first.startswith("Write a title") else server.reply
+                self._send(200, {"choices": [{"message": {"content": reply}}]})
 
         self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         self.url = f"http://127.0.0.1:{self.httpd.server_port}/v1"
@@ -303,6 +306,22 @@ def test_cli_template(tmp_path, server, capsys, studio):
     assert cli.main(["summarize", rec.id, "--template", "clase"]) == 0
     assert templates.BUILT_IN["clase"] in server.requests[-1]["messages"][0]["content"]
     assert Library(tmp_path / "data").get(rec.id).meta.tags == ["template:clase"]
+
+
+def test_title_from_the_summary_only_when_automatic(window, lib, server, studio):
+    rec = _rec(lib)
+    rec.update(title="Bueno, empezamos", title_auto=True)
+    window.model.refresh()
+    _attach(window)
+    window.transcribed.emit(rec.id)
+    assert wait_until(lambda: lib.get(rec.id).meta.title == "Precio nuevo con Lucía")
+    assert lib.get(rec.id).meta.title_auto  # still Echo's: a new transcript may replace it
+    other = _rec(lib, title="Mi título")
+    window.transcribed.emit(other.id)
+    assert wait_until(lambda: other.path(summary.FILE).exists())
+    pump(200)
+    assert lib.get(other.id).meta.title == "Mi título"
+    assert not any(r["messages"][0]["content"].startswith("Write a title") for r in server.requests[2:])
 
 
 def test_split_at_paragraphs():

@@ -12,7 +12,7 @@ from PySide6.QtCore import QObject, Signal
 
 from echo_app.ui.common import run_task
 
-from . import config, summary
+from . import config, llm, summary
 
 
 class Summarizer(QObject):
@@ -77,7 +77,13 @@ class Summarizer(QObject):
         def work(progress):
             if rec is None:
                 raise ValueError("the recording is gone")
-            return summary.write(rec, progress=lambda d, t: progress((d, t)))
+            data = summary.write(rec, progress=lambda d, t: progress((d, t)))
+            if config.load().auto_title:
+                try:
+                    summary.retitle(rec, data)
+                except llm.LLMError:
+                    pass  # the summary is saved; the title stays the first sentence
+            return data
 
         def done(_data=None):
             self._running = None

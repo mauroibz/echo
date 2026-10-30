@@ -63,6 +63,9 @@ class SettingsPage(QWidget):
         self.auto.setChecked(cfg.auto_summarize)
         self.auto.toggled.connect(self._update_warning)
         lay.addWidget(self.auto)
+        self.titles = QCheckBox("Give recordings you did not name a short title from their summary")
+        self.titles.setChecked(cfg.auto_title)
+        lay.addWidget(self.titles)
         self.warning = QLabel()
         self.warning.setWordWrap(True)
         theme.set_role(self.warning, warn=True)
@@ -80,7 +83,8 @@ class SettingsPage(QWidget):
         self._update_warning()
 
     def _config(self) -> config.Config:
-        return config.Config(self.url.text().strip(), self.model.text().strip(), self.auto.isChecked())
+        return config.Config(self.url.text().strip(), self.model.text().strip(), self.auto.isChecked(),
+                             self.titles.isChecked())
 
     def _update_warning(self):
         url = self.url.text().strip()

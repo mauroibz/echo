@@ -216,6 +216,27 @@ def write(rec: Recording, progress=None, cfg: config.Config | None = None) -> di
     return data
 
 
+TITLE_PROMPT = """Write a title for this meeting from its summary: at most 8 words, in {language},
+naming what it was about (and with whom, when that is clear). No quotes, no date, no final period.
+Output only the title."""
+TITLE_MAX = 80
+
+
+def retitle(rec: Recording, data: dict, cfg: config.Config | None = None) -> str | None:
+    """Give the recording a short title from its summary when its title is still automatic (the
+    transcript's first sentence); a title the user typed is never touched. Returns the new title."""
+    if not rec.meta.title_auto:
+        return None
+    lang = data.get("language") or language(rec)
+    title = llm.complete(TITLE_PROMPT.format(language=LANGUAGES.get(lang, lang)), data["text"], cfg)
+    title = " ".join(title.strip().strip('"“”«»').split()).rstrip(".")[:TITLE_MAX].strip()
+    rec.reload()
+    if not title or not rec.meta.title_auto:  # renamed by the user meanwhile
+        return None
+    rec.update(title=title)  # still automatic: a new transcript may replace it, and then a new summary
+    return title
+
+
 def load(rec: Recording) -> dict | None:
     try:
         d = read_json(rec.path(FILE))

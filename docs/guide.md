@@ -345,7 +345,10 @@ language.
 
 Each recording is summarized as soon as its transcript is ready, one at a time; uncheck "Summarize
 each recording when its transcript is ready" in Settings → Summaries to summarize only when you
-press the button. If you edit the transcript afterwards, the view says so. A transcript of more
+press the button. A recording you did not name then gets a short title from its summary instead
+of its first sentence (uncheck "Give recordings you did not name a short title from their summary"
+to keep the first sentence); a title you typed is never changed. If you edit the transcript
+afterwards, the view says so. A transcript of more
 than about an hour of talk (60,000 characters) is summarized in parts that are then joined.
 Summaries are included in notes exported to a folder, under "Resumen".
 

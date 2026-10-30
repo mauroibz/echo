@@ -30,6 +30,7 @@ class Config:
     llm_url: str = ""  # an OpenAI-compatible base URL ending in /v1, or https://api.anthropic.com/v1
     llm_model: str = ""
     auto_summarize: bool = True  # summarize each transcript as soon as it is ready (the user's choice)
+    auto_title: bool = True  # a short title from the summary for recordings whose title is automatic
 
     @property
     def enabled(self) -> bool:
@@ -57,8 +58,9 @@ def load() -> Config:
     for name in ("llm_url", "llm_model"):
         if isinstance(raw.get(name), str):
             setattr(c, name, raw[name].strip())
-    if isinstance(raw.get("auto_summarize"), bool):
-        c.auto_summarize = raw["auto_summarize"]
+    for name in ("auto_summarize", "auto_title"):
+        if isinstance(raw.get(name), bool):
+            setattr(c, name, raw[name])
     return c
 
 
@@ -70,7 +72,9 @@ def save(c: Config) -> None:
                       "# OpenAI-compatible server, ending in /v1. Empty = summaries off\n"
                       f"llm_url = {q(c.llm_url)}\n\n# Model name on that server\nllm_model = {q(c.llm_model)}\n\n"
                       "# Summarize each transcript as soon as it is ready\n"
-                      f"auto_summarize = {'true' if c.auto_summarize else 'false'}\n",
+                      f"auto_summarize = {'true' if c.auto_summarize else 'false'}\n\n"
+                      "# A short title from the summary, for recordings you did not name\n"
+                      f"auto_title = {'true' if c.auto_title else 'false'}\n",
                       mkdir=True)
 
 

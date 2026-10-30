@@ -226,7 +226,7 @@ meetings, open items both ways, and the notes from their profile. It is built fr
 | 0 | `add-studio-summaries` | done; 1.8 on real recordings is open |
 | 1 | `add-studio-notes-first` | done; archives after `add-studio-summaries` |
 | 1 | `add-studio-templates` | done; archives after `add-studio-summaries` |
-| 1 | `add-studio-auto` | planned |
+| 1 | `add-studio-auto` | done; archives after `add-studio-summaries` |
 | 2 | `add-studio-window` | planned |
 | 3 | `add-studio-actions` | planned |
 | 3 | `add-studio-follow-up` | planned |

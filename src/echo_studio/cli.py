@@ -59,6 +59,12 @@ def cmd_summarize(args) -> int:
                 _err(f"{rid}: {e}")
                 code = FAILED
                 continue
+            if cfg.auto_title:
+                try:
+                    if title := summary.retitle(rec, data, cfg):
+                        _err(f"{rid}: titled “{title}”")
+                except llm.LLMError as e:
+                    _err(f"{rid}: no title: {e}")
         if args.json:
             d = record(rec)
             d["summary"] = {"path": str(rec.path(summary.FILE).resolve()), "created": data.get("created"),
