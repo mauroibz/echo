@@ -329,7 +329,7 @@ no folder yet; it waits for the dictionary to be in daily use. Summaries are Ech
 | 8 | `add-extension-points` | product | archived |
 | 9 | `refine-window` | product | archived |
 | 9 | `add-motion` | product | archived |
-| 9 | `add-record-dock` | product | planned (no folder yet) |
+| 9 | `add-record-dock` | product | done; always-on-top on KDE Wayland is open |
 
 The open items are listed under "Blocked" in each change's `tasks.md`, with what a person has
 to run and look for.

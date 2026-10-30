@@ -165,10 +165,13 @@ class Clock(QObject):
 
     def _update(self):
         run = bool(self._holders) and self.shown and on()
-        if run and not self._timer.isActive():
-            self._timer.start()
-        elif not run and self._timer.isActive():
-            self._timer.stop()
+        try:
+            if run and not self._timer.isActive():
+                self._timer.start()
+            elif not run and self._timer.isActive():
+                self._timer.stop()
+        except RuntimeError:
+            pass  # the application is shutting down and Qt has deleted the timer
 
 
 _clock: list[Clock] = []

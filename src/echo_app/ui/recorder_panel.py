@@ -156,6 +156,7 @@ class RecorderPanel(QWidget):
         super().__init__(parent)
         self.library = library
         self.session: recorder.Session | None = None
+        self.marks = 0  # markers taken in the current recording
         self._sources: list[Source] = []
         self._monitor: monitor.LevelMonitor | None = None
         self._out_monitor: monitor.LevelMonitor | None = None  # the computer audio, when it is recorded too
@@ -588,6 +589,8 @@ class RecorderPanel(QWidget):
     # ---- recording ----
     def attach(self, sess: recorder.Session | None):
         was = self.session is not None
+        if sess is not None and (self.session is None or self.session.rec.id != sess.rec.id):
+            self.marks = len(sess.rec.meta.markers)  # a recording attached midway may have some
         self.session = sess
         if sess is None:
             self._close_note()
@@ -663,12 +666,27 @@ class RecorderPanel(QWidget):
         except recorder.RecorderError as e:
             self.message.emit(str(e))
             return
+        self.marks += 1
         self._ripple.play()
         self.message.emit(f"Marker at {fmt_duration(sess.status().get('elapsed', 0))}.")
         self.note.clear()
         self.note.show()
         self.note.setFocus()
         self._note_timer.start()
+
+    def mark_quietly(self) -> bool:
+        """A marker with no note field: from the tray or the dock, where the window may be hidden."""
+        sess = self.session
+        if sess is None:
+            return False
+        try:
+            sess.mark()
+        except recorder.RecorderError as e:
+            self.message.emit(str(e))
+            return False
+        self.marks += 1
+        self._ripple.play()
+        return True
 
     def _save_note(self):
         text = self.note.text().strip()

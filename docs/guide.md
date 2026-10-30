@@ -62,6 +62,15 @@ the keys. Where the desktop has no shortcuts portal, bind keys to `echo-app reco
 `echo-app record --quick-note` in its keyboard settings. Recordings you have not renamed take
 their title from their first sentence.
 
+**Recording dock.** Ctrl+Shift+D (or View → Recording dock) swaps the window for a small dock
+that floats over other windows: Record, the time, a small wave that follows your voice, Marker
+(with a count), Pause, Stop and a button back to the window. While recording, with the pointer
+away for a few seconds it shrinks to the time; point at it for the rest. Problems such as a silent
+microphone show in it in amber. After Stop it says the recording was saved and how the
+transcription goes; Open shows it in the window. Closing the window while recording also shows
+the dock. Drag it anywhere. GNOME on Wayland does not let applications stay above other windows,
+so there the dock is a small normal window; Ctrl+Shift+D and the tray bring it back.
+
 **Markers.** While recording, press M, the marker button or the tray menu's entry to drop a
 marker; type a short note if you like, without stopping. Markers show on the waveform, beside
 the transcript and in Details, where a click plays from one; Alt+→

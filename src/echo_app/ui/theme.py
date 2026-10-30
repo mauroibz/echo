@@ -440,6 +440,12 @@ QWidget#sidebar QFrame#recblock[recording="true"] {{ background: {rgba('coral', 
 QWidget#sidebar QFrame#recblock[recording="true"] QToolButton#pause {{ background: {glass_hover}; border: none; }}
 QWidget#sidebar QFrame#recblock[recording="true"] QToolButton#pause:hover {{
     background: {rgba('on_deep', 0.24)}; }}
+QWidget#sidebar QToolButton#dockrecord {{ border: none; border-radius: 22px; background: qlineargradient(x1:0, y1:0,
+    x2:1, y2:1, stop:0 {t.coral}, stop:1 {t.coral_deep}); }}
+QWidget#sidebar QToolButton#dockrecord[recording="true"] {{ background: {t.coral}; }}
+QWidget#sidebar QToolButton#dockbtn {{ background: {glass}; border: none; border-radius: 20px; padding: 0 10px; }}
+QWidget#sidebar QToolButton#dockbtn:hover {{ background: {glass_hover}; }}
+QWidget#sidebar QToolButton#dockrecord:hover {{ background: #ff8a8a; }}
 QWidget#sidebar QToolButton#sourcebtn, QWidget#sidebar QToolButton#flat {{ background: transparent; border: none;
     color: {t.on_deep_muted}; font-weight: 600; padding: 4px 8px; }}
 QWidget#sidebar QToolButton#sourcebtn:hover, QWidget#sidebar QToolButton#flat:hover {{ color: {t.on_deep};

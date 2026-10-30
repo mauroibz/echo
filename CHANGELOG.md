@@ -25,6 +25,9 @@ tag.
   recordings sliding into the list, a sweep along a running transcription, smooth scrolling to
   the passage that plays, Details sliding open and messages fading. Settings → Appearance →
   "Reduce motion" turns them off, and Echo leaves them off when the desktop has animations off.
+- A recording dock (Ctrl+Shift+D): a small pill above other windows with Record, the time, the
+  level, Marker, Pause and Stop, that shrinks to the time when you are not pointing at it and says
+  when the recording is saved. Closing the window while recording shows it.
 
 ## 1.3.0 - 2026-10-29
 

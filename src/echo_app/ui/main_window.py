@@ -376,6 +376,11 @@ class MainWindow(QMainWindow):
         self.worker_label.hide()
         self.toast = Toast(self)
         self.overlay = DropOverlay(self)
+        from .record_dock import RecordDock
+
+        self.dock = RecordDock(self.recorder_panel, self.library)
+        self.dock.open_window.connect(self._from_dock)
+        self.dock.visibility_changed.connect(self._dock_shown)
 
         self._space = _SpaceFilter(self.player.toggle_play)
         self.list.installEventFilter(self._space)
@@ -560,6 +565,7 @@ class MainWindow(QMainWindow):
         self.a_times.setCheckable(True)
         self.a_times.setChecked(self.transcript.show_timestamps)
         self.transcript.timestamps_toggled.connect(self.a_times.setChecked)
+        self.a_dock = self._act(v, "Recording d&ock", self.toggle_dock, "Ctrl+Shift+D", "mic")
         self.a_details = self._act(v, "&Details", lambda on: self.show_details(on), "Ctrl+I", "details")
         self.a_details.setCheckable(True)
         self.a_details.setChecked(self.details_btn.isChecked())
@@ -1569,15 +1575,41 @@ class MainWindow(QMainWindow):
 
     def _tray_mark(self):
         """From the tray the window may be hidden: mark without opening the note field."""
-        sess = self.recorder_panel.session
-        if sess is None:
-            return
-        try:
-            sess.mark()
-        except recorder.RecorderError as e:
-            self.show_message(str(e))
-            return
-        self.tray.showMessage(APP_NAME, "Marker added.", QSystemTrayIcon.MessageIcon.Information, 2000)
+        if self.recorder_panel.mark_quietly():
+            self.tray.showMessage(APP_NAME, "Marker added.", QSystemTrayIcon.MessageIcon.Information, 2000)
+
+    # ---- the recording dock ----
+    def toggle_dock(self):
+        """Swap the window for the dock, or the dock for the window (Ctrl+Shift+D)."""
+        if self.dock.isVisible():
+            self._from_dock("")
+        else:
+            self.show_dock()
+            self.hide()
+
+    def show_dock(self):
+        pos = self.state.get("dock_pos")
+        if not self.dock.isVisible():
+            self.dock.show()
+            self.dock.adjustSize()
+            if isinstance(pos, list) and len(pos) == 2:
+                self.dock.move(*pos)  # honored where the platform lets a window place itself (X11)
+            else:
+                screen = self.screen().availableGeometry()
+                self.dock.move(screen.center().x() - self.dock.width() // 2, screen.top() + 24)
+            motion.fade(self.dock, 1.0, motion.MEDIUM, start=0.0)
+        self.dock.raise_()
+
+    def _from_dock(self, rid: str):
+        p = self.dock.pos()
+        self.state.set("dock_pos", [p.x(), p.y()])
+        self.dock.hide()
+        self.show_window()
+        if rid:
+            self._select(rid)
+
+    def _dock_shown(self, shown: bool):
+        motion.clock().set_shown(shown or (self.isVisible() and not self.isMinimized()))
 
     def _crop_saved(self, rid: str):
         rec = self.library.get(rid)
@@ -1614,7 +1646,7 @@ class MainWindow(QMainWindow):
     def _set_shown(self, shown: bool):
         """Meters and animation run only while the window is on screen."""
         self.recorder_panel.set_window_shown(shown)
-        motion.clock().set_shown(shown)
+        motion.clock().set_shown(shown or self.dock.isVisible())
 
     def _animate_list(self):
         """Frames for the list while a row is arriving or a transcription runs (its sweep)."""
@@ -1655,18 +1687,14 @@ class MainWindow(QMainWindow):
         if self._quitting:
             e.accept()
             return
-        if self.recorder_panel.session is not None and QSystemTrayIcon.isSystemTrayAvailable():
+        if self.recorder_panel.session is not None:
+            # The recording goes on in the dock (and the tray, where there is one).
             e.ignore()
             self.hide()
-            self.tray.show()
-            if not self._told_background:
-                self.tray.showMessage(APP_NAME, "Still recording. Use the tray icon to show Echo or stop.",
-                                      QSystemTrayIcon.MessageIcon.Information, 5000)
-                self._told_background = True
+            self.show_dock()
+            if QSystemTrayIcon.isSystemTrayAvailable():
+                self.tray.show()
             return
-        if self.recorder_panel.session is not None:
-            QMessageBox.information(self, APP_NAME, "The recording continues in the background. "
-                                    "Open Echo again to stop it.")
         self._quitting = True
         self.shutdown()
         e.accept()
@@ -1684,6 +1712,7 @@ class MainWindow(QMainWindow):
 
     def shutdown(self):
         self._refresh_timer.stop()
+        self.dock.close()
         motion.clock().release(self.list)
         self.watcher.stop()
         if self.shortcuts is not None:
