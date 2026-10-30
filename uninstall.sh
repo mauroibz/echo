@@ -12,7 +12,7 @@ rm -f "$HOME/.local/bin/echo-app" \
       "$data_home/applications/echo-app.desktop" \
       "$data_home/icons/hicolor/scalable/apps/echo-app.svg"
 command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database -q "$data_home/applications" 2>/dev/null || true
-rm -rf "$root/.venv" "$root/.install-profile"
+rm -rf "$root/.venv" "$root/.install-profile" "$root/.install-extensions"
 echo "Removed the launcher, menu entry and $root/.venv"
 
 data_dir="$data_home/echo"

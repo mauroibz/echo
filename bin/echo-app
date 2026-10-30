@@ -7,4 +7,7 @@ if [ ! -x "$root/.venv/bin/python" ]; then
     echo "Echo is not installed. Run $root/install.sh" >&2
     exit 1
 fi
+# Extensions the installer included (install.sh --with-studio); none when the file is absent.
+ECHO_EXTENSIONS=$(cat "$root/.install-extensions" 2>/dev/null || true)
+export ECHO_EXTENSIONS
 PYTHONPATH="$root/src" exec "$root/.venv/bin/python" -P -m echo_app "$@"

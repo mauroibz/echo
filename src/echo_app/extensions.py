@@ -30,12 +30,22 @@ log = logging.getLogger(__name__)
 KNOWN = ("echo_studio",)
 
 
-@cache
-def loaded() -> tuple[ModuleType, ...]:
+def chosen() -> tuple[str, ...]:
+    """The extensions to load: those the installer included (`install.sh --with-studio`), which the
+    launcher passes as ECHO_EXTENSIONS; every known one present when Echo runs without the launcher
+    (from a checkout, in tests)."""
     if os.environ.get("ECHO_NO_EXTENSIONS"):
         return ()
+    if "ECHO_EXTENSIONS" in os.environ:
+        wanted = {n.strip() for n in os.environ["ECHO_EXTENSIONS"].replace(",", " ").split()}
+        return tuple(n for n in KNOWN if n in wanted)
+    return KNOWN
+
+
+@cache
+def loaded() -> tuple[ModuleType, ...]:
     mods = []
-    for name in KNOWN:
+    for name in chosen():
         try:
             if importlib.util.find_spec(name) is None:
                 continue

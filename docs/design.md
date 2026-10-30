@@ -643,7 +643,11 @@ one window, one data folder. The only one planned is Echo Studio (`echo_studio`)
 and other features that need a language model or a cloud service. Echo ships without it and is
 complete without it.
 
-Echo looks for the names in `extensions.KNOWN` and imports the ones present; entry points would
+Echo looks for the names in `extensions.KNOWN` and imports the ones the installer included:
+`install.sh --with-studio` writes `.install-extensions` in the clone, the launcher passes it as
+`ECHO_EXTENSIONS`, and `--without-studio` removes it (both remembered across installs, like the
+transcription profile). Run without the launcher (from a checkout, in tests), every known
+extension present is loaded. `echo-app doctor` names the loaded ones. Entry points would
 need Echo installed as a distribution, which it is not. An extension's module defines any of a
 few hooks, each called where Echo already does that kind of work: `register_cli` (subcommands),
 `doctor_checks`, `markdown_sections` (sections in a recording's note, after its header),

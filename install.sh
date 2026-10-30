@@ -1,12 +1,15 @@
 #!/bin/sh
 # Echo installer. Installs into this clone (.venv) and your home directory only.
 # Usage: ./install.sh [--with-transcription[=cuda|cpu|rocm] | --without-transcription]
+#                    [--with-studio | --without-studio]
 #   --with-transcription alone picks the profile from the hardware: cuda for an NVIDIA GPU,
-#   rocm for an AMD GPU, cpu otherwise.
+#   rocm for an AMD GPU, cpu otherwise. --with-studio adds Echo Studio (summaries and questions
+#   from a language-model server you choose). Both choices are remembered for the next install.
 set -eu
 
 root=$(cd "$(dirname "$0")" && pwd)
 profile_file="$root/.install-profile"
+extensions_file="$root/.install-extensions"
 bin_dir="$HOME/.local/bin"
 data_home="${XDG_DATA_HOME:-$HOME/.local/share}"
 apps_dir="$data_home/applications"
@@ -36,13 +39,16 @@ profile=""
 [ -f "$profile_file" ] && profile=$(cat "$profile_file")
 [ "$profile" = full ] && profile=cuda  # installs from before the compute profiles
 detected=no
+studio=keep
 for arg in "$@"; do
     case "$arg" in
         --with-transcription) profile=$(detect_profile); detected=yes
             [ "$profile" = cpu-small-gpu ] && { profile=cpu; small_gpu=yes; } ;;
         --with-transcription=cuda|--with-transcription=cpu|--with-transcription=rocm) profile=${arg#*=} ;;
         --without-transcription) profile=base ;;
-        -h|--help) sed -n '2,5p' "$0"; exit 0 ;;
+        --with-studio) studio=yes ;;
+        --without-studio) studio=no ;;
+        -h|--help) sed -n '2,7p' "$0"; exit 0 ;;
         *) echo "Unknown option: $arg" >&2; exit 2 ;;
     esac
 done
@@ -106,6 +112,16 @@ else
     uv sync --locked --no-dev --extra "$profile"
 fi
 echo "$profile" > "$profile_file"
+if [ "$studio" = yes ]; then
+    if [ -d "$root/src/echo_studio" ]; then
+        echo "echo_studio" > "$extensions_file"
+        say "Including Echo Studio"
+    else
+        echo "Echo Studio is not in this copy of Echo; installing without it." >&2
+    fi
+elif [ "$studio" = no ]; then
+    rm -f "$extensions_file"
+fi
 
 say "Adding launcher and menu entry"
 mkdir -p "$bin_dir" "$apps_dir" "$icon_dir"

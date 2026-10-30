@@ -65,6 +65,27 @@ def test_switched_off_by_environment(fake_ext, monkeypatch):
     assert extensions.loaded() == ()
 
 
+def test_the_installers_choice(fake_ext, monkeypatch):
+    monkeypatch.setenv("ECHO_EXTENSIONS", "")  # the launcher, installed without --with-studio
+    assert fake_ext() == ()
+    monkeypatch.setenv("ECHO_EXTENSIONS", "fake_ext\n")
+    extensions.loaded.cache_clear()
+    assert [m.__name__ for m in extensions.loaded()] == ["fake_ext"]
+    monkeypatch.delenv("ECHO_EXTENSIONS")  # from a checkout: whatever is present
+    extensions.loaded.cache_clear()
+    assert extensions.chosen() == ("fake_ext",)
+
+
+def test_doctor_names_the_extensions(fake_ext, monkeypatch):
+    def line():
+        return next(c for c in doctor.run_all(gpu=False) if c.name == "Extensions")
+
+    extensions.loaded.cache_clear()
+    assert line().detail == "none (Echo alone)" and "--with-studio" in line().fix
+    fake_ext()
+    assert line().status == doctor.OK and line().detail == "fake_ext"
+
+
 def test_broken_extension_is_skipped(fake_ext, caplog):
     with caplog.at_level(logging.ERROR, logger="echo_app.extensions"):
         assert fake_ext("raise RuntimeError('broken on import')\n") == ()

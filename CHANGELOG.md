@@ -10,6 +10,8 @@ tag.
 - For extensions: screens in place of the selected recording (`add_screen`), `show_recording` to
   play a recording from a time, sections in a person's profile (`person_sections`), and
   `Index.passages` to quote what was said. Without an extension nothing changes.
+- `install.sh --with-studio` / `--without-studio` choose whether an installed Echo loads Echo
+  Studio, remembered across installs; `echo-app doctor` names the loaded extensions.
 
 ## 1.4.1 - 2026-10-30
 

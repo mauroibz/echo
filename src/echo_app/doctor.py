@@ -364,8 +364,14 @@ def run_all(gpu: bool = True) -> list[Check]:
     checks += check_worker(gpu=gpu)
     from . import extensions
 
+    names = [m.__name__ for m in extensions.loaded()]
+    checks.append(Check("Extensions", OK, ", ".join(EXTENSION_NAMES.get(n, n) for n in names) if names
+                        else "none (Echo alone)", "" if names else "Echo Studio: ./install.sh --with-studio"))
     checks += extensions.gather("doctor_checks")
     return checks
+
+
+EXTENSION_NAMES = {"echo_studio": "Echo Studio"}
 
 
 def render(checks: list[Check], color: bool = True) -> str:

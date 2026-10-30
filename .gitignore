@@ -7,5 +7,6 @@ __pycache__/
 /dist/
 *.egg-info/
 .install-profile
+.install-extensions
 # Local agent tooling (OpenSpec slash commands); not part of the app
 /.claude/
