@@ -6,8 +6,8 @@ import os
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
-from PySide6.QtWidgets import (QApplication, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QTextBrowser,
-                               QToolButton, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QApplication, QFormLayout, QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton,
+                               QTextBrowser, QToolButton, QVBoxLayout, QWidget)
 
 from echo_app.ui import theme
 from echo_app.ui.common import icon, run_task
@@ -149,6 +149,7 @@ class SummaryView(QWidget):
         self.text = QTextBrowser()
         self.text.setOpenExternalLinks(True)
         self.text.setAccessibleName("Summary")
+        self.text.setFrameShape(QFrame.Shape.NoFrame)  # it sits in the reading card, like the transcript
         lay.addWidget(self.text, 1)
         self.show_subject(None, None)
 
