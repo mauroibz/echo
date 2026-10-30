@@ -594,7 +594,9 @@ The recording dock (`ui/record_dock.py`) is a frameless `Qt.Tool` window with
 its buttons call the recorder panel, and it reads the session's status on its own 200 ms timer
 while shown, so the window, the dock, the tray and the CLI always agree. A press on it starts
 `startSystemMove()`, which also works on Wayland, where a window cannot place itself; its place
-is kept in `ui.json` (`dock_pos`) and restored where the platform allows. Markers from the dock
+is kept in `ui.json` (`dock_pos`) and restored where the platform allows. Under Wayland,
+GNOME and KWin ignore the stay-on-top hint; KWin can keep the dock above by the user's own
+rule, which the guide explains. Markers from the dock
 or the tray skip the note field, which lives in the hidden window. The window's shortcuts do not
 reach a hidden window, so the dock has its own (Ctrl+R, Ctrl+Shift+R, M, Ctrl+Shift+D).
 

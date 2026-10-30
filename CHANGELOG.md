@@ -27,7 +27,8 @@ tag.
   "Reduce motion" turns them off, and Echo leaves them off when the desktop has animations off.
 - A recording dock (Ctrl+Shift+D): a small pill above other windows with Record, the time, the
   level, Marker, Pause and Stop, that shrinks to the time when you are not pointing at it and says
-  when the recording is saved. Closing the window while recording shows it.
+  when the recording is saved. Closing the window while recording shows it. Under Wayland it stays
+  above other windows only if you ask KDE to (Alt+F3 → More Actions → Keep Above Others).
 
 ## 1.3.0 - 2026-10-29
 

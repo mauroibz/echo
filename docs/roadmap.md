@@ -329,7 +329,7 @@ no folder yet; it waits for the dictionary to be in daily use. Summaries are Ech
 | 8 | `add-extension-points` | product | archived |
 | 9 | `refine-window` | product | archived |
 | 9 | `add-motion` | product | archived |
-| 9 | `add-record-dock` | product | done; always-on-top on KDE Wayland is open |
+| 9 | `add-record-dock` | product | archived |
 
 The open items are listed under "Blocked" in each change's `tasks.md`, with what a person has
 to run and look for.
@@ -348,5 +348,5 @@ in, so this does not wait for its archive. `add-call-recording` before `add-spea
 `add-speaker-turns` before `add-speaker-relabel` (it reassigns the cut pieces too); its code is
 in, so this does not wait for its archive.
 `refine-window` before `add-motion` and `add-record-dock`: both animate and reuse the parts it
-lays out (the recorder block, the player dock). The dock's "always on top" must be checked on
-GNOME and KDE under Wayland before its design is final.
+lays out (the recorder block, the player dock). Under Wayland neither GNOME nor KDE keeps the
+dock above other windows; KWin does on the user's request (see the guide).

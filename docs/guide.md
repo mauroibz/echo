@@ -68,8 +68,10 @@ that floats over other windows: Record, the time, a small wave that follows your
 away for a few seconds it shrinks to the time; point at it for the rest. Problems such as a silent
 microphone show in it in amber. After Stop it says the recording was saved and how the
 transcription goes; Open shows it in the window. Closing the window while recording also shows
-the dock. Drag it anywhere. GNOME on Wayland does not let applications stay above other windows,
-so there the dock is a small normal window; Ctrl+Shift+D and the tray bring it back.
+the dock. Drag it anywhere. Under Wayland, GNOME and KDE Plasma do not let applications stay
+above other windows, so there the dock is a small normal window; Ctrl+Shift+D and the tray bring
+it back. On KDE Plasma you can keep it above yourself: click the dock, press Alt+F3 and choose
+More Actions → Keep Above Others, or add a window rule for the title "Echo recording".
 
 **Markers.** While recording, press M, the marker button or the tray menu's entry to drop a
 marker; type a short note if you like, without stopping. Markers show on the waveform, beside
