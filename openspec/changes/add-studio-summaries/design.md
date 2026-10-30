@@ -82,3 +82,10 @@ of its recordings or outputs are in this repository.
   always on in current models, counts against it, and on the models that take it
   `fallbacks: "default"` so a declined request is answered by another model in the same call.
   `refusal` and `max_tokens` stops are errors, so a partial summary is never saved.
+
+## Task 1.8 so far
+
+- 2026-10-30, Anthropic: one call of 40 minutes (two tracks), in one
+  request. The user read it against the meeting and found nothing invented or missing; the only
+  errors were names the transcription had misspelled, which the summary repeats. Still to do:
+  four more recordings, one over 60,000 characters (the split-and-merge path), and a local server.
