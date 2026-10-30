@@ -134,6 +134,7 @@ class TimestampMargin(QWidget):
 
 class Editor(QPlainTextEdit):
     ctrl_clicked = Signal(int)  # character position
+    clicked = Signal(int)  # character position of a plain click that selected nothing
     heading_clicked = Signal(int)  # a linked set's part number (from 0)
     marker_clicked = Signal(float)  # seconds
     speaker_clicked = Signal(int, object)  # speaker number, global position
@@ -317,7 +318,16 @@ class Editor(QPlainTextEdit):
             if k is not None:
                 self.heading_clicked.emit(k)
                 return
+        self._plain_press = e.button() == Qt.MouseButton.LeftButton and not e.modifiers()
         super().mousePressEvent(e)
+
+    def mouseReleaseEvent(self, e: QMouseEvent):
+        super().mouseReleaseEvent(e)
+        # On release, so a drag that selects words or a double-click on one does not move playback.
+        if getattr(self, "_plain_press", False) and e.button() == Qt.MouseButton.LeftButton:
+            self._plain_press = False
+            if not self.textCursor().hasSelection():
+                self.clicked.emit(self.textCursor().position())
 
     def mouseMoveEvent(self, e: QMouseEvent):
         if not e.buttons() and self._head_rects:

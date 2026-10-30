@@ -223,6 +223,7 @@ class MainWindow(LibraryActionsMixin, SearchImportMixin, CaptureMixin, QMainWind
         self.transcript.profile_requested.connect(self.open_people)
         self._people_dialog = None
         self.transcript.seek_requested.connect(self._seek_and_play)
+        self.transcript.position_requested.connect(self.player.seek)
         self.transcript.download_requested.connect(self.show_model_dialog)
         self.transcript.changed.connect(self.model.reload)
         self.transcript.part_requested.connect(self._show_part)

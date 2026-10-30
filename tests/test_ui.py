@@ -10,9 +10,9 @@ import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QEventLoop, QMimeData, QPointF, Qt, QTimer, QUrl  # noqa: E402
+from PySide6.QtCore import QEvent, QEventLoop, QMimeData, QPointF, Qt, QTimer, QUrl  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
-from PySide6.QtGui import QDropEvent  # noqa: E402
+from PySide6.QtGui import QDropEvent, QMouseEvent, QTextCursor  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from echo_app import importer, settings  # noqa: E402
@@ -187,6 +187,37 @@ def test_follow_along_and_ctrl_click(window, lib, tmp_path):
     tp.seek_requested.connect(seeks.append)
     tp._on_ctrl_click(3)
     assert seeks == [0.0]
+
+
+def test_click_in_text_moves_playback_near_the_word(window, lib, tmp_path):
+    rec = _transcribed(lib, tmp_path)
+    window._select(rec.id)
+    pump(100)
+    tp = window.transcript
+    # "Segunda parte." spans 13..27 and plays 2.0..3.9: halfway in, less the lead, never before 2.0.
+    assert tp.time_at(20) == pytest.approx(2.0 + 1.9 * 7 / 14 - 0.5)
+    assert tp.time_at(13) == 2.0
+    moved = []
+    window.player.position_changed.connect(moved.append)
+    ed = tp.editor
+    cur = ed.textCursor()
+    cur.setPosition(20)
+    QTest.mouseClick(ed.viewport(), Qt.MouseButton.LeftButton, pos=ed.cursorRect(cur).center())
+    pump(50)
+    assert moved and 2.0 <= moved[-1] <= 3.9
+    assert not window.player.is_playing()  # a click moves playback; it does not start it
+    # Dragging to select words does not move it.
+    moved.clear()
+    a, b = QTextCursor(ed.document()), QTextCursor(ed.document())
+    a.setPosition(14)
+    b.setPosition(24)
+    pa, pb = QPointF(ed.cursorRect(a).center()), QPointF(ed.cursorRect(b).center())
+    left, none = Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier
+    for kind, at, buttons in ((QEvent.Type.MouseButtonPress, pa, left), (QEvent.Type.MouseMove, pb, left),
+                              (QEvent.Type.MouseButtonRelease, pb, Qt.MouseButton.NoButton)):
+        QApplication.sendEvent(ed.viewport(), QMouseEvent(kind, at, ed.viewport().mapToGlobal(at), left,
+                                                          buttons, none))
+    assert ed.textCursor().hasSelection() and not moved
 
 
 def test_find_is_accent_insensitive(window, lib, tmp_path):

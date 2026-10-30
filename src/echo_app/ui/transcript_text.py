@@ -13,6 +13,7 @@ AUTOSAVE_MS = 1000
 HEAD, LOCK, SEP = 100_000, 200_000, 300_000
 NAME_SAMPLE_S = 6.0  # how much of a speaker the naming bar plays: enough to know a voice
 REPLAY_AFTER_MS = 1000  # after this long without typing, the passage being corrected plays again
+CLICK_LEAD_S = 0.5  # a click in the text starts playback this much before the word, to catch it whole
 BASE_MARGIN = 14  # the text's margin inside the editor
 HEAD_ROOM = 34  # with a speaker's name over the first paragraph: room above it for the name
 

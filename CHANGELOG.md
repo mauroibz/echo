@@ -5,6 +5,11 @@ tag.
 
 ## Unreleased
 
+### Added
+
+- Click a word in the transcript to move playback close to it, playing or paused. Ctrl+click
+  still plays a passage from its start.
+
 ## 1.4.0 - 2026-10-30
 
 ### Changed

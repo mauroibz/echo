@@ -107,7 +107,8 @@ transcribes an hour of audio in about a minute; a recent desktop processor in fi
 new transcription. Copy with Ctrl+Shift+C or the Copy button (Ctrl+Alt+C with passage times),
 find with Ctrl+F, export with Ctrl+E or Export. ⋯ → Passage times (Ctrl+T) shows when each
 passage starts. While playing,
-the current passage is highlighted, in edited text too; Ctrl+click a passage to hear it.
+the current passage is highlighted, in edited text too. Click a word to move playback close to
+it (half a second early, playing or paused); Ctrl+click a passage to play it from its start.
 
 **Correct with the audio.** Ctrl+. plays the passage under the cursor (again to stop);
 Ctrl+Alt+. and Ctrl+Alt+, move to the next or previous passage and play it; Ctrl+Shift+. goes to

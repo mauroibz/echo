@@ -22,8 +22,8 @@ from .editor import Editor, StateView
 from .transcript_find import FindMixin
 from .transcript_sets import SetPart, SetsMixin
 from .transcript_speakers import SpeakersMixin
-from .transcript_text import (AUTOSAVE_MS, BASE_MARGIN, REPLAY_AFTER_MS, _estimate, _html, _plain,
-                              flag_reason, segment_offsets, shown_segments)
+from .transcript_text import (AUTOSAVE_MS, BASE_MARGIN, CLICK_LEAD_S, REPLAY_AFTER_MS, _estimate, _html,
+                              _plain, flag_reason, segment_offsets, shown_segments)
 
 log = logging.getLogger(__name__)
 
@@ -32,7 +32,8 @@ class TranscriptPanel(SetsMixin, SpeakersMixin, FindMixin, QWidget):
     """The transcript of the selected recording or set: state, editor, saving and the actions on
     it. Linked sets, speakers and finding live in their mixins (transcript_sets, _speakers, _find)."""
 
-    seek_requested = Signal(float)
+    seek_requested = Signal(float)  # play from here
+    position_requested = Signal(float)  # move playback here, playing or not
     part_requested = Signal(str)  # a linked set's part heading was clicked: show that recording
     message = Signal(str)
     download_requested = Signal()
@@ -170,6 +171,7 @@ class TranscriptPanel(SetsMixin, SpeakersMixin, FindMixin, QWidget):
         self.editor.document().setDocumentMargin(BASE_MARGIN)
         self.editor.textChanged.connect(self._on_text_changed)
         self.editor.ctrl_clicked.connect(self._on_ctrl_click)
+        self.editor.clicked.connect(self._on_click)
         self.editor.marker_clicked.connect(self.marker_clicked.emit)
         self.editor.speaker_clicked.connect(self._speaker_menu)
         self.editor.heading_clicked.connect(lambda k: self.part_requested.emit(self._parts[k].rec.id)
@@ -1014,6 +1016,23 @@ class TranscriptPanel(SetsMixin, SpeakersMixin, FindMixin, QWidget):
             if a <= pos <= b:
                 self.seek_requested.emit(start)
                 return
+
+    def time_at(self, pos: int) -> float | None:
+        """Where in the audio the text at `pos` is said, about: passages have times, words do not,
+        so the time is placed by how far into its passage `pos` is, a little early to catch it."""
+        for a, b, k in getattr(self, "_passages", []):
+            if a <= pos <= b:
+                seg = self._segments[k]
+                start = float(seg.get("start", 0.0))
+                end = max(start, float(seg.get("end", start)))
+                at = start + (end - start) * (pos - a) / max(1, b - a)
+                return max(start, at - CLICK_LEAD_S)
+        return None
+
+    def _on_click(self, pos: int):
+        at = self.time_at(pos)
+        if at is not None:
+            self.position_requested.emit(at)
 
     def _apply_selections(self):
         sels = []
