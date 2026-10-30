@@ -29,6 +29,7 @@ KEY_ENV = "ECHO_LLM_API_KEY"
 class Config:
     llm_url: str = ""  # an OpenAI-compatible base URL ending in /v1, or https://api.anthropic.com/v1
     llm_model: str = ""
+    auto_summarize: bool = True  # summarize each transcript as soon as it is ready (the user's choice)
 
     @property
     def enabled(self) -> bool:
@@ -56,6 +57,8 @@ def load() -> Config:
     for name in ("llm_url", "llm_model"):
         if isinstance(raw.get(name), str):
             setattr(c, name, raw[name].strip())
+    if isinstance(raw.get("auto_summarize"), bool):
+        c.auto_summarize = raw["auto_summarize"]
     return c
 
 
@@ -65,7 +68,9 @@ def save(c: Config) -> None:
 
     atomic_write_text(config_path(), "# Echo Studio settings\n\n"
                       "# OpenAI-compatible server, ending in /v1. Empty = summaries off\n"
-                      f"llm_url = {q(c.llm_url)}\n\n# Model name on that server\nllm_model = {q(c.llm_model)}\n",
+                      f"llm_url = {q(c.llm_url)}\n\n# Model name on that server\nllm_model = {q(c.llm_model)}\n\n"
+                      "# Summarize each transcript as soon as it is ready\n"
+                      f"auto_summarize = {'true' if c.auto_summarize else 'false'}\n",
                       mkdir=True)
 
 

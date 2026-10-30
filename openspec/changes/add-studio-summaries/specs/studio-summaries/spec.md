@@ -51,6 +51,26 @@ of the text it was made from. A failed request SHALL keep an earlier summary.
 - **WHEN** the server answers 401
 - **THEN** the error is shown with the server's message and the earlier summary is unchanged
 
+### Requirement: Summarized when the transcript is ready
+With a server set, each recording SHALL be summarized as soon as its transcript is written,
+unless the user turns that off in Settings, Summaries ("Summarize each recording when its
+transcript is ready", on by default). Summaries SHALL be made one at a time, a request from the
+Summary view going ahead of the automatic ones. A recording whose current summary was made from
+its current text SHALL not be summarized again. A failed automatic summary SHALL be shown in the
+Summary view and not tried again on its own until the transcript changes. For a remote server,
+Settings SHALL say that each transcript is sent to it as soon as it is ready.
+`echo-app summarize --all` SHALL summarize every transcribed recording whose summary is missing
+or out of date.
+
+#### Scenario: A new transcript
+- **WHEN** a recording's transcription finishes while Echo runs, with a server set
+- **THEN** its summary is written without the user pressing anything, and the Summary view shows
+  "Waiting to be summarized…" or "Summarizing…" meanwhile
+
+#### Scenario: Turned off
+- **WHEN** the user unchecks the setting and a transcript is written
+- **THEN** nothing is sent until the user presses Summarize
+
 ### Requirement: Long transcripts in parts
 A transcript over 60,000 characters SHALL be sent in parts of at most 40,000 characters cut
 between paragraphs, and the part summaries merged by one more request into one summary.

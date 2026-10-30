@@ -31,7 +31,13 @@ def cmd_summarize(args) -> int:
     lib = Library(load()[0].data_path)
     code = OK
     out = []
-    for rid in args.ids:
+    if args.all == bool(args.ids):
+        _err("give recording ids, or --all")
+        return USAGE
+    ids = args.ids or [r.id for r in lib.all() if summary.source_text(r) and _needs(r)]
+    if args.all:
+        _err(f"{len(ids)} recording(s) to summarize")
+    for rid in ids:
         rec = lib.get(rid)
         if rec is None:
             _err(f"{rid}: no such recording (see: echo-app list)")
@@ -60,6 +66,11 @@ def cmd_summarize(args) -> int:
     return code
 
 
+def _needs(rec) -> bool:
+    data = summary.load(rec)
+    return data is None or summary.stale(rec, data)
+
+
 def register(sub) -> None:
     import argparse
 
@@ -73,6 +84,8 @@ def register(sub) -> None:
         epilog="""examples:
   echo-app summarize 20261029-103000-ab12 --print
       summarize one recording and print the summary (Markdown)
+  echo-app summarize --all
+      summarize every transcribed recording that has no current summary
   echo-app summarize 20261029-103000-ab12 --json
       the recording as JSON (see: echo-app info ID --json) with a "summary" key
 
@@ -81,7 +94,9 @@ exit codes:
   1  a recording was not found, has no transcript, or the server failed
   2  usage error
   3  no server is set up""")
-    s.add_argument("ids", nargs="+", metavar="ID", help="recording ids (see: echo-app list)")
+    s.add_argument("ids", nargs="*", metavar="ID", help="recording ids (see: echo-app list)")
+    s.add_argument("--all", action="store_true",
+                   help="every transcribed recording whose summary is missing or out of date")
     s.add_argument("--force", action="store_true", help="summarize again even if the summary is current")
     s.add_argument("--print", action="store_true", help="print each summary to standard output")
     s.add_argument("--json", action="store_true", help="print the result as JSON")

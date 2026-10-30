@@ -59,14 +59,11 @@ same from the CLI.
 - Modifies `studio-summaries`. `summary.json` records the template's name and hash.
 - Echo base: none. Tag categories already exist (`library.tag_category`).
 
-### S3 Automatic titles and automatic summaries (`add-studio-auto`)
+### S3 Automatic titles (`add-studio-auto`)
 
-Two settings on the Summaries page:
+Summaries when a transcript is ready were moved into `add-studio-summaries` at the user's
+request, on by default. What is left here:
 
-- **Summarize when a transcript is ready.** Off by default. It listens to `transcribed` and
-  queues the recording. While the server is remote, the setting says so next to the checkbox.
-  Jobs run one at a time in the window process. A failure is noted in the Summary view, and the
-  recording is not retried until the transcript changes.
 - **Better titles.** On by default once a server is set. A recording whose title is still
   automatic (`title_auto`, today the transcript's first sentence) gets a short title from the
   summary. A title the user typed is never touched.
@@ -218,7 +215,7 @@ meetings, open items both ways, and the notes from their profile. It is built fr
 | Phase | Changes | Why in this order |
 |---|---|---|
 | 0 | 1.8 of `add-studio-summaries` | Every later item is a prompt over the base summary. |
-| 1 | S1 notes first, S2 templates, S3 auto | They improve the summary that exists, need nothing from Echo base, and are small. |
+| 1 | S1 notes first, S2 templates, S3 titles | They improve the summary that exists, need nothing from Echo base, and are small. |
 | 2 | Echo base hooks (`show_recording`, `person_sections`, passage search, what S8 lists); S8 window | One Echo release with the hooks, then the window the next items live in. |
 | 3 | S4 actions, S5 follow-up, S6 ask a recording | S5 needs S4's data. S6 needs `show_recording`. |
 | 4 | S7 ask the library; S9 install | S7 is the largest. S9 ships Studio as version 1. |

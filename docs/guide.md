@@ -341,13 +341,16 @@ you press Summarize.
 Once a server is set, a Transcript / Summary switch appears over the transcript. Summary shows
 the selected recording's summary, with Summarize (Summarize again once there is one) and Copy.
 The summary is grouped by topic and ends with the next steps and who does them, in the
-recording's language. If you edit the transcript afterwards, the view says so. A transcript of
-more than about an hour of talk (60,000 characters) is summarized in parts that are then joined. Summaries are
-included in notes exported to a folder, under "Resumen".
+recording's language. Each recording is summarized as soon as its transcript is ready, one at a
+time; uncheck "Summarize each recording when its transcript is ready" in Settings → Summaries to
+summarize only when you press the button. If you edit the transcript afterwards, the view says
+so. A transcript of more than about an hour of talk (60,000 characters) is summarized in parts
+that are then joined. Summaries are included in notes exported to a folder, under "Resumen".
 
-From the command line: `echo-app summarize ID --print` prints the summary, `--json` gives the
-recording with a `summary` key, `--force` summarizes again. Exit codes: 0 done, 1 a recording
-failed, 2 usage error, 3 no server set up. `echo-app doctor` checks the server.
+From the command line: `echo-app summarize ID --print` prints the summary, `--all` summarizes
+every transcribed recording that has no current summary (the ones from before you set up the
+server, for example), `--json` gives the recording with a `summary` key, `--force` summarizes
+again. Exit codes: 0 done, 1 a recording failed, 2 usage error, 3 no server set up. `echo-app doctor` checks the server.
 
 The server settings are in `~/.config/echo/studio.toml`. The key is kept in your desktop's
 keyring (KDE Wallet or GNOME Keyring, through `secret-tool`), never in a file; to keep it

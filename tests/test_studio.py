@@ -292,6 +292,21 @@ def test_cli(tmp_path, server, capsys, studio):
     assert "Summaries need a language-model server" in capsys.readouterr().err
 
 
+def test_cli_all_summarizes_what_is_missing(tmp_path, server, capsys, studio):
+    from echo_app import settings
+
+    s = settings.load()[0]
+    s.data_dir = str(tmp_path / "data")
+    settings.save(s)
+    lib = Library(tmp_path / "data")
+    rec = _rec(lib)
+    assert cli.main(["summarize"]) == 2
+    assert cli.main(["summarize", "--all"]) == 0 and len(server.requests) == 1
+    assert rec.path(summary.FILE).exists()
+    assert cli.main(["summarize", "--all"]) == 0 and len(server.requests) == 1  # nothing left
+    assert "0 recording(s)" in capsys.readouterr().err
+
+
 def test_note_has_the_summary(tmp_path, server, studio):
     rec = _rec(Library(tmp_path / "data"))
     assert "## Resumen" not in export.to_markdown(rec)
@@ -346,6 +361,42 @@ def test_summary_view(window, lib, server, studio):
     assert "changed since" in view.status.text()
 
 
+def test_a_ready_transcript_is_summarized_on_its_own(window, lib, server, studio):
+    from echo_studio.ui import SummaryView
+
+    rec = _rec(lib)
+    window.model.refresh()
+    _attach(window)
+    view = window.views.views()[0]
+    assert isinstance(view, SummaryView)
+    window._select(rec.id)
+    window.transcribed.emit(rec.id)
+    assert wait_until(lambda: rec.path(summary.FILE).exists())
+    assert len(server.requests) == 1
+    window.transcribed.emit(rec.id)  # current already: not again
+    pump(200)
+    assert len(server.requests) == 1
+    # A failure is shown, and not tried again on its own until the transcript changes.
+    rec.path("transcript.edited.txt").write_text("Otro texto.\n")
+    server.status = 500
+    window.transcribed.emit(rec.id)
+    assert wait_until(lambda: "Summary failed" in view.status.text())
+    window.transcribed.emit(rec.id)
+    pump(200)
+    assert len(server.requests) == 2
+    # Turned off in Settings: nothing is sent.
+    server.status = 200
+    rec.path("transcript.edited.txt").write_text("Texto nuevo.\n")
+    cfg = config.load()
+    cfg.auto_summarize = False
+    config.save(cfg)
+    window.transcribed.emit(rec.id)
+    pump(200)
+    assert len(server.requests) == 2
+    view.summarize_btn.click()  # pressing Summarize always tries
+    assert wait_until(lambda: len(server.requests) == 3 and not summary.stale(lib.get(rec.id)))
+
+
 def test_settings_page_turns_summaries_on(window, lib, qapp, studio):
     from echo_studio.ui import SettingsPage, SummaryView
 
@@ -355,7 +406,10 @@ def test_settings_page_turns_summaries_on(window, lib, qapp, studio):
     page = echo_studio.settings_pages()[0][1]
     assert isinstance(page, SettingsPage)
     page.url.setText("https://api.example.com/v1")
+    assert page.warning.text() == "Each transcript is sent to api.example.com as soon as it is ready."
+    page.auto.setChecked(False)
     assert page.warning.text() == "Transcripts you summarize are sent to api.example.com."
+    page.auto.setChecked(True)
     with pytest.raises(ValueError, match="name the model"):
         page.apply()
     page.model.setText("modelo-a")

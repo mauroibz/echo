@@ -82,6 +82,14 @@ of its recordings or outputs are in this repository.
   always on in current models, counts against it, and on the models that take it
   `fallbacks: "default"` so a declined request is answered by another model in the same call.
   `refusal` and `max_tokens` stops are errors, so a partial summary is never saved.
+- **Summaries when a transcript is ready, on by default.** The roadmap had this as S3, off by
+  default; the user asked for every recording to be summarized once a key is set. One queue
+  (`jobs.Summarizer`) in the window process serves the automatic summaries and the Summarize
+  button, one request at a time, the button's ahead. It listens to the window's `transcribed`, so
+  a recording transcribed while Echo was not running is summarized by `summarize --all`, or by
+  the button. A failure is kept in memory with the hash of its text: not retried on its own for
+  the same text, tried again after a restart or an edit. A stale summary is redone when a new
+  transcript arrives, never while the user edits.
 
 ## Task 1.8 so far
 

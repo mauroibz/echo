@@ -8,6 +8,7 @@
 - [x] 1.6 Window: Settings page (remote warning, Test, `apply` validation), Summary view (Summarize, Copy, staleness, progress for parts), added without restart; offscreen tests, and a window without a server unchanged
 - [x] 1.7 `docs/guide.md` section on Echo Studio
 - [x] 1.9 Anthropic's Messages API spoken natively for `api.anthropic.com`; the key moved from `llm.key` into the desktop's keyring (`keychain.py`, `secret-tool`), the old file moved over; tests with a fake server and a fake `secret-tool`
+- [x] 1.10 Summaries when a transcript is ready, on by default (`jobs.py` queue shared with the Summary view, `auto_summarize` setting, failures not retried until the text changes); `summarize --all`; tests
 - [ ] 1.8 Summarize five of the user's own recordings, one over 60,000 characters and one call, with a local server and with a cloud one; read each against its transcript for invented facts, wrong owners and missed decisions; write counts and timings (not content) in `design.md` (needs hardware: real recordings and a running server or a cloud API key)
 
 ## Blocked

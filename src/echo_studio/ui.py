@@ -6,8 +6,8 @@ import os
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
-from PySide6.QtWidgets import (QApplication, QFormLayout, QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton,
-                               QTextBrowser, QToolButton, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QApplication, QCheckBox, QFormLayout, QFrame, QHBoxLayout, QLabel, QLineEdit,
+                               QPushButton, QTextBrowser, QToolButton, QVBoxLayout, QWidget)
 
 from echo_app.ui import theme
 from echo_app.ui.common import icon, run_task
@@ -59,6 +59,10 @@ class SettingsPage(QWidget):
             self.key.setPlaceholderText("Only if the server needs one")
         form.addRow("API key", self.key)
         lay.addLayout(form)
+        self.auto = QCheckBox("Summarize each recording when its transcript is ready")
+        self.auto.setChecked(cfg.auto_summarize)
+        self.auto.toggled.connect(self._update_warning)
+        lay.addWidget(self.auto)
         self.warning = QLabel()
         self.warning.setWordWrap(True)
         theme.set_role(self.warning, warn=True)
@@ -76,12 +80,14 @@ class SettingsPage(QWidget):
         self._update_warning()
 
     def _config(self) -> config.Config:
-        return config.Config(self.url.text().strip(), self.model.text().strip())
+        return config.Config(self.url.text().strip(), self.model.text().strip(), self.auto.isChecked())
 
     def _update_warning(self):
         url = self.url.text().strip()
         remote = url and not config.is_local(url)
-        self.warning.setText(f"Transcripts you summarize are sent to {config.host(url)}." if remote else "")
+        what = ("Each transcript is sent to {} as soon as it is ready." if self.auto.isChecked()
+                else "Transcripts you summarize are sent to {}.")
+        self.warning.setText(what.format(config.host(url)) if remote else "")
         self.warning.setVisible(bool(remote))
 
     def test(self):
@@ -126,11 +132,15 @@ class SettingsPage(QWidget):
 class SummaryView(QWidget):
     """The selected recording's summary, with Summarize and Copy. Read-only: it is replaced, not edited."""
 
-    def __init__(self, message=None):
+    def __init__(self, jobs, message=None):
         super().__init__()
         self.message = message or (lambda _t: None)
         self.rec = None
-        self._busy: set[str] = set()
+        self.linked = None
+        self.jobs = jobs
+        jobs.changed.connect(self._on_changed)
+        jobs.progress.connect(self._on_progress)
+        jobs.failed.connect(lambda _rid, msg: self.message(f"Summary failed: {msg}"))
         lay = QVBoxLayout(self)
         lay.setContentsMargins(16, 12, 16, 10)
         lay.setSpacing(8)
@@ -162,10 +172,12 @@ class SummaryView(QWidget):
         self.show_subject(None, None)
 
     def show_subject(self, rec, linked):
-        self.rec = rec
+        self.rec, self.linked = rec, linked
         data = summary.load(rec) if rec is not None else None
         has_text = rec is not None and bool(rec.text().strip())
-        busy = rec is not None and rec.id in self._busy
+        job = self.jobs.state(rec.id) if rec is not None else None
+        busy = job is not None
+        failure = self.jobs.failure(rec.id) if rec is not None else None
         self.summarize_btn.setVisible(has_text and config.enabled())
         self.summarize_btn.setEnabled(not busy)
         self.summarize_btn.setText("Summarize again" if data else "Summarize")
@@ -178,8 +190,12 @@ class SummaryView(QWidget):
             self.status.setText("Select one recording of the set to see or write its summary.")
         elif rec is None:
             self.status.setText("")
-        elif busy:
+        elif job == "running":
             self.status.setText("Summarizing…")
+        elif job == "queued":
+            self.status.setText("Waiting to be summarized…")
+        elif failure:
+            self.status.setText(f"Summary failed: {failure}")
         elif data is not None:
             note = f"From {data.get('server') or 'the server'}"
             self.status.setText("The transcript changed since this summary." if summary.stale(rec, data) else note)
@@ -191,33 +207,17 @@ class SummaryView(QWidget):
             self.status.setText("No summary yet.")
 
     def summarize(self):
-        rec = self.rec
-        if rec is None or rec.id in self._busy:
-            return
-        self._busy.add(rec.id)
-        self.show_subject(rec, None)
+        if self.rec is not None:
+            self.jobs.request(self.rec.id)
 
-        def work(progress):
-            return summary.write(rec, progress=lambda d, t: progress((d, t)))
+    def _on_changed(self, rid: str):
+        if self.rec is not None and self.rec.id == rid:
+            self.show_subject(self.rec, self.linked)
 
-        def on_progress(v):
-            done, total = v
-            if total > 1 and self.rec is not None and self.rec.id == rec.id:
-                self.status.setText(f"Summarizing… part {done + 1} of {total}" if done + 1 < total
-                                    else "Summarizing… joining the parts")
-
-        def finished(_data=None):
-            self._busy.discard(rec.id)
-            if self.rec is not None and self.rec.id == rec.id:
-                self.show_subject(self.rec, None)
-
-        def failed(msg):
-            finished()
-            self.message(f"Summary failed: {msg}")
-            if self.rec is not None and self.rec.id == rec.id:
-                self.status.setText(f"Summary failed: {msg}")
-
-        run_task(work, on_done=finished, on_error=failed, on_progress=on_progress)
+    def _on_progress(self, rid: str, done: int, total: int):
+        if total > 1 and self.rec is not None and self.rec.id == rid:
+            self.status.setText(f"Summarizing… part {done + 1} of {total}" if done + 1 < total
+                                else "Summarizing… joining the parts")
 
     def copy(self):
         data = summary.load(self.rec) if self.rec is not None else None

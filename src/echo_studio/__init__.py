@@ -1,9 +1,9 @@
 """Echo Studio: what Echo leaves out because it needs a language model or a cloud service.
 
 An extension of Echo (see echo_app/extensions.py): installed next to it, it adds to the same app,
-and Echo never imports it. So far it adds summaries from an OpenAI-compatible server. Nothing is
-sent anywhere until a server is set up in Settings, Summaries, and then only when the user asks
-for a summary.
+and Echo never imports it. So far it adds summaries from a language-model server. Nothing is
+sent anywhere until a server is set up in Settings, Summaries; then each transcript is summarized
+when it is ready, unless the user turned that off, and otherwise when the user asks.
 """
 
 from __future__ import annotations
@@ -45,6 +45,7 @@ def markdown_sections(rec) -> list[tuple[str, str]]:
 
 
 _window = None
+_jobs = None
 
 
 def settings_pages() -> list:
@@ -54,8 +55,12 @@ def settings_pages() -> list:
 
 
 def attach_window(window) -> None:
-    global _window
+    from .jobs import Summarizer
+
+    global _window, _jobs
     _window = window
+    _jobs = Summarizer(window.library)
+    window.transcribed.connect(_jobs.transcript_ready)
     _offer_view()
 
 
@@ -66,4 +71,4 @@ def _offer_view() -> None:
     w = _window
     if w is None or not config.enabled() or any(isinstance(v, SummaryView) for v in w.views.views()):
         return
-    w.add_view(VIEW_TITLE, SummaryView(message=w.show_message))
+    w.add_view(VIEW_TITLE, SummaryView(_jobs, message=w.show_message))
