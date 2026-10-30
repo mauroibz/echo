@@ -232,7 +232,7 @@ meetings, open items both ways, and the notes from their profile. It is built fr
 | 3 | `add-studio-follow-up` | done; archives after `add-studio-summaries` |
 | 3 | `add-studio-ask` | done; archives after `add-studio-summaries` |
 | 4 | `add-studio-ask-library` | done; archives after `add-studio-summaries` |
-| 4 | `add-studio-install` | planned |
+| 4 | `add-studio-install` | done but the release: merging `studio` into `main` waits for the user |
 | v2 | `add-studio-calendar` | planned |
 | v2 | `add-studio-connectors` | planned |
 | v2 | `add-studio-people-brief` | planned |

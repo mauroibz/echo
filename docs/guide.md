@@ -323,20 +323,21 @@ echo-app transcribe meeting.mp4 --format md --context "Lucía y Martín, presupu
   imported or not found, or transcription is not installed; 2 usage error; 3 timed out, still
   transcribing.
 
-## Echo Studio: summaries
+## Echo Studio: summaries, action items and questions
 
-Echo Studio is an extension that adds summaries to the same app. It is in the checkout's
-`studio` branch (`git switch studio`, then run Echo as usual); without it Echo is unchanged and
-sends nothing anywhere.
+Echo Studio adds what needs a language model to the same app: summaries, action items, follow-up
+drafts and questions about your recordings. Install Echo with `./install.sh --with-studio` (add it
+to the transcription flag you used; `--without-studio` takes it out again). Without it Echo is
+unchanged and sends nothing anywhere; `echo-app doctor` says whether Studio is loaded.
 
 Summaries are written by a language model on a server you choose: one on this computer
 (llama.cpp's `llama-server`, Ollama, vLLM, LM Studio), Anthropic, or another cloud provider
 with an OpenAI-compatible API. In Settings → Summaries, enter its address (ending in `/v1`, for
 example `http://127.0.0.1:8080/v1`, or `https://api.anthropic.com/v1` for Claude), the model's
 name and, if it needs one, an API key; Test asks the server which
-models it has. When the server is not on this computer or your network, the page
-says so: **the transcript of each recording you summarize is sent to it.** Nothing is sent until
-you press Summarize.
+models it has. When the server is not on this computer or your network, the page says so: **the
+transcript of each recording you summarize is sent to it,** as soon as it is ready unless you
+turn automatic summaries off, and the passages a question finds when you ask.
 
 Once a server is set, a Transcript / Summary switch appears over the transcript. Summary shows the
 selected recording's summary, with Summarize (Summarize again once there is one) and Copy. The

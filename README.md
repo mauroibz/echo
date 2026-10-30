@@ -37,6 +37,7 @@ Transcribe made by [SURUS](https://huggingface.co/surus-ai).
 | **Finds things** | Search every transcript, by tag (`#client:acme`) or by speaker (`@ana precio`). People have profiles. |
 | **Exports** | Text, Markdown, SRT, VTT, JSON, or a whole Obsidian vault kept up to date. |
 | **Works from scripts** | `echo-app transcribe meeting.mp4 --format md`, for scripts and AI agents. |
+| **Summarizes, if you want** | Echo Studio (`./install.sh --with-studio`): summaries, action items, follow-up drafts and questions over your recordings, from a language-model server you choose, local or cloud. Off unless installed. |
 
 Everything Echo does, with its shortcuts, is in the **[user guide](docs/guide.md)**.
 
