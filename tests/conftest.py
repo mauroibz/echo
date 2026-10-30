@@ -27,6 +27,8 @@ def isolated_home(tmp_path, monkeypatch):
     monkeypatch.setenv("ECHO_NO_EXTENSIONS", "1")
     # No animation unless a test asks for it (tests/test_motion.py): states are final at once.
     monkeypatch.setenv("ECHO_REDUCE_MOTION", "1")
+    # Never the user's real keyring (Echo Studio's API key); tests/test_studio.py uses a fake one.
+    monkeypatch.setenv("ECHO_NO_KEYRING", "1")
     return home
 
 

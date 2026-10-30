@@ -11,8 +11,8 @@ installed into the same app (see Extensions in `docs/design.md`), not part of Ec
 
 - New package `src/echo_studio/`, loaded by Echo's extension points when present.
 - Settings gets a "Summaries" tab: the address of an OpenAI-compatible server (local, such as
-  llama.cpp, Ollama or vLLM, or a cloud provider), a model name and an optional API key, kept in
-  a file readable only by the user. A server off this computer and its network is named in a
+  llama.cpp, Ollama or vLLM, or a cloud provider) or Anthropic's, a model name and an optional
+  API key, kept in the desktop's keyring. A server off this computer and its network is named in a
   warning that transcripts are sent to it. "Test" asks the server for its models.
 - Once a server is set, a Summary view sits beside the transcript: Summarize, Summarize again,
   Copy, and a line when the transcript changed since the summary. Without a server the window is

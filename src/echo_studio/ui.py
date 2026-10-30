@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (QApplication, QFormLayout, QFrame, QHBoxLayout, Q
 from echo_app.ui import theme
 from echo_app.ui.common import icon, run_task
 
-from . import config, llm, summary
+from . import config, keychain, llm, summary
 
 VIEW_TITLE = "Summary"
 
@@ -33,8 +33,9 @@ class SettingsPage(QWidget):
         cfg = config.load()
         lay = QVBoxLayout(self)
         lay.addWidget(_dim("Summaries are written by a language model on a server you choose: one on this "
-                           "computer (llama.cpp, Ollama, vLLM) or a cloud provider with an OpenAI-compatible "
-                           "API. Leave the address empty to turn them off."))
+                           "computer (llama.cpp, Ollama, vLLM), Anthropic (https://api.anthropic.com/v1) or "
+                           "another cloud provider with an OpenAI-compatible API. Leave the address "
+                           "empty to turn them off."))
         form = QFormLayout()
         form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
         self.url = QLineEdit(cfg.llm_url)
@@ -47,11 +48,14 @@ class SettingsPage(QWidget):
         self.key = QLineEdit()
         self.key.setEchoMode(QLineEdit.EchoMode.Password)
         self.from_env = bool(os.environ.get(config.KEY_ENV))
-        if self.from_env:
+        self.no_keyring = not self.from_env and not keychain.available()
+        if self.from_env or self.no_keyring:
             self.key.setEnabled(False)
-            self.key.setPlaceholderText(f"Taken from ${config.KEY_ENV}")
+            self.key.setPlaceholderText(f"Taken from ${config.KEY_ENV}" if self.from_env
+                                        else f"No keyring: set ${config.KEY_ENV}")
         else:
-            self.key.setText(config.api_key())
+            if cfg.llm_url:
+                self.key.setText(config.api_key(cfg.llm_url))
             self.key.setPlaceholderText("Only if the server needs one")
         form.addRow("API key", self.key)
         lay.addLayout(form)
@@ -66,7 +70,8 @@ class SettingsPage(QWidget):
         self.result = _dim()
         row.addWidget(self.result, 1)
         lay.addLayout(row)
-        lay.addWidget(_dim(f"The key is kept in {config.key_path()}, readable only by you."))
+        lay.addWidget(_dim("The key is kept in your desktop's keyring (KDE Wallet, GNOME Keyring), "
+                           "not in a file. To keep it elsewhere, set $" + config.KEY_ENV + " instead."))
         lay.addStretch(1)
         self._update_warning()
 
@@ -86,7 +91,7 @@ class SettingsPage(QWidget):
             return
         self.result.setText("Asking the server…")
         self.test_btn.setEnabled(False)
-        key = None if self.from_env else self.key.text().strip()
+        key = None if self.from_env or self.no_keyring else self.key.text().strip()
 
         def done(names):
             self.test_btn.setEnabled(True)
@@ -108,9 +113,12 @@ class SettingsPage(QWidget):
             raise ValueError("the address starts with http:// or https://")
         if cfg.llm_url and not cfg.llm_model:
             raise ValueError("name the model to use on that server")
+        if not (self.from_env or self.no_keyring) and cfg.llm_url:
+            try:
+                config.save_key(self.key.text(), cfg.llm_url)
+            except keychain.KeychainError as e:
+                raise ValueError(str(e)) from None
         config.save(cfg)
-        if not self.from_env:
-            config.save_key(self.key.text())
         if self.on_saved:
             self.on_saved()
 

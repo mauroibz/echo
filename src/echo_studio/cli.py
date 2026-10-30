@@ -25,7 +25,8 @@ def cmd_summarize(args) -> int:
         _err("Summaries need a language-model server. Set one in Settings, Summaries, or write its "
              f"address (ending in /v1) and model name to {config.config_path()}:\n"
              '  llm_url = "http://127.0.0.1:8080/v1"\n  llm_model = "the-model-name"\n'
-             f"An API key, if the server needs one, goes in {config.key_path()} or ${config.KEY_ENV}.")
+             "An API key, if the server needs one, goes in Settings (kept in the keyring) or "
+             f"${config.KEY_ENV}.")
         return NOT_SET_UP
     lib = Library(load()[0].data_path)
     code = OK

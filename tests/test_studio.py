@@ -1,7 +1,8 @@
 """Echo Studio's summaries against a fake OpenAI-compatible server (no network, no model)."""
 
 import json
-import stat
+import os
+import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -9,7 +10,7 @@ import pytest
 
 from echo_app import cli, export, extensions
 from echo_app.library import Library
-from echo_studio import config, llm, summary
+from echo_studio import config, keychain, llm, summary
 from test_ui import lib, pump, qapp, wait_until, window  # noqa: F401 - fixtures
 from test_vault import SEGS, _rec
 
@@ -23,6 +24,8 @@ class FakeServer:
         self.reply = "# Tema\n- Lucía habló del precio.\n\n# Próximos pasos\n- **Enviar la propuesta** (Lucía)\n---"
         self.status = 200
         self.models = ["modelo-a"]
+        self.paths: list[str] = []
+        self.stop_reason = "end_turn"
         server = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -39,14 +42,21 @@ class FakeServer:
 
             def do_GET(self):
                 server.headers.append(dict(self.headers))
+                server.paths.append(self.path)
                 self._send(200, {"data": [{"id": m} for m in server.models]})
 
             def do_POST(self):
                 body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
                 server.requests.append(body)
                 server.headers.append(dict(self.headers))
+                server.paths.append(self.path)
                 if server.status != 200:
                     self._send(server.status, {"error": {"message": "invalid api key"}})
+                    return
+                if self.path.endswith("/messages"):  # Anthropic's Messages API
+                    self._send(200, {"content": [{"type": "thinking", "thinking": ""},
+                                                 {"type": "text", "text": server.reply}],
+                                     "stop_reason": server.stop_reason})
                     return
                 self._send(200, {"choices": [{"message": {"content": server.reply}}]})
 
@@ -67,6 +77,40 @@ def server(monkeypatch):
     s.close()
 
 
+FAKE_SECRET_TOOL = """\
+import json, sys
+from pathlib import Path
+store = Path(sys.argv[0]).with_name("secrets.json")
+data = json.loads(store.read_text()) if store.exists() else {}
+cmd, args = sys.argv[1], [a for a in sys.argv[2:] if not a.startswith("--")]
+key = " ".join(args)
+if cmd == "store":
+    data[key] = sys.stdin.read()
+elif cmd == "lookup":
+    if key not in data:
+        sys.exit(1)
+    sys.stdout.write(data[key])
+elif cmd == "clear":
+    data.pop(key, None)
+store.write_text(json.dumps(data))
+"""
+
+
+@pytest.fixture(autouse=True)
+def keyring(tmp_path, monkeypatch):
+    """A fake `secret-tool` on PATH, keeping secrets in a file next to it: the real one would be the
+    user's wallet. Returns the file, to check what was stored and that no key went elsewhere."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    tool = bin_dir / "secret-tool"
+    tool.write_text(f"#!{sys.executable}\n" + FAKE_SECRET_TOOL)
+    tool.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
+    monkeypatch.delenv("ECHO_NO_KEYRING", raising=False)
+    monkeypatch.setattr(config, "_keys", {})
+    return bin_dir / "secrets.json"
+
+
 @pytest.fixture
 def studio(monkeypatch):
     """Echo with Studio loaded, as `bin/echo-app` runs it from a checkout that has it."""
@@ -84,17 +128,57 @@ def test_off_until_a_server_and_model_are_set():
     assert config.enabled() and config.load().llm_model == "m"
 
 
-def test_key_file_is_private_and_never_in_settings(tmp_path):
-    from echo_app import settings
+def test_key_in_the_keyring_never_in_a_file(tmp_path, keyring):
+    from echo_app import settings, paths
 
-    config.save_key("sk-secreta")
-    p = config.key_path()
-    assert stat.S_IMODE(p.stat().st_mode) == 0o600 and config.api_key() == "sk-secreta"
+    url = "https://api.example.com/v1"
+    config.save(config.Config(url, "m"))
+    config.save_key("sk-secreta", url)
+    assert config.api_key() == "sk-secreta" and "sk-secreta" in keyring.read_text()
+    config._keys.clear()
+    assert config.api_key() == "sk-secreta"  # read back from the keyring
+    assert config.api_key("http://127.0.0.1:8080/v1") == ""  # one key per server
     settings.save(settings.load()[0])
-    assert "sk-secreta" not in settings.settings_path().read_text()
-    assert "sk-secreta" not in config.config_path().read_text() if config.config_path().exists() else True
-    config.save_key("")
-    assert not p.exists() and config.api_key() == ""
+    for f in paths.config_dir().rglob("*"):
+        assert not f.is_file() or "sk-secreta" not in f.read_text(), f
+    config.save_key("", url)
+    config._keys.clear()
+    assert config.api_key() == ""
+
+
+def test_old_key_file_moves_into_the_keyring(keyring):
+    config.save(config.Config("https://api.example.com/v1", "m"))
+    config.old_key_path().write_text("sk-vieja\n")
+    assert config.api_key() == "sk-vieja"
+    assert not config.old_key_path().exists() and "sk-vieja" in keyring.read_text()
+
+
+def test_no_keyring_says_so(monkeypatch):
+    monkeypatch.setenv("ECHO_NO_KEYRING", "1")
+    assert config.api_key("https://api.example.com/v1") == ""
+    with pytest.raises(keychain.KeychainError, match="no keyring"):
+        config.save_key("sk-x", "https://api.example.com/v1")
+
+
+def test_anthropic_spoken_natively(tmp_path, server, monkeypatch):
+    monkeypatch.setattr(llm, "ANTHROPIC_HOSTS", {"127.0.0.1"})
+    config.save(config.Config(server.url, "modelo-a"))
+    config.save_key("sk-ant-test", server.url)
+    assert llm.models() == ["modelo-a"] and server.paths[-1] == "/v1/models?limit=1000"
+    text = llm.complete("Sistema", "Transcripción")
+    assert text == server.reply.strip() and server.paths[-1] == "/v1/messages"
+    req, headers = server.requests[-1], {k.lower(): v for k, v in server.headers[-1].items()}
+    assert req["system"] == "Sistema" and req["messages"] == [{"role": "user", "content": "Transcripción"}]
+    assert "temperature" not in req and req["max_tokens"] == llm.ANTHROPIC_MAX_TOKENS
+    assert req["fallbacks"] == "default" and headers["anthropic-beta"] == llm.ANTHROPIC_FALLBACK_BETA
+    assert headers["x-api-key"] == "sk-ant-test" and headers["anthropic-version"] == llm.ANTHROPIC_VERSION
+    assert "authorization" not in headers
+    server.stop_reason = "refusal"
+    with pytest.raises(llm.LLMError, match="declined"):
+        llm.complete("Sistema", "Transcripción")
+    server.stop_reason = "max_tokens"
+    with pytest.raises(llm.LLMError, match="cut off"):
+        llm.complete("Sistema", "Transcripción")
 
 
 def test_local_or_remote():

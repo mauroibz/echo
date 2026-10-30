@@ -1,7 +1,9 @@
-"""A client for OpenAI-compatible servers: one chat completion, and the model list (stdlib only).
+"""A client for language-model servers: one completion, and the model list (stdlib only).
 
 The chat completions endpoint is what OpenAI, the providers that copy its API and the local
-servers (llama.cpp, Ollama, vLLM) have in common, and one POST needs no SDK.
+servers (llama.cpp, Ollama, vLLM) have in common, and one POST needs no SDK. Anthropic's API is
+spoken natively (Messages), chosen by the server's address: its OpenAI-compatible layer is meant
+for trying models out, and Echo would rather not lean on it.
 """
 
 from __future__ import annotations
@@ -17,6 +19,15 @@ TIMEOUT_S = 300  # a long meeting's summary from a local server on a modest GPU 
 MAX_TOKENS = 2048  # room for a summary of ~4,000 characters; length is asked for in the prompt
 TEMPERATURE = 0.3
 
+ANTHROPIC_HOSTS = {"api.anthropic.com"}
+ANTHROPIC_VERSION = "2023-06-01"
+# Anthropic's current models always think before answering, and thinking counts against max_tokens:
+# room for both, well under the time a non-streamed request may take.
+ANTHROPIC_MAX_TOKENS = 16000
+# On these models a declined request is answered by another model in the same call ("fallbacks").
+ANTHROPIC_FALLBACK_MODELS = ("modelo-a",)
+ANTHROPIC_FALLBACK_BETA = "server-side-fallback-2026-07-01"
+
 # Some local servers return a reasoning model's thinking inline, before the answer.
 _THINK = re.compile(r"^\s*<think>.*?</think>\s*", re.DOTALL)
 
@@ -25,10 +36,18 @@ class LLMError(Exception):
     """The server could not be reached or refused the request; the message says why."""
 
 
-def _request(url: str, payload: dict | None, timeout: float, key: str | None = None) -> dict:
-    headers = {"Accept": "application/json"}
-    key = config.api_key() if key is None else key
-    if key:
+def is_anthropic(url: str) -> bool:
+    return config.host(url) in ANTHROPIC_HOSTS
+
+
+def _request(url: str, payload: dict | None, timeout: float, key: str | None = None,
+             extra: dict | None = None) -> dict:
+    headers = {"Accept": "application/json", **(extra or {})}
+    key = config.api_key(url) if key is None else key
+    if key and is_anthropic(url):
+        headers["x-api-key"] = key
+        headers["anthropic-version"] = ANTHROPIC_VERSION
+    elif key:
         headers["Authorization"] = f"Bearer {key}"
     data = None
     if payload is not None:
@@ -73,6 +92,8 @@ def complete(system: str, user: str, cfg: config.Config | None = None) -> str:
     cfg = cfg or config.load()
     if not cfg.enabled:
         raise LLMError("no server is set up (Settings, Summaries)")
+    if is_anthropic(cfg.llm_url):
+        return _complete_anthropic(system, user, cfg)
     payload = {"model": cfg.llm_model, "temperature": TEMPERATURE, "max_tokens": MAX_TOKENS,
                "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]}
     url = _base(cfg) + "/chat/completions"
@@ -91,8 +112,30 @@ def complete(system: str, user: str, cfg: config.Config | None = None) -> str:
     return _THINK.sub("", text).strip()
 
 
+def _complete_anthropic(system: str, user: str, cfg: config.Config) -> str:
+    # No temperature: Anthropic's current models refuse sampling settings.
+    payload = {"model": cfg.llm_model, "max_tokens": ANTHROPIC_MAX_TOKENS, "system": system,
+               "messages": [{"role": "user", "content": user}]}
+    extra = {}
+    if cfg.llm_model.startswith(ANTHROPIC_FALLBACK_MODELS):
+        payload["fallbacks"] = "default"
+        extra["anthropic-beta"] = ANTHROPIC_FALLBACK_BETA
+    reply = _request(_base(cfg) + "/messages", payload, TIMEOUT_S, extra=extra)
+    stop = reply.get("stop_reason")
+    if stop == "refusal":
+        raise LLMError("the model declined to summarize this recording")
+    blocks = reply.get("content")
+    if not isinstance(blocks, list):
+        raise LLMError("the server's answer has no message")
+    text = "".join(b.get("text", "") for b in blocks if isinstance(b, dict) and b.get("type") == "text")
+    if stop == "max_tokens":
+        raise LLMError("the answer was cut off before it ended")
+    return text.strip()
+
+
 def models(cfg: config.Config | None = None, timeout: float = 10, key: str | None = None) -> list[str]:
     """The server's model names; `key` tries a key before it is saved."""
     cfg = cfg or config.load()
-    reply = _request(_base(cfg) + "/models", None, timeout, key)
+    query = "?limit=1000" if is_anthropic(cfg.llm_url) else ""  # Anthropic lists 20 by default
+    reply = _request(_base(cfg) + "/models" + query, None, timeout, key)
     return [m.get("id", "") for m in reply.get("data", []) if isinstance(m, dict)]

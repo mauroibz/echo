@@ -16,9 +16,9 @@ of its recordings or outputs are in this repository.
 - **Settings of its own.** `$XDG_CONFIG_HOME/echo/studio.toml` (`llm_url`, `llm_model`), so
   Echo's `settings.toml` has no Studio keys and removing Studio leaves it as it was. Summaries
   are on when both are set.
-- **Key.** `ECHO_LLM_API_KEY`, else `llm.key` next to the settings, written through a temporary
-  file created 0600 (not `fsutil`'s, whose temporary file has the umask's mode for a moment).
-  None for local servers that need none; sent as `Authorization: Bearer`; never logged.
+- **Key.** `ECHO_LLM_API_KEY`, else the desktop's keyring (see Decisions). None for local
+  servers that need none; sent as `Authorization: Bearer` (`x-api-key` to Anthropic); never
+  logged.
 - **Local or remote.** Local is `localhost`, `*.local`, loopback, private and link-local
   addresses. A remote host gets the warning under the address; summarizing is always a user
   action, so there is no dialog per request.
@@ -66,3 +66,19 @@ of its recordings or outputs are in this repository.
 - **End to end** with `bin/echo-app` against a local fake server in a scratch data folder: not
   set up exits 3 with the setup text, `--print` printed the summary, a second run sent nothing,
   doctor showed the server line, `ECHO_NO_EXTENSIONS=1 echo-app --help` has no `summarize`.
+- **The key in the keyring, not a file** (asked for by the user, who trusted a loose 0600 file
+  less than a `.env`). `keychain.py` stores it through `secret-tool`, the Secret Service client
+  that libsecret ships, which KDE Wallet and GNOME Keyring both serve: encrypted with the login,
+  on standard input so it never shows in `ps`, one entry per server host. No new dependency: the
+  `keyring` package would do the same through D-Bus and is not worth a lock entry. Without
+  `secret-tool` the key field is off and says to set `ECHO_LLM_API_KEY`; there is no file
+  fallback. A key found in the old `llm.key` is moved into the keyring and the file deleted.
+  The key is read once per run, so a locked wallet asks once. Tests use a fake `secret-tool`
+  (`ECHO_NO_KEYRING=1` keeps every other test away from the real wallet).
+- **Anthropic spoken natively.** Anthropic's API is not OpenAI's (`x-api-key`, a required
+  `anthropic-version`, `system` apart, content blocks). Its OpenAI-compatible layer is meant for
+  trying models, so for `api.anthropic.com` `llm.py` calls `/v1/messages` directly: no
+  temperature (current models refuse sampling settings), `max_tokens` 16,000 because thinking,
+  always on in current models, counts against it, and on the models that take it
+  `fallbacks: "default"` so a declined request is answered by another model in the same call.
+  `refusal` and `max_tokens` stops are errors, so a partial summary is never saved.

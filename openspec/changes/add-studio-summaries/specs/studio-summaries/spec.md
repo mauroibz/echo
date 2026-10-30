@@ -13,15 +13,21 @@ SHALL say how to set one up and exit with code 3.
 - **WHEN** the user enters an address and model in Settings, Summaries, and presses OK
 - **THEN** the Summary view appears beside the transcript without a restart
 
-### Requirement: Any OpenAI-compatible server, key kept private
+### Requirement: Any OpenAI-compatible server or Anthropic, key kept private
 Studio SHALL summarize through the chat completions endpoint of an OpenAI-compatible server,
-local or remote. An API key SHALL be read from `ECHO_LLM_API_KEY` or a file readable only by
-the user, and SHALL never be written to a settings file or the log. Settings SHALL name a remote
+local or remote, and through Anthropic's Messages API when the address is Anthropic's. An API
+key SHALL be read from `ECHO_LLM_API_KEY` or the desktop's keyring, one per server, and SHALL
+never be written to a file, a settings file or the log. Settings SHALL name a remote
 host in a warning that transcripts are sent to it.
 
 #### Scenario: Remote server
 - **WHEN** the address is `https://api.example.com/v1` and a key is entered
-- **THEN** Settings shows "Transcripts you summarize are sent to api.example.com.", the key file has mode 0600, and neither settings file contains the key
+- **THEN** Settings shows "Transcripts you summarize are sent to api.example.com.", the key is in the keyring, and no file in Echo's configuration folder contains it
+
+#### Scenario: Anthropic
+- **WHEN** the address is `https://api.anthropic.com/v1`, with a key and a model
+- **THEN** summaries are requested from `/v1/messages` with the key in `x-api-key` and an
+  `anthropic-version` header, and a declined or cut-off answer is reported as an error
 
 #### Scenario: Local server without a key
 - **WHEN** the address is `http://127.0.0.1:8080/v1` and no key is set

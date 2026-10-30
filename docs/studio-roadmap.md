@@ -9,7 +9,7 @@ is Studio's development branch until Studio ships.
 
 `add-studio-summaries` gives Studio:
 
-- a server setting (any OpenAI-compatible URL, a model and a key);
+- a server setting (any OpenAI-compatible URL or Anthropic's, a model and a key in the keyring);
 - `echo-app summarize` with `--force`, `--print` and `--json`;
 - a Summary view next to the transcript;
 - a summary section in Markdown export;
@@ -171,8 +171,8 @@ the installer decides whether Studio is included.
 ## Version 2: accounts and connectors
 
 These need an account, a token or a server that Studio does not run, so each one comes with its
-own decision about where credentials live. Today the only secret is the model key, in a 0600
-file.
+own decision about where credentials live. Today the only secret is the model key, in the
+desktop's keyring.
 
 ### S10 Calendar (`add-studio-calendar`)
 

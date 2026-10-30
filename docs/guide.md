@@ -330,10 +330,11 @@ Echo Studio is an extension that adds summaries to the same app. It is in the ch
 sends nothing anywhere.
 
 Summaries are written by a language model on a server you choose: one on this computer
-(llama.cpp's `llama-server`, Ollama, vLLM, LM Studio) or a cloud provider with an
-OpenAI-compatible API. In Settings → Summaries, enter its address (ending in `/v1`, for example
-`http://127.0.0.1:8080/v1`), the model's name and, if it needs one, an API key; Test asks the
-server which models it has. When the server is not on this computer or your network, the page
+(llama.cpp's `llama-server`, Ollama, vLLM, LM Studio), Anthropic, or another cloud provider
+with an OpenAI-compatible API. In Settings → Summaries, enter its address (ending in `/v1`, for
+example `http://127.0.0.1:8080/v1`, or `https://api.anthropic.com/v1` for Claude), the model's
+name and, if it needs one, an API key; Test asks the server which
+models it has. When the server is not on this computer or your network, the page
 says so: **the transcript of each recording you summarize is sent to it.** Nothing is sent until
 you press Summarize.
 
@@ -348,9 +349,11 @@ From the command line: `echo-app summarize ID --print` prints the summary, `--js
 recording with a `summary` key, `--force` summarizes again. Exit codes: 0 done, 1 a recording
 failed, 2 usage error, 3 no server set up. `echo-app doctor` checks the server.
 
-The server settings are in `~/.config/echo/studio.toml`, the key in `~/.config/echo/llm.key`
-(readable only by you) or `$ECHO_LLM_API_KEY`, and each summary in its recording's folder as
-`summary.json`. `ECHO_NO_EXTENSIONS=1 echo-app` starts Echo without Studio.
+The server settings are in `~/.config/echo/studio.toml`. The key is kept in your desktop's
+keyring (KDE Wallet or GNOME Keyring, through `secret-tool`), never in a file; to keep it
+elsewhere, set `$ECHO_LLM_API_KEY` (for example from a `.env` you load) and Settings uses that.
+Each summary is in its recording's folder as `summary.json`. `ECHO_NO_EXTENSIONS=1 echo-app`
+starts Echo without Studio.
 
 ## Where things live
 
