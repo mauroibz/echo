@@ -11,6 +11,7 @@ define any of these hooks, each called only where Echo already does that kind of
     attach_window(window)               called once the window is built; it may call
                                         window.add_view, add_screen and show_recording
     person_sections(name) -> [(title, QWidget)]   sections under a person's notes in People
+    speaker_names(rec) -> [str]         names offered first when naming the recording's speakers
 
 The core never imports an extension directly (tests/test_extensions.py checks), and an extension
 that raises is logged and skipped, so recording and transcription never depend on its code.

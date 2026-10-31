@@ -200,6 +200,23 @@ def person_sections(name):
     dlg.close()
 
 
+def test_speaker_names_are_offered(fake_ext, window, lib, tmp_path):
+    from test_speakers import _with_speakers
+
+    fake_ext(FAKE + """
+def speaker_names(rec):
+    return ["Carla Méndez", "Tomás Ríos"]
+""")
+    rec = _with_speakers(lib, tmp_path)
+    window._select(rec.id)
+    pump(200)
+    tp = window.transcript
+    assert tp.namebar.isVisible()
+    model = tp.name_edit.completer().model()
+    names = [model.index(i, 0).data() for i in range(model.rowCount())]
+    assert names[:2] == ["Carla Méndez", "Tomás Ríos"]
+
+
 def test_transcribed_signal(window, lib):
     from echo_app.library import TRANSCRIPT
 

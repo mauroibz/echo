@@ -15,7 +15,8 @@ tag.
 - A person's profile keeps an email; `echo-app people --json` includes it.
 - "Keep Echo running in the tray, and start it when you log in" (Settings → General), and
   `echo-app gui --background`.
-- For extensions: `start_recording(title)`, `stop_recording()` and `recording_id()` on the
+- For extensions: `speaker_names(rec)`, names offered first when naming a recording's speakers
+  (a calendar's attendees). `start_recording(title)`, `stop_recording()` and `recording_id()` on the
   window, to record the meetings in a calendar.
 - `install.sh --with-studio` / `--without-studio` choose whether an installed Echo loads Echo
   Studio, remembered across installs; `echo-app doctor` names the loaded extensions.

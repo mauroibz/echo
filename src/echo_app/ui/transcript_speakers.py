@@ -8,7 +8,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QTextCursor
 from PySide6.QtWidgets import QCompleter, QMenu
 
-from .. import align, dictionary, relabel, settings
+from .. import align, dictionary, extensions, relabel, settings
 from ..library import Recording
 from .common import icon
 from .transcript_text import NAME_SAMPLE_S, _html, shown_segments
@@ -67,7 +67,9 @@ class SpeakersMixin:
         else:
             self.name_text.setText(f"Who is speaker {n}?")
             self.name_edit.setPlaceholderText("Name")
-            people = [e.name for e in dictionary.current().entries if e.kind == dictionary.PEOPLE]
+            # Who an extension knows was there (a calendar's attendees) first, then everyone in the dictionary.
+            people = list(dict.fromkeys([*extensions.gather("speaker_names", rec),
+                                         *(e.name for e in dictionary.current().entries if e.kind == dictionary.PEOPLE)]))
             completer = QCompleter(people, self.name_edit)
             completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
             self.name_edit.setCompleter(completer)
