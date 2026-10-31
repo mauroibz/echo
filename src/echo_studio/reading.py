@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import html
+
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont, QFontInfo, QTextBlockFormat, QTextCharFormat, QTextCursor
 from PySide6.QtWidgets import QFrame, QTextBrowser
@@ -26,6 +28,11 @@ class ReadingBrowser(QTextBrowser):
     def show_markdown(self, text: str) -> None:
         self.setMarkdown(text)
         self._tune()
+
+    def show_placeholder(self, text: str) -> None:
+        """A quiet line in the middle of the view, for when there is nothing to read yet."""
+        color = theme.color("muted").name()
+        self.setHtml(f'<p align="center" style="color:{color}; margin-top:80px">{html.escape(text)}</p>')
 
     def _tune(self):
         """Headings a step above the text, bold, with room above; list items and paragraphs spaced

@@ -182,6 +182,7 @@ class PendingScreen(QWidget):
         self.person.setCurrentIndex(max(0, self.person.findData(keep)) if keep else 0)
         self.person.blockSignals(False)
         self.count.setText(f"{len(items)} open item{'s' if len(items) != 1 else ''}")
+        self.count.setVisible(bool(items))  # the list says when there is nothing
         self.list.set_items(items)
 
     def _toggle(self, rid: str, index: int, done: bool):

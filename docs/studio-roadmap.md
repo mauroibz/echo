@@ -7,17 +7,14 @@ is Studio's development branch until Studio ships.
 
 ## Where Studio stands
 
-`add-studio-summaries` gives Studio:
-
-- a server setting (any OpenAI-compatible URL or Anthropic's, a model and a key in the keyring);
-- `echo-app summarize` with `--force`, `--print` and `--json`;
-- a Summary view next to the transcript;
-- a summary section in Markdown export;
-- a doctor check for the server.
-
-The summary is one request for transcripts up to 60,000 characters. Longer ones are split into
-parts and merged. The result goes to `summary.json` with the hash of its source, so a summary
-of an edited transcript shows as out of date.
+Version 1 is implemented on the `studio` branch (2026-10-30): summaries from any OpenAI-compatible
+server or Anthropic's API, made as soon as a transcript is ready; built around the user's notes
+and markers; templates per meeting type; titles for unnamed recordings; action items with a
+Pending screen and a person's open items; follow-up drafts; questions about a recording or the
+whole library, with citations that play the audio. The API key is in the desktop's keyring.
+Echo's base gained what Studio needed (`add_screen`, `show_recording`, `person_sections`,
+`Index.passages`, `install.sh --with-studio`). The changes stay open until 1.8 below is done,
+since they all build on the base summary.
 
 Task 1.8 of that change is still open. It checks summaries against five of the user's own
 recordings. Every item below except the window and distribution changes gets its result from a

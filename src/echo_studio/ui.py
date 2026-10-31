@@ -253,6 +253,10 @@ class SummaryView(QWidget):
             self.status.setText("Set up a server in Settings, Summaries, to summarize.")
         else:
             self.status.setText("No summary yet.")
+        if data is None and rec is not None:
+            # Nothing to read yet: say it in the middle of the card, not only in the small status line.
+            self.text.show_placeholder(self.status.text())
+            self.status.setText("")  # said once; the label keeps its room so the buttons stay right
 
     def summarize(self):
         if self.rec is not None:
