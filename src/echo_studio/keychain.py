@@ -57,8 +57,8 @@ def lookup(server: str) -> str:
     return r.stdout.strip() if r.returncode == 0 else ""
 
 
-def store(server: str, key: str) -> None:
-    r = _run(["store", f"--label=Echo Studio API key ({server})", *_attrs(server)], STORE_TIMEOUT_S, key)
+def store(server: str, key: str, label: str | None = None) -> None:
+    r = _run(["store", f"--label={label or f'Echo Studio API key ({server})'}", *_attrs(server)], STORE_TIMEOUT_S, key)
     if r.returncode != 0:
         raise KeychainError(f"the keyring refused the key: {r.stderr.strip() or 'no reason given'}")
 

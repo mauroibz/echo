@@ -31,6 +31,7 @@ class Config:
     llm_model: str = ""
     auto_summarize: bool = True  # summarize each transcript as soon as it is ready (the user's choice)
     auto_title: bool = True  # a short title from the summary for recordings whose title is automatic
+    auto_record: bool = True  # record the calendar's meetings with a video link when they start
 
     @property
     def enabled(self) -> bool:
@@ -58,7 +59,7 @@ def load() -> Config:
     for name in ("llm_url", "llm_model"):
         if isinstance(raw.get(name), str):
             setattr(c, name, raw[name].strip())
-    for name in ("auto_summarize", "auto_title"):
+    for name in ("auto_summarize", "auto_title", "auto_record"):
         if isinstance(raw.get(name), bool):
             setattr(c, name, raw[name])
     return c
@@ -74,7 +75,9 @@ def save(c: Config) -> None:
                       "# Summarize each transcript as soon as it is ready\n"
                       f"auto_summarize = {'true' if c.auto_summarize else 'false'}\n\n"
                       "# A short title from the summary, for recordings you did not name\n"
-                      f"auto_title = {'true' if c.auto_title else 'false'}\n",
+                      f"auto_title = {'true' if c.auto_title else 'false'}\n\n"
+                      "# Record the calendar's meetings that have a video link, when they start\n"
+                      f"auto_record = {'true' if c.auto_record else 'false'}\n",
                       mkdir=True)
 
 

@@ -2,8 +2,7 @@
 
 This is how minutes and action items leave Echo: a script, a cron sync or an agent reads these
 commands and loads the items into the team's tracker. Like `echo_app.cli_json`, keys are only
-ever added, never renamed or removed. Other Studio modules add keys through `EXTRA`
-(the calendar adds the event and the attendees' emails).
+ever added, never renamed or removed.
 """
 
 from __future__ import annotations
@@ -18,9 +17,6 @@ from echo_app.library import Recording
 from . import actions, summary
 
 QUOTE_BEFORE, QUOTE_AFTER = 5.0, 25.0  # seconds of transcript around an item's time, for its quote
-
-# Functions rec -> dict merged into a meeting's dict; other Studio modules append to it.
-EXTRA: list = []
 
 
 def quote(rec: Recording, at: float | None) -> str:
@@ -38,32 +34,54 @@ def quote(rec: Recording, at: float | None) -> str:
     return " ".join(out)
 
 
-def action_dict(rec: Recording, it: dict, index: int) -> dict:
-    return {"index": index, "text": it["text"], "owner": it["owner"], "due": it["due"] or None,
+def _email_of(lib, name: str) -> str | None:
+    if lib is None or not name:
+        return None
+    from echo_app import people
+
+    return people.load(lib, name).email or None
+
+
+def action_dict(rec: Recording, it: dict, index: int, lib=None) -> dict:
+    return {"index": index, "text": it["text"], "owner": it["owner"], "owner_email": _email_of(lib, it["owner"]),
+            "due": it["due"] or None,
             "at": it["at"], "at_stamp": export.stamp(it["at"]) if it["at"] is not None else None,
             "context": it["context"], "edited": it["edited"], "added_by_user": it["origin"] == "user",
             "quote": quote(rec, it["at"]), "recording": rec.id}
 
 
-def action_items(rec: Recording, discarded: bool = False) -> list[dict]:
+def action_items(rec: Recording, discarded: bool = False, lib=None) -> list[dict]:
     items = (actions.load(rec) or {}).get("items", [])
-    return [action_dict(rec, it, k) for k, it in enumerate(items) if discarded or not it["discarded"]]
+    return [action_dict(rec, it, k, lib) for k, it in enumerate(items) if discarded or not it["discarded"]]
 
 
-def meeting(rec: Recording, full: bool = True) -> dict:
+def meeting(rec: Recording, full: bool = True, lib=None) -> dict:
     """The recording (as `echo-app info --json`) with its minutes: the summary and the action items.
     `full=False` leaves out the summary's text and the items, for a list."""
     d = record(rec)
     data = summary.load(rec)
-    items = action_items(rec)
+    items = action_items(rec, lib=lib)
     d["minutes"] = None if data is None else {
         "path": str(rec.path(summary.FILE).resolve()), "created": data.get("created"),
         "stale": summary.stale(rec, data), "template": data.get("template"),
         "excerpt": excerpt(data["text"]), **({"text": data["text"]} if full else {})}
     d["action_items"] = items if full else len(items)
-    for extra in EXTRA:
-        d.update(extra(rec))
+    from . import calendar
+
+    ev = calendar.event_of(rec)
+    d["event"] = None if ev is None else {k: v for k, v in ev.as_dict().items() if k != "attendees"}
+    d["attendees"] = [] if ev is None else [
+        {**a, "person": _person_of(lib, a["email"])} for a in ev.as_dict()["attendees"]]
     return d
+
+
+def _person_of(lib, email: str) -> str | None:
+    if lib is None:
+        return None
+    from echo_app import people
+
+    p = people.by_email(lib, email)
+    return p.name if p is not None else None
 
 
 def excerpt(text: str, limit: int = 280) -> str:

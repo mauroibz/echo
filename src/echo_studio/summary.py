@@ -115,11 +115,13 @@ def guide(rec: Recording) -> str:
 
 def source_sha(rec: Recording) -> str:
     """The hash of what a summary is made from: the transcript and, when there are any, the notes and
-    markers and the template, so editing a note or changing the template marks the summary out of
-    date. Without them, the transcript's alone, as summaries made before those existed."""
+    markers, the template and the calendar event, so editing a note or changing the template marks
+    the summary out of date. Without them, the transcript's alone, as summaries made before those existed."""
     text, g = source_text(rec), guide(rec)
     name, guidance = templates.resolve(rec)
-    lead = "\n".join(x for x in (f"template {name} {templates.sha(guidance)}" if name else "", g) if x)
+    ev = "\n".join(event_lines(rec))
+    lead = "\n".join(x for x in (f"template {name} {templates.sha(guidance)}" if name else "", g,
+                                 f"event {sha(ev)}" if ev else "") if x)
     return sha(f"{lead}\n\n{text}" if lead else text)
 
 
@@ -157,7 +159,30 @@ def _header(rec: Recording) -> str:
     names = [n for n in dict.fromkeys(rec.meta.speakers.values()) if n]
     if names:
         lines.append(f"People: {', '.join(names)}")
+    lines += event_lines(rec)
     return "\n".join(lines)
+
+
+EVENT_DESCRIPTION_MAX = 1500  # characters of the invitation's text: its agenda, not its boilerplate
+
+
+def event_lines(rec: Recording) -> list[str]:
+    """The calendar event the recording was made in, as context: its title, who was invited and
+    the start of its description (without the video call's links and dial-in numbers)."""
+    from . import calendar
+
+    ev = calendar.event_of(rec)
+    if ev is None:
+        return []
+    out = [f"Calendar event: {ev.title}"]
+    invited = [f"{a.name} <{a.email}>" if a.name else a.email for a in ev.attendees if a.status != "DECLINED"]
+    if invited:
+        out.append(f"Invited: {', '.join(invited)}")
+    desc = "\n".join(ln for ln in ev.description.splitlines()
+                     if ln.strip() and "http" not in ln and not re.search(r"\d{3}[\s-]?\d{3}[\s-]?\d{3,}", ln))
+    if desc.strip():
+        out.append("Invitation: " + " ".join(desc.split())[:EVENT_DESCRIPTION_MAX])
+    return out
 
 
 def _clean(text: str) -> str:

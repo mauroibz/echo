@@ -369,6 +369,27 @@ Follow-up, beside Copy, drafts the email you would send after the meeting: what 
 who does what by when. Edit it, then Copy it or press Open in mail to start a message in your mail
 program. Echo sends nothing itself. Read it first: a language model wrote it.
 
+**Calendar.** In Settings → Calendar, paste your calendar's private address in iCal format, one
+per line: in Google Calendar it is in the calendar's settings, "Secret address in iCal format"; in
+Outlook or Teams, Settings → Calendar → Shared calendars → "Publish a calendar", the ICS link.
+Test reads it. The address is a key to your calendar, so it is kept in your desktop's keyring
+like the API key (or set `$ECHO_CALENDAR_URLS`); Echo only reads the calendar, every 10 minutes,
+and works from the last copy when offline. The calendar works without a summaries server.
+
+A recording made during a meeting (from 10 minutes before it) is that meeting's: if you did not
+name it, it takes the meeting's title; transcription gets the attendees' names; the summary
+knows who was invited and what the invitation says; and when you name a speaker like an
+attendee, their profile learns the attendee's email. `echo-app calendar` lists the next
+meetings (`--refresh` reads the calendar first, `--json` for scripts).
+
+**Recording the meetings.** With "Record the meetings that have a video link when they start"
+on (Settings → Calendar), a meeting with a Google Meet, Teams, Zoom or similar link starts
+recording by itself when it starts, titled after it, and stops 10 minutes after it ends unless
+you stop it first. A meeting is started once: stop it and it stays stopped. Skip on the home
+leaves the next one alone. Echo has to be running, so turn on "Keep Echo running in the tray,
+and start it when you log in" in Settings → General. Recording people may need their consent;
+it is your call, as with the Record button.
+
 **Ask.** With a server set, an Ask view sits beside Transcript and Summary: ask about the shown
 recording ("¿qué precio se acordó?") and the answer comes from its transcript, citing the times;
 click a time to hear it. The Ask screen (the question button beside People, Ctrl+Shift+A) asks

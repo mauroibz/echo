@@ -6,7 +6,7 @@ from __future__ import annotations
 import json
 import sys
 
-from . import config, followup, llm, summary, templates
+from . import config, followup, keychain, llm, summary, templates
 
 # Exit codes, as Echo's transcribe: 0 done, 1 a recording failed, 2 usage, 3 no server set up.
 OK, FAILED, USAGE, NOT_SET_UP = 0, 1, 2, 3
@@ -151,13 +151,14 @@ def cmd_meetings(args) -> int:
     if bad:
         _err(f"not a date: {bad} (YYYY-MM-DD, today or yesterday)")
         return USAGE
-    recs = sorted((r for r in _library().all() if data.in_range(r, args.since, args.until)
+    lib = _library()
+    recs = sorted((r for r in lib.all() if data.in_range(r, args.since, args.until)
                    and (args.all or summary.load(r) is not None)), key=lambda r: r.meta.created, reverse=True)
     if args.json:
-        print(json.dumps([data.meeting(r, full=False) for r in recs], ensure_ascii=False, indent=2))
+        print(json.dumps([data.meeting(r, full=False, lib=lib) for r in recs], ensure_ascii=False, indent=2))
         return OK
     for r in recs:
-        n = len(data.action_items(r))
+        n = len(data.action_items(r, lib=lib))
         tail = f"  ({n} action item{'s' if n != 1 else ''})" if summary.load(r) is not None else "  (no minutes)"
         print(f"{r.id}  {r.meta.created[:16].replace('T', ' ')}  {r.meta.title}{tail}")
     return OK
@@ -178,7 +179,7 @@ def cmd_minutes(args) -> int:
             _err(f"{rid}: no minutes yet (see: echo-app summarize {rid})")
             code = FAILED
             continue
-        m = data.meeting(rec)
+        m = data.meeting(rec, lib=lib)
         if args.json:
             out.append(m)
             continue
@@ -220,7 +221,7 @@ def cmd_actions(args) -> int:
     want = fold_tag(args.owner) if args.owner else None
     items = []
     for r in recs:
-        for it in data.action_items(r, discarded=args.discarded):
+        for it in data.action_items(r, discarded=args.discarded, lib=lib):
             if want is None or fold_tag(it["owner"]) == want:
                 items.append({**it, "title": r.meta.title, "created": r.meta.created})
     if args.json:
@@ -232,6 +233,42 @@ def cmd_actions(args) -> int:
             print(("\n" if last else "") + f"{it['title']} ({it['recording']})")
             last = it["recording"]
         print(_item_line(it))
+    return OK
+
+
+def cmd_calendar(args) -> int:
+    from datetime import datetime, timedelta
+
+    from . import calendar
+
+    if args.set:
+        try:
+            found = calendar.save_urls(sys.stdin.read())
+        except keychain.KeychainError as e:
+            _err(str(e))
+            return FAILED
+        _err(f"{len(found)} calendar address(es) kept in the keyring")
+        args.refresh = bool(found)
+    if not calendar.enabled():
+        _err("No calendar set. Paste its private ICS address in Settings, Calendar, or pipe it to "
+             f"echo-app calendar --set; ${calendar.URLS_ENV} also works.")
+        return NOT_SET_UP
+    if args.refresh:
+        errors = calendar.refresh()
+        for e in errors:
+            _err(e)
+        if errors and len(errors) == len(calendar.urls()):
+            return FAILED
+    now = datetime.now().astimezone()
+    evs = [e for e in calendar.events(now, now + timedelta(days=args.days)) if e.end > now]
+    if args.json:
+        print(json.dumps([e.as_dict() for e in evs], ensure_ascii=False, indent=2))
+        return OK
+    for e in evs:
+        when = "all day" if e.all_day else f"{e.start:%H:%M}-{e.end:%H:%M}"
+        names = ", ".join(a.name or a.email for a in e.attendees[:4]) + ("…" if len(e.attendees) > 4 else "")
+        print(f"{e.start:%a %b %d}  {when:11}  {e.title}" + ("  [video]" if e.link else "")
+              + (f"  ({names})" if names else ""))
     return OK
 
 
@@ -340,4 +377,21 @@ examples:
     t.add_argument("--json", action="store_true", help="as JSON: the items as in minutes --json, with the "
                    "recording's \"title\" and \"created\"")
     t.set_defaults(func=cmd_actions)
+
+    c = sub.add_parser(
+        "calendar", help="the meetings in your calendar (Echo Studio)",
+        description="The events in the calendars whose private ICS addresses are set (Settings, Calendar), "
+                    "from the copy fetched last; --refresh fetches them first. Echo only reads calendars.",
+        epilog="""examples:
+  echo-app calendar --refresh
+  echo-app calendar --days 7 --json
+  echo-app calendar --set < addresses.txt      one address per line, kept in the keyring
+
+exit codes: 0 listed, 1 no calendar could be fetched, 3 no calendar set""",
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    c.add_argument("--days", type=float, default=1, help="how far ahead (default 1)")
+    c.add_argument("--refresh", action="store_true", help="fetch the calendars first")
+    c.add_argument("--set", action="store_true", help="read the addresses from standard input and keep them")
+    c.add_argument("--json", action="store_true", help="as JSON: each event with its attendees' emails")
+    c.set_defaults(func=cmd_calendar)
 

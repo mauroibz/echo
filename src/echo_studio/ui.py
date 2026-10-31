@@ -88,7 +88,7 @@ class SettingsPage(QWidget):
 
     def _config(self) -> config.Config:
         return config.Config(self.url.text().strip(), self.model.text().strip(), self.auto.isChecked(),
-                             self.titles.isChecked())
+                             self.titles.isChecked(), auto_record=config.load().auto_record)
 
     def _update_warning(self):
         url = self.url.text().strip()
