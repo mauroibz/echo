@@ -137,9 +137,9 @@ becomes a paragraph of its own with their name. Echo catches most interruptions 
 more; in a recorded call it uses the two tracks to tell your side from theirs.
 
 **Naming.** A bar over the transcript asks about one unnamed speaker at a time, whoever speaks
-most first: ▶ plays a few seconds of them, then type a name and press Enter, or click "Yes, Ana"
-when the voice matches someone you named before. "Not now" stops asking about that recording;
-the names beside the text can still be clicked.
+most first: ▶ plays a few seconds of them (the playhead and the text go there), then type a name
+and press Enter, or click "Yes, Ana" when the voice matches someone you named before. "Not now"
+stops asking about that recording; the names beside the text can still be clicked.
 
 **You.** Answer "It's me" once (Echo asks your name, kept under Settings → Your name) and from
 then on Echo names you itself, wherever it recognizes your voice and on the microphone side of

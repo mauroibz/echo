@@ -7,6 +7,8 @@ tag.
 
 ### Added
 
+- ▶ in the bar that asks for a speaker's name moves the playhead and the transcript to the
+  passage it plays.
 - For extensions: screens in place of the selected recording (`add_screen`), `show_recording` to
   play a recording from a time, sections in a person's profile (`person_sections`), and
   `Index.passages` to quote what was said. Without an extension nothing changes.

@@ -333,6 +333,7 @@ no folder yet; it waits for the dictionary to be in daily use. Summaries are Ech
 | 9 | `add-click-to-seek` | product | archived |
 | 9 | `add-extension-screens` | product | archived |
 | 9 | `add-extension-choice` | product | archived |
+| 9 | `add-naming-jump` | product | archived |
 
 The open items are listed under "Blocked" in each change's `tasks.md`, with what a person has
 to run and look for.

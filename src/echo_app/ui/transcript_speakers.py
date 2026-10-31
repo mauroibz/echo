@@ -90,6 +90,8 @@ class SpeakersMixin:
         start = float(sg.get("start", 0))
         self._audio_k, self._typing_paused = None, False
         self.player.play_span(start, min(float(sg.get("end", 0)), start + NAME_SAMPLE_S))
+        self.player.seek_shown(start)  # the playhead and the text go there at once, not on the next tick
+        self.follow(start, jump=True)
 
     def _name_suggested(self):
         info = ((self.rec.transcript() or {}).get("speakers") or {}) if self.rec else {}

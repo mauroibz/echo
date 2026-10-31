@@ -972,7 +972,9 @@ class TranscriptPanel(SetsMixin, SpeakersMixin, FindMixin, QWidget):
         return self.stack.currentWidget() is self.page
 
     # ---- follow-along ----
-    def follow(self, sec: float):
+    def follow(self, sec: float, jump: bool = False):
+        """Highlight the passage at `sec` and bring it into view, unless the user is typing in the
+        text. `jump`: the user asked to go there (the naming bar's play), so even then."""
         if not self._spans or self.stack.currentWidget() is not self.page:
             return
         idx = -1
@@ -981,10 +983,10 @@ class TranscriptPanel(SetsMixin, SpeakersMixin, FindMixin, QWidget):
                 idx = k
             else:
                 break
-        if idx != self._current_span:
+        if idx != self._current_span or jump:
             self._current_span = idx
             self._apply_selections()
-            if idx >= 0 and not self.editor.hasFocus():
+            if idx >= 0 and (jump or not self.editor.hasFocus()):
                 cur = QTextCursor(self.editor.document())
                 cur.setPosition(self._spans[idx][0])
                 self.editor.setTextCursor(cur)

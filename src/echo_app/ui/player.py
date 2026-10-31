@@ -518,6 +518,11 @@ class PlayerPanel(QWidget):
         self.player.play(start, end)
         self._sync_play_icon()
 
+    def seek_shown(self, sec: float) -> None:
+        """Show `sec` as the position (waveform and time) without touching playback."""
+        self.wave.set_position(sec)
+        self.time.setText(fmt_duration(sec))
+
     def stop_span(self) -> None:
         self._span = None
         if self.player.playing:

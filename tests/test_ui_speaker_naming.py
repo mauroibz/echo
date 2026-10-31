@@ -77,8 +77,12 @@ def test_hear_the_speaker(window, lib, tmp_path, monkeypatch):
     rec, tp = _show(window, lib, tmp_path)
     played = []
     monkeypatch.setattr(tp.player, "play_span", lambda a, b: played.append((a, b)))
+    tp.editor.setFocus()
     tp.name_play.click()
     assert played == [(2.0, 3.9)]  # speaker 2's longest passage, under 6 s so all of it
+    # The playhead and the text go there too, even while the cursor is in the text.
+    assert tp.player.time.text() == "0:02" and tp._current_span == 1
+    assert tp.editor.textCursor().position() == tp._spans[1][0]
 
 
 def test_waits_for_the_dictionary_chip_and_takes_no_focus(window, lib, tmp_path):
