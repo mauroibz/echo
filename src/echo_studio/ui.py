@@ -13,12 +13,12 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QDialog, QFormLayout, QF
 from echo_app.ui import theme
 from echo_app.ui.common import icon, run_task
 
-from . import actions, config, followup, keychain, llm, summary, templates
-from .actions_ui import ActionList, items_of
+from . import config, followup, keychain, llm, summary, templates
+from .actions_ui import ActionList
 from .reading import ReadingBrowser
 
 VIEW_TITLE = "Summary"
-ACTIONS_MAX_H = 220
+ACTIONS_MAX_H = 260
 
 
 def _dim(text: str = "") -> QLabel:
@@ -189,17 +189,26 @@ class SummaryView(QWidget):
         self.text.setOpenExternalLinks(True)
         self.text.setAccessibleName("Summary")
         lay.addWidget(self.text, 1)
-        # The summary's action items, to check off; their time buttons play where each came up.
+        # The summary's action items, to polish before they go to the team's tracker; their time
+        # buttons play where each came up.
         self.actions_box = QWidget()
         al = QVBoxLayout(self.actions_box)
         al.setContentsMargins(0, 6, 0, 0)
         al.setSpacing(6)
+        ah = QHBoxLayout()
         head = QLabel("Action items")
         head.setFont(theme.display_font(0.95, QFont.Weight.Bold))
-        al.addWidget(head)
-        self.actions = ActionList()
-        self.actions.toggled.connect(self._toggle_action)
+        ah.addWidget(head)
+        ah.addStretch(1)
+        self.add_btn = QToolButton()
+        self.add_btn.setText("Add")
+        self.add_btn.setToolTip("Add an action item")
+        self.add_btn.clicked.connect(lambda: self.actions.start_add())
+        ah.addWidget(self.add_btn)
+        al.addLayout(ah)
+        self.actions = ActionList(editable=True)
         self.actions.play.connect(lambda rid, at: self.show_recording(rid, at))
+        self.actions.relaid.connect(self._fit_actions)
         scroll = QScrollArea()
         # On the reading card's surface, not the window's.
         scroll.setStyleSheet("QScrollArea, QScrollArea > QWidget > QWidget { background: transparent; }")
@@ -223,11 +232,9 @@ class SummaryView(QWidget):
         self.summarize_btn.setText("Summarize again" if data else "Summarize")
         self.copy_btn.setVisible(data is not None)
         self.follow_btn.setVisible(data is not None and not busy)
-        items = items_of(rec) if data is not None else []
-        self.actions.set_items(items)
-        self.actions_box.setVisible(bool(items))
-        # As tall as the items, up to a third of a typical card; more scroll.
-        self.actions_scroll.setFixedHeight(min(ACTIONS_MAX_H, self.actions.sizeHint().height() + 4))
+        self.actions.set_recording(rec if data is not None else None)
+        self.actions_box.setVisible(data is not None and not busy)
+        self._fit_actions()
         if data is not None:
             self.text.show_markdown(data["text"])
         else:
@@ -281,9 +288,10 @@ class SummaryView(QWidget):
 
         run_task(lambda: followup.draft(rec), on_done=done, on_error=failed)
 
-    def _toggle_action(self, rid: str, index: int, done: bool):
-        if self.rec is not None and self.rec.id == rid:
-            actions.set_done(self.rec, index, done)
+    def _fit_actions(self):
+        """As tall as the items (or the editor), up to a third of a typical card; more scroll."""
+        self.actions.adjustSize()
+        self.actions_scroll.setFixedHeight(min(ACTIONS_MAX_H, self.actions.sizeHint().height() + 4))
 
     def _fill_templates(self):
         m = self.template_menu

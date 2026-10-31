@@ -162,41 +162,96 @@ the installer decides whether Studio is included.
 - New capability `studio-install`; modifies `install` in Echo's specs.
 - Echo base: the installer flag and the doctor line.
 
-## Version 2: accounts and connectors
+## Version 2: a companion to the calendar
 
-These need an account, a token or a server that Studio does not run, so each one comes with its
-own decision about where credentials live. Today the only secret is the model key, in the
-desktop's keyring.
+Decided with the user on 2026-10-31, after trying version 1. Studio is a side app: it reads the
+calendar the user already keeps, records the meetings in it, and turns them into minutes whose
+action items can be polished before they go to the team's own tracker (Plane, Trello or
+Jira). It does not replace those tools, and it does not try to know more than the
+user gives it:
 
-### S10 Calendar (`add-studio-calendar`)
+- **No proactive nudges.** Studio shows what the calendar and the recordings say. It does not
+  suggest catch-ups, does not say what is "still open on your side", and does not read other
+  knowledge sources.
+- **Action items are informative.** They can be edited, given context, added and discarded
+  before they leave, but Studio does not track whether they got done. No done flags, no "late",
+  no Pending screen.
+- **Nothing is pushed anywhere yet.** The data leaves through the CLI (`--json`), read by
+  whatever the user runs: a cron sync, an agent with a skill, a future importer. A direct export
+  to a tracker may come later as its own change.
+- **No reminders, no MCP server** for now.
 
-Studio matches a recording to the calendar event happening when it started. From the event it
-takes:
+### S10 Editable action items (`change-studio-action-edits`)
 
-- the event title, for an automatic title;
-- the attendees, offered as speaker names and given to transcription as context;
-- the event description, as a line of context for the summary.
+Action items lose the done flag, the late dates and the Pending screen. In the minutes each item
+can be edited (text, owner, due date), given a line of context, discarded (and restored) and
+added by hand. Summarizing again keeps the user's edits, context and discards for items that
+still match, and keeps the items the user added.
 
-The first version reads a private ICS URL: read-only, no OAuth, and it works for Google,
-Outlook and Fastmail. A sign-in with Google or Microsoft is a later step.
+- Modifies `studio-actions`.
 
-### S11 Send and publish (`add-studio-connectors`)
+### S11 Calendar (`add-studio-calendar`)
 
-Studio sends a summary, its action items or the follow-up to another service:
+Studio reads one or more private ICS URLs (Google Calendar, Outlook/Teams), kept in the keyring
+since they are secrets. From the event happening when a recording started it takes the title
+(for an automatic title), the attendees with their emails (offered as speaker names), the
+description (as context for the summary) and the video link. Recurring events are expanded by
+Studio's own small RRULE reader (stdlib only).
 
-- email through SMTP with the user's own account;
-- a Slack message through an incoming webhook;
-- a Notion page through an integration token.
+- New capability `studio-calendar`.
 
-Each connector is a small module with a settings page, a Send action and a record in the
-recording folder of what went where. Markdown export already covers Obsidian and similar tools.
+### S12 Recording the meetings in the calendar (`add-studio-auto-record`)
 
-### S12 People across meetings (`add-studio-people-brief`)
+When an event with a video link starts and Echo is running, Studio starts a recording titled
+after it, and stops it 10 minutes after the event ends unless the user already did. The home
+says before that it will record and offers Skip. Echo can start minimized at login so this
+works without opening it.
 
-Before a meeting, a short brief per person: what was talked about with them in the last
-meetings, open items both ways, and the notes from their profile. It is built from S4 and S7.
+- New capability `studio-auto-record`.
+- Echo base: a public start/stop of a recording for an extension, and a "start at login,
+  minimized" setting (an autostart entry).
 
-## Not planned
+### S13 People by email (`add-studio-people`)
+
+A person gains an email, the key that matches them to calendar attendees. Studio's person page
+shows their meetings with an excerpt of each minute and a line on their part in it (from one
+extra short request per summary that returns every participant's part), the action items
+assigned to them (informative), and the notes.
+
+- New capability `studio-people`.
+- Echo base: `email` in the person's profile and a lookup by email; People shows it.
+
+### S14 Studio's home (`add-studio-home`)
+
+With Studio on, the window gets a rail (Home, Recordings, People, Ask, Record) and Lagoon's
+boldest styling: a deep hero band ending in a wave, large type, minutes as a timeline. Home shows
+the next meeting from the calendar (time, title, description, attendees, join link, whether it
+will record) and the minutes of past meetings; while a meeting records it shows the timer, the
+notes and who was invited. A meeting opens on its minutes and action items, with Transcript and
+Ask beside them. Recordings is Echo's window as it is today.
+
+- New capability `studio-home`.
+- Echo base: whatever `window_class` cannot reach today; listed at the start of the change and
+  shipped as an Echo release first.
+
+### S15 Data out (`add-studio-cli-data`)
+
+`echo-app meetings --since DATE --json`, `minutes ID --json` (summary, event, attendees, action
+items with owner emails, quotes and times) and `actions ID --json`, plus a skill in `agents/`
+that tells an agent how to read them.
+
+- Extends `studio-summaries` and `studio-actions` on the CLI.
+
+## Not planned now
+
+- **Proactive briefs and catch-up suggestions,** and anything that needs knowledge beyond the
+  calendar and the recordings.
+- **Reminders and done-tracking.** The tracker the team uses does that.
+- **Connectors that push** (Plane, Trello, Jira, Slack, Notion, SMTP). The CLI is the way out
+  until one is asked for.
+- **An MCP server.** The CLI and an agent skill cover it.
+
+## Never planned
 
 - **Share links and team spaces.** They need a server that holds other people's meetings. That
   is a different product, with hosting, accounts and privacy obligations, and it goes against
@@ -216,9 +271,11 @@ meetings, open items both ways, and the notes from their profile. It is built fr
 | 2 | Echo base hooks (`show_recording`, `person_sections`, passage search, what S8 lists); S8 window | One Echo release with the hooks, then the window the next items live in. |
 | 3 | S4 actions, S5 follow-up, S6 ask a recording | S5 needs S4's data. S6 needs `show_recording`. |
 | 4 | S7 ask the library; S9 install | S7 is the largest. S9 ships Studio as version 1. |
-| v2 | S10 calendar, S11 connectors, S12 people brief | Accounts and tokens, decided one service at a time. |
+| v2a | S10 action edits, S15 data out | Small, and they settle what an item is before anything reads it. |
+| v2b | S13 people by email, S11 calendar | Attendees match people by email, so the email comes first. |
+| v2c | S12 auto-record, S14 home | Both need the calendar; the home shows all of it. |
 
-| Phase | Change | Status (2026-10-29) |
+| Phase | Change | Status (2026-10-31) |
 |---|---|---|
 | 0 | `add-studio-summaries` | done; 1.8 on real recordings is open |
 | 1 | `add-studio-notes-first` | done; archives after `add-studio-summaries` |
@@ -230,6 +287,9 @@ meetings, open items both ways, and the notes from their profile. It is built fr
 | 3 | `add-studio-ask` | done; archives after `add-studio-summaries` |
 | 4 | `add-studio-ask-library` | done; archives after `add-studio-summaries` |
 | 4 | `add-studio-install` | done but the release: merging `studio` into `main` waits for the user |
-| v2 | `add-studio-calendar` | planned |
-| v2 | `add-studio-connectors` | planned |
-| v2 | `add-studio-people-brief` | planned |
+| v2a | `change-studio-action-edits` | done; archives after `add-studio-actions` |
+| v2a | `add-studio-cli-data` | planned |
+| v2b | `add-studio-people` | planned |
+| v2b | `add-studio-calendar` | planned |
+| v2c | `add-studio-auto-record` | planned |
+| v2c | `add-studio-home` | planned |

@@ -340,17 +340,20 @@ def test_title_from_the_summary_only_when_automatic(window, lib, server, studio)
     assert len(titles) == 1
 
 
+def _model_item(text, owner="", due="", at=None):
+    return {"text": text, "owner": owner, "due": due, "at": at, "context": "", "discarded": False, "edited": False,
+            "origin": "model", "key": actions.fold_tag(text)}
+
+
 def test_action_items_parsed_tolerantly():
     reply = 'Acá van:\n```json\n[{"text": " Enviar  la propuesta ", "owner": "Lucía", "due": "2026-11-02",' \
             ' "at": "1:02:03"}, {"text": "", "owner": "x"}, {"text": "Llamar", "due": "el viernes", "at": "x"}]\n```'
     items = actions.parse(reply)
-    assert items == [{"text": "Enviar la propuesta", "owner": "Lucía", "due": "2026-11-02", "at": 3723.0,
-                      "done": False},
-                     {"text": "Llamar", "owner": "", "due": "", "at": None, "done": False}]
+    assert items == [_model_item("Enviar la propuesta", "Lucía", "2026-11-02", 3723.0), _model_item("Llamar")]
     assert actions.parse("no hay") == [] and actions.parse("[{bad json") == []
 
 
-def test_action_items_after_the_summary_keep_done(tmp_path, server):
+def test_action_items_keep_the_users_work(tmp_path, server):
     lib = Library(tmp_path / "data")
     rec = _rec(lib)
     data = summary.write(rec)
@@ -358,56 +361,79 @@ def test_action_items_after_the_summary_keep_done(tmp_path, server):
     req = server.all_requests[-1]
     assert req["messages"][0]["content"].startswith("You extract the action items")
     assert "Transcript with times:" in req["messages"][1]["content"] and "[0:06]" in req["messages"][1]["content"]
-    d = actions.load(rec)
-    assert d["items"] == [{"text": "Enviar la propuesta", "owner": "lucia", "due": "2026-10-31", "at": 6.0,
-                           "done": False}]
-    actions.set_done(rec, 0, True)
-    assert actions.open_items(lib) == []
-    server.actions = json.dumps([{"text": "enviar la PROPUESTA", "owner": "Lucía"}, {"text": "Llamar a Ana"}])
+    assert actions.load(rec)["items"] == [_model_item("Enviar la propuesta", "lucia", "2026-10-31", 6.0)]
+    actions.update(rec, 0, text="Enviar la propuesta de precios", context="la versión con descuento")
+    actions.add(rec, "Reservar sala", owner="Ana")
+    server.actions = json.dumps([{"text": "enviar la PROPUESTA", "owner": "Lucía"}, {"text": "Llamar a Ana"},
+                                 {"text": "Mandar la grabación"}])
+    summary.finish(rec, data)
+    actions.discard(rec, 2, True)
+    server.actions = json.dumps([{"text": "Enviar la propuesta", "at": "0:09"}, {"text": "Mandar la grabación"}])
     summary.finish(rec, data)
     items = actions.load(rec)["items"]
-    assert [i["done"] for i in items] == [True, False]  # the same text keeps its check
-    assert [i["text"] for i in actions.open_items(lib)] == ["Llamar a Ana"]
-    assert actions.open_items(lib, person="LUCIA") == [] and actions.open_items(lib, person="nadie") == []
+    assert [(i["text"], i["discarded"], i["origin"]) for i in items] == [
+        ("Enviar la propuesta de precios", False, "model"),  # the user's text, its first time
+        ("Mandar la grabación", True, "model"),  # still discarded
+        ("Reservar sala", False, "user")]  # added by hand: kept; "Llamar a Ana" is gone with the model
+    assert items[0]["edited"] and items[0]["context"] == "la versión con descuento" and items[0]["at"] == 6.0
+    assert "done" not in items[0]
+    assert [i["text"] for i in actions.assigned_to(lib, "ANA")] == ["Reservar sala"]
+    assert actions.assigned_to(lib, "nadie") == []
 
 
-def test_pending_screen_and_summary_items(window, lib, server, studio):
-    from echo_studio.actions_ui import PendingScreen
+def test_version_1_actions_are_read(tmp_path):
+    lib = Library(tmp_path / "data")
+    rec = _rec(lib)
+    rec.path(actions.FILE).write_text(json.dumps({"version": 1, "items": [
+        {"text": "Llamar a Ana", "owner": "Lucía", "due": "", "at": 3.0, "done": True}]}))
+    assert actions.load(rec)["items"] == [_model_item("Llamar a Ana", "Lucía", "", 3.0)]
+
+
+def test_polishing_items_in_the_summary_view(window, lib, server, studio):
+    from PySide6.QtWidgets import QLabel, QLineEdit, QPlainTextEdit, QPushButton
+
     from echo_studio.ui import SummaryView
 
     rec = _rec(lib)
-    rec.set_tags(["acme"])
     window.model.refresh()
     _attach(window)
+    assert not any(type(w).__name__ == "PendingScreen" for w in window._screen_buttons)
     view = window.views.views()[0]
     assert isinstance(view, SummaryView)
     window._select(rec.id)
     window.transcribed.emit(rec.id)
     assert wait_until(lambda: actions.load(lib.get(rec.id)) is not None)
     view.show_subject(lib.get(rec.id), None)
-    assert view.actions_box.isVisibleTo(view)
-    box = view.actions.findChildren(QCheckBox)[0]
-    assert box.text() == "Enviar la propuesta"
-    screen = next(w for w in window._screen_buttons if isinstance(w, PendingScreen))
-    window._screen_buttons[screen].click()
-    assert window.screens.currentWidget() is screen and screen.count.text() == "1 open item"
-    assert [screen.person.itemText(i) for i in range(screen.person.count())] == ["Everyone", "lucia"]
-    screen.tag.setText("#otra")
-    assert screen.count.text() == "0 open items"
-    screen.tag.setText("#acme")
-    assert screen.count.text() == "1 open item"
+    assert view.actions_box.isVisibleTo(view) and not view.actions.findChildren(QCheckBox)
+    texts = lambda: [lbl.text() for lbl in view.actions.findChildren(QLabel)]  # noqa: E731
+    assert "Enviar la propuesta" in texts()
+    assert any(t.startswith("lucia") and "by " in t for t in texts())
     played = []
     window._seek_and_play = played.append
-    screen.list.findChildren(QToolButton)[0].click()  # the item's time: back to the recording, playing
-    assert window.screens.currentWidget() is window.content and played == [6.0]
+    next(b for b in view.actions.findChildren(QToolButton) if b.objectName() == "pill").click()
+    assert played == [6.0]
+    edit = next(b for b in view.actions.findChildren(QToolButton) if b.toolTip() == "Edit")
+    edit.click()
+    view.actions.findChildren(QLineEdit)[0].setText("Enviar la propuesta final")
+    view.actions.findChildren(QPlainTextEdit)[0].setPlainText("pedirle el número a Tomás")
+    next(b for b in view.actions.findChildren(QPushButton) if b.text() == "Save").click()
+    it = actions.load(lib.get(rec.id))["items"][0]
+    assert it["text"] == "Enviar la propuesta final" and it["edited"] and it["context"] == "pedirle el número a Tomás"
+    assert "pedirle el número a Tomás" in texts()
+    next(b for b in view.actions.findChildren(QToolButton) if b.toolTip() == "Discard").click()
+    assert actions.load(lib.get(rec.id))["items"][0]["discarded"] and "1 discarded" in texts()
+    next(b for b in view.actions.findChildren(QPushButton) if b.text() == "Show").click()
+    next(b for b in view.actions.findChildren(QToolButton) if b.toolTip() == "Restore").click()
+    assert not actions.load(lib.get(rec.id))["items"][0]["discarded"]
+    view.add_btn.click()
+    view.actions.findChildren(QLineEdit)[0].setText("Reservar sala")
+    next(b for b in view.actions.findChildren(QPushButton) if b.text() == "Save").click()
+    assert [i["origin"] for i in actions.load(lib.get(rec.id))["items"]] == ["model", "user"]
     import echo_studio
 
-    [(title, section)] = echo_studio.person_sections("Lucia")  # People: their open items
-    assert title == "Open items" and [b.text() for b in section.findChildren(QCheckBox)] == ["Enviar la propuesta"]
-    window._screen_buttons[screen].click()
-    screen.list.findChildren(QCheckBox)[0].setChecked(True)
-    screen.refresh()
-    assert screen.count.text() == "0 open items" and actions.load(lib.get(rec.id))["items"][0]["done"]
+    [(title, section)] = echo_studio.person_sections("Lucia")  # People: the items assigned to them
+    assert title == "Action items" and not section.findChildren(QCheckBox)
+    assert "Enviar la propuesta final" in [lbl.text() for lbl in section.findChildren(QLabel)]
 
 
 def test_follow_up_draft(window, lib, server, studio, capsys, tmp_path, monkeypatch):
@@ -493,10 +519,9 @@ def test_due_dates_read_as_days():
     from echo_studio.actions_ui import fmt_due
 
     today = date.today()
-    assert fmt_due(today.isoformat()) == "due today"
-    assert fmt_due((today + timedelta(days=1)).isoformat()) == "due tomorrow"
-    assert fmt_due((today - timedelta(days=3)).isoformat()).startswith("late, was due ")
-    assert fmt_due("bad") == "bad"
+    assert fmt_due(today.isoformat()) == f"by {today:%a %b %-d}"
+    assert fmt_due((today - timedelta(days=3)).isoformat()).startswith("by ")  # never "late"
+    assert fmt_due("bad") == "by bad"
 
 
 def test_split_at_paragraphs():

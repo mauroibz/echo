@@ -3,8 +3,11 @@
 They come from a second, short request over the finished summary (and the transcript with its
 times, when it fits), so the summary prompt stays the one task 1.8 measured and no request is
 asked for two formats. Each item has its text, owner (a name as Echo knows it, or ""), due date
-(ISO, or ""), the time in the audio where it came up (seconds, or None) and a done flag. Checking
-an item rewrites the file; summarizing again keeps the done flags of items whose text is the same.
+(ISO, or ""), the time in the audio where it came up (seconds, or None), and what the user did to
+it: a line of context, edited, discarded, or added by hand. Items are informative: whether they
+got done is the team tracker's business, so there is no done flag. Summarizing again keeps the
+user's work on every item the model gives again (matched by the text the model first gave it)
+and keeps the items the user added.
 """
 
 from __future__ import annotations
@@ -20,7 +23,8 @@ from echo_app.library import Recording, fold_tag
 from . import config, llm, summary
 
 FILE = "actions.json"
-VERSION = 1
+VERSION = 2
+USER_FIELDS = ("text", "owner", "due", "context", "discarded", "edited")  # what the user may change
 WITH_TRANSCRIPT_MAX = summary.SINGLE_MAX  # longer transcripts: the summary alone, items without times
 
 PROMPT = """You extract the action items agreed in a meeting. You get its summary and, when it fits,
@@ -67,9 +71,41 @@ def parse(reply: str) -> list[dict]:
             datetime.strptime(due, "%Y-%m-%d")
         except ValueError:
             due = ""
-        items.append({"text": " ".join(str(it["text"]).split()), "owner": str(it.get("owner") or "").strip(),
-                      "due": due, "at": _stamp_seconds(str(it.get("at") or "")), "done": False})
+        items.append(_item(" ".join(str(it["text"]).split()), str(it.get("owner") or "").strip(), due,
+                           _stamp_seconds(str(it.get("at") or ""))))
     return items
+
+
+def _item(text: str, owner: str = "", due: str = "", at: float | None = None, origin: str = "model") -> dict:
+    return {"text": text, "owner": owner, "due": due, "at": at, "context": "", "discarded": False,
+            "edited": False, "origin": origin, "key": fold_tag(text)}
+
+
+def _upgrade(it: dict) -> dict:
+    """An item as version 2 has it; a version 1 item (with a done flag) is a model item."""
+    out = _item(str(it.get("text") or ""), str(it.get("owner") or ""), str(it.get("due") or ""), it.get("at"),
+                "user" if it.get("origin") == "user" else "model")
+    out["key"] = str(it.get("key") or out["key"])
+    out["context"] = str(it.get("context") or "")
+    out["discarded"] = bool(it.get("discarded"))
+    out["edited"] = bool(it.get("edited"))
+    return out
+
+
+def merge(new: list[dict], old: list[dict]) -> list[dict]:
+    """The new extraction with the user's work carried over: an old model item that was edited,
+    given context or discarded wins over the new item with the same key (its time comes from the
+    new one when it had none); old items the user added stay at the end. Old model items the new
+    summary no longer has are dropped, as they were only the model's."""
+    worked = {i["key"]: i for i in old
+              if i.get("origin") == "model" and (i["edited"] or i["context"] or i["discarded"])}
+    out = []
+    for i in new:
+        o = worked.get(i["key"])
+        if o is not None:
+            i = {**i, **{f: o[f] for f in USER_FIELDS}, "at": o["at"] if o["at"] is not None else i["at"]}
+        out.append(i)
+    return out + [i for i in old if i.get("origin") == "user"]
 
 
 def write(rec: Recording, data: dict, cfg: config.Config | None = None) -> dict:
@@ -85,11 +121,7 @@ def write(rec: Recording, data: dict, cfg: config.Config | None = None) -> dict:
     text = summary.source_text(rec)
     if text and len(text) <= WITH_TRANSCRIPT_MAX and rec.transcript():
         user += "\n\nTranscript with times:\n\n" + export.with_timestamps(rec)
-    items = parse(llm.complete(system, user, cfg))
-    old = load(rec)
-    done = {fold_tag(i["text"]) for i in (old or {}).get("items", []) if i.get("done")}
-    for i in items:
-        i["done"] = fold_tag(i["text"]) in done
+    items = merge(parse(llm.complete(system, user, cfg)), (load(rec) or {}).get("items", []))
     out = {"version": VERSION, "created": datetime.now().astimezone().isoformat(timespec="seconds"),
            "summary_created": data.get("created"), "items": items}
     atomic_write_json(rec.path(FILE), out)
@@ -101,31 +133,62 @@ def load(rec: Recording) -> dict | None:
         d = read_json(rec.path(FILE))
     except (OSError, ValueError):
         return None
-    return d if isinstance(d, dict) and isinstance(d.get("items"), list) else None
+    if not isinstance(d, dict) or not isinstance(d.get("items"), list):
+        return None
+    d["items"] = [_upgrade(i) for i in d["items"] if isinstance(i, dict) and str(i.get("text") or "").strip()]
+    d["version"] = VERSION
+    return d
 
 
-def set_done(rec: Recording, index: int, done: bool) -> None:
-    d = load(rec)
-    if d is None or not 0 <= index < len(d["items"]):
-        return
-    d["items"][index]["done"] = bool(done)
+def _save(rec: Recording, d: dict) -> None:
     atomic_write_json(rec.path(FILE), d)
 
 
-def open_items(library, index=None, person: str = "", tags=()) -> list[dict]:
-    """Open items across the library, newest recording first, each with its recording's id, title
-    and date and its position in the file. `person` keeps one owner's (folded, as tags compare);
-    `tags` keeps the recordings with every tag (through the index, as the search does)."""
-    if tags and index is not None:
-        recs = [r for r in (library.get(row["id"]) for row in index.list("", tags)) if r is not None]
-    else:
-        recs = sorted(library.all(), key=lambda r: r.meta.created, reverse=True)
-    want = fold_tag(person.strip()) if person.strip() else None
+def update(rec: Recording, index: int, **fields) -> None:
+    """Change an item's text, owner, due date or context; text, owner or date marks it edited."""
+    d = load(rec)
+    if d is None or not 0 <= index < len(d["items"]):
+        return
+    it = d["items"][index]
+    for f in ("text", "owner", "due", "context"):
+        if f in fields:
+            v = " ".join(str(fields[f] or "").split()) if f != "context" else str(fields[f] or "").strip()
+            if f != "context" and v != it[f]:
+                it["edited"] = True
+            it[f] = v
+    if not it["text"]:
+        return  # an item needs words; the editor does not allow saving it empty
+    _save(rec, d)
+
+
+def discard(rec: Recording, index: int, on: bool = True) -> None:
+    d = load(rec)
+    if d is None or not 0 <= index < len(d["items"]):
+        return
+    d["items"][index]["discarded"] = bool(on)
+    _save(rec, d)
+
+
+def add(rec: Recording, text: str, owner: str = "", due: str = "", context: str = "") -> None:
+    """An item the user adds by hand; summarizing again keeps it."""
+    text = " ".join(text.split())
+    if not text:
+        return
+    d = load(rec) or {"version": VERSION, "created": datetime.now().astimezone().isoformat(timespec="seconds"),
+                      "summary_created": None, "items": []}
+    it = _item(text, owner.strip(), due.strip(), origin="user")
+    it["context"] = context.strip()
+    d["items"].append(it)
+    _save(rec, d)
+
+
+def assigned_to(library, person: str) -> list[dict]:
+    """The items assigned to `person` (folded, as tags compare) across the library, newest recording
+    first, discarded ones left out; each with its recording's id, title and date and its index."""
+    want = fold_tag(person.strip())
     out = []
-    for rec in recs:
-        d = load(rec)
-        for k, it in enumerate((d or {}).get("items", [])):
-            if it.get("done") or (want is not None and fold_tag(it.get("owner") or "") != want):
-                continue
-            out.append({**it, "id": rec.id, "title": rec.meta.title, "created": rec.meta.created, "index": k})
+    for rec in sorted(library.all(), key=lambda r: r.meta.created, reverse=True):
+        for k, it in enumerate((load(rec) or {}).get("items", [])):
+            if not it["discarded"] and want and fold_tag(it["owner"]) == want:
+                out.append({**it, "id": rec.id, "title": rec.meta.title, "created": rec.meta.created, "index": k})
     return out

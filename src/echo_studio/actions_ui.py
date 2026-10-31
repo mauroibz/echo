@@ -1,4 +1,4 @@
-"""Action items in the window: under a summary, across the library (Pending), and in a profile."""
+"""Action items in the window: under a summary, to polish, and in a person's profile, to read."""
 
 from __future__ import annotations
 
@@ -6,12 +6,10 @@ from datetime import date
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QFont
-from PySide6.QtWidgets import (QCheckBox, QComboBox, QFrame, QHBoxLayout, QLabel, QLineEdit, QScrollArea,
-                               QToolButton, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QLabel, QLineEdit, QPlainTextEdit, QPushButton, QToolButton,
+                               QVBoxLayout, QWidget)
 
 from echo_app import export
-from echo_app.index import Index
-from echo_app.library import fold_tag
 from echo_app.ui import theme
 from echo_app.ui.common import fmt_date, icon
 
@@ -19,28 +17,16 @@ from . import actions
 
 
 def fmt_due(day: str) -> str:
-    """A due date: "today", "tomorrow", "Fri Oct 31" within a week, else "Nov 14" (with the year
-    when it is not this one); late ones say so."""
+    """A due date as said in the meeting: "by Fri Oct 31" within a week, else "by Nov 14" (with the
+    year when it is not this one). Never "late": whether it got done is not Echo's to know."""
     try:
         d = date.fromisoformat(day)
     except ValueError:
-        return day
+        return f"by {day}"
     today = date.today()
     delta = (d - today).days
-    if delta == 0:
-        return "due today"
-    if delta == 1:
-        return "due tomorrow"
-    when = f"{d:%a %b %-d}" if 0 < delta < 7 else f"{d:%b %-d}" if d.year == today.year else f"{d:%b %-d %Y}"
-    return f"late, was due {when}" if delta < 0 else f"due {when}"
-
-
-def _strike(box: QCheckBox, done: bool) -> None:
-    """A done item reads as done: struck through and quieter."""
-    f = box.font()
-    f.setStrikeOut(done)
-    box.setFont(f)
-    theme.set_role(box, dim=done)
+    when = f"{d:%a %b %-d}" if 0 <= delta < 7 else f"{d:%b %-d}" if d.year == today.year else f"{d:%b %-d %Y}"
+    return f"by {when}"
 
 
 def _dim(text: str = "") -> QLabel:
@@ -50,30 +36,171 @@ def _dim(text: str = "") -> QLabel:
     return lbl
 
 
-class ActionList(QWidget):
-    """Items as checkboxes, each with its owner, due date and a button that plays where it came up."""
+def _small_button(ic: str, tip: str) -> QToolButton:
+    b = QToolButton()
+    b.setIcon(icon(ic))
+    b.setToolTip(tip)
+    b.setAccessibleName(tip)
+    b.setAutoRaise(True)
+    b.setCursor(Qt.CursorShape.PointingHandCursor)
+    return b
 
-    toggled = Signal(str, int, bool)  # recording id, index in its actions.json, done
-    play = Signal(str, float)  # recording id, seconds
 
-    def __init__(self, with_recording: bool = False, empty: str = "No action items."):
+def _time_pill(at: float) -> QToolButton:
+    b = QToolButton()
+    b.setObjectName("pill")
+    b.setText(export.stamp(at))
+    b.setIcon(icon("play", "accent_deep"))
+    b.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+    b.setToolTip("Play where this came up")
+    b.setCursor(Qt.CursorShape.PointingHandCursor)
+    return b
+
+
+class ItemEditor(QWidget):
+    """An item's fields: text, owner (one of the recording's speakers, or typed), due date, context."""
+
+    saved = Signal(dict)
+    cancelled = Signal()
+
+    def __init__(self, it: dict | None, names: list[str]):
         super().__init__()
+        it = it or {}
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 4, 0, 4)
+        lay.setSpacing(6)
+        self.text = QLineEdit(it.get("text", ""))
+        self.text.setPlaceholderText("What has to be done")
+        self.text.setAccessibleName("Action item")
+        lay.addWidget(self.text)
+        row = QHBoxLayout()
+        row.setSpacing(6)
+        self.owner = QComboBox()
+        self.owner.setEditable(True)
+        self.owner.addItems([""] + [n for n in names if n])
+        self.owner.setCurrentText(it.get("owner", ""))
+        self.owner.lineEdit().setPlaceholderText("Owner")
+        self.owner.setAccessibleName("Owner")
+        row.addWidget(self.owner, 1)
+        self.due = QLineEdit(it.get("due", ""))
+        self.due.setPlaceholderText("YYYY-MM-DD")
+        self.due.setAccessibleName("Due date")
+        self.due.setMaximumWidth(130)
+        row.addWidget(self.due)
+        lay.addLayout(row)
+        self.context = QPlainTextEdit(it.get("context", ""))
+        self.context.setPlaceholderText("Context for whoever picks it up")
+        self.context.setAccessibleName("Context")
+        self.context.setFixedHeight(self.context.fontMetrics().lineSpacing() * 3 + 14)
+        lay.addWidget(self.context)
+        btns = QHBoxLayout()
+        btns.addStretch(1)
+        cancel = QPushButton("Cancel")
+        cancel.clicked.connect(self.cancelled.emit)
+        btns.addWidget(cancel)
+        self.save_btn = QPushButton("Save")
+        self.save_btn.setDefault(True)
+        self.save_btn.clicked.connect(self._save)
+        btns.addWidget(self.save_btn)
+        lay.addLayout(btns)
+        self.text.textChanged.connect(self._check)
+        self.due.textChanged.connect(self._check)
+        self.text.returnPressed.connect(self._save)
+        self._check()
+
+    def _check(self):
+        due = self.due.text().strip()
+        try:
+            ok_due = not due or bool(date.fromisoformat(due))
+        except ValueError:
+            ok_due = False
+        self.save_btn.setEnabled(bool(self.text.text().strip()) and ok_due)
+
+    def _save(self):
+        if self.save_btn.isEnabled():
+            self.saved.emit({"text": self.text.text(), "owner": self.owner.currentText(),
+                             "due": self.due.text().strip(), "context": self.context.toPlainText()})
+
+
+class ActionList(QWidget):
+    """A recording's items, or a person's across recordings. Editable (under a summary): each item can
+    be edited, given context and discarded; discarded ones fold into one line with Restore; items can
+    be added. Read-only (in a profile): each item with its recording. A time button plays where an
+    item came up."""
+
+    play = Signal(str, float)  # recording id, seconds
+    changed = Signal()  # the recording's actions.json was written
+    relaid = Signal()  # rows or the editor changed, so the height may have
+
+    def __init__(self, editable: bool = False, with_recording: bool = False, empty: str = "No action items."):
+        super().__init__()
+        self.editable = editable
         self.with_recording = with_recording
         self.empty = empty
+        self.rec = None
+        self.names: list[str] = []
+        self.items: list[dict] = []
+        self.editing: int | None = None  # index in actions.json; -1 for a new item
+        self.show_discarded = False
         self.lay = QVBoxLayout(self)
         self.lay.setContentsMargins(0, 0, 0, 0)
         self.lay.setSpacing(10)
 
+    def set_recording(self, rec) -> None:
+        """Editable mode: the recording whose items to show and change."""
+        if rec is None or self.rec is None or rec.id != self.rec.id:
+            self.editing, self.show_discarded = None, False
+        self.rec = rec
+        self.names = [n for n in dict.fromkeys(rec.meta.speakers.values()) if n] if rec is not None else []
+        self.set_items(items_of(rec))
+
     def set_items(self, items: list[dict]) -> None:
+        self.items = items
         while self.lay.count():
             w = self.lay.takeAt(0).widget()
             if w is not None:
+                w.setParent(None)  # gone from the list at once, not when the event loop deletes it
                 w.deleteLater()
-        if not items:
+        kept = [it for it in items if not it.get("discarded")]
+        gone = [it for it in items if it.get("discarded")]
+        if self.editing == -1:
+            self.lay.addWidget(self._editor(None))
+        if not kept and self.editing != -1:
             self.lay.addWidget(_dim(self.empty))
-            return
-        for it in items:
-            self.lay.addWidget(self._row(it))
+        for it in kept:
+            self.lay.addWidget(self._editor(it) if self.editing == it["index"] else self._row(it))
+        if gone:
+            n = len(gone)
+            line = QHBoxLayout()
+            line.addWidget(_dim(f"{n} discarded"))
+            toggle = QPushButton("Hide" if self.show_discarded else "Show")
+            toggle.setFlat(True)
+            toggle.clicked.connect(self._toggle_discarded)
+            line.addWidget(toggle)
+            line.addStretch(1)
+            holder = QWidget()
+            holder.setLayout(line)
+            line.setContentsMargins(0, 0, 0, 0)
+            self.lay.addWidget(holder)
+            if self.show_discarded:
+                for it in gone:
+                    self.lay.addWidget(self._row(it))
+        self.relaid.emit()
+
+    def start_add(self) -> None:
+        self.editing = -1
+        self.set_items(self.items)
+
+    def _toggle_discarded(self):
+        self.show_discarded = not self.show_discarded
+        self.set_items(self.items)
+
+    def _editor(self, it: dict | None) -> QWidget:
+        ed = ItemEditor(it, self.names)
+        ed.saved.connect(lambda f, k=(it["index"] if it else None): self._save(k, f))
+        ed.cancelled.connect(self._cancel)
+        ed.text.setFocus()
+        return ed
 
     def _row(self, it: dict) -> QWidget:
         row = QWidget()
@@ -81,31 +208,74 @@ class ActionList(QWidget):
         rl.setContentsMargins(0, 0, 0, 0)
         rl.setSpacing(8)
         col = QVBoxLayout()
-        col.setSpacing(0)
-        box = QCheckBox(it["text"])
-        box.setChecked(bool(it.get("done")))
-        _strike(box, box.isChecked())
-        box.toggled.connect(lambda on, b=box: _strike(b, on))
-        box.toggled.connect(lambda on, rid=it["id"], k=it["index"]: self.toggled.emit(rid, k, on))
-        col.addWidget(box)
+        col.setSpacing(1)
+        text = QLabel(it["text"])
+        text.setWordWrap(True)
+        text.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        f = text.font()
+        f.setWeight(QFont.Weight.DemiBold)
+        f.setStrikeOut(bool(it.get("discarded")))
+        text.setFont(f)
+        if it.get("discarded"):
+            theme.set_role(text, dim=True)
+        col.addWidget(text)
         bits = [b for b in (it.get("owner"), fmt_due(it["due"]) if it.get("due") else "",
-                            f"{it['title']} · {fmt_date(it['created'])}" if self.with_recording else "") if b]
+                            f"{it['title']} · {fmt_date(it['created'])}" if self.with_recording else "",
+                            "edited" if self.editable and it.get("edited") else "",
+                            "added by you" if self.editable and it.get("origin") == "user" else "") if b]
         if bits:
-            meta = _dim("  ·  ".join(bits))
-            meta.setContentsMargins(26, 0, 0, 0)  # under the text, past the box
-            col.addWidget(meta)
+            col.addWidget(_dim("  ·  ".join(bits)))
+        if it.get("context"):
+            ctx = _dim(it["context"])
+            fc = ctx.font()
+            fc.setItalic(True)
+            ctx.setFont(fc)
+            col.addWidget(ctx)
         rl.addLayout(col, 1)
         if it.get("at") is not None:
-            b = QToolButton()
-            b.setObjectName("pill")
-            b.setText(export.stamp(it["at"]))
-            b.setIcon(icon("play", "accent_deep"))
-            b.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-            b.setToolTip("Play where this came up")
-            b.setCursor(Qt.CursorShape.PointingHandCursor)
+            b = _time_pill(float(it["at"]))
             b.clicked.connect(lambda _c=False, rid=it["id"], at=float(it["at"]): self.play.emit(rid, at))
             rl.addWidget(b, 0, Qt.AlignmentFlag.AlignTop)
+        if self.editable:
+            if it.get("discarded"):
+                restore = _small_button("undo-2", "Restore")
+                restore.clicked.connect(lambda _c=False, k=it["index"]: self._discard(k, False))
+                rl.addWidget(restore, 0, Qt.AlignmentFlag.AlignTop)
+            else:
+                edit = _small_button("pencil", "Edit")
+                edit.clicked.connect(lambda _c=False, k=it["index"]: self._edit(k))
+                rl.addWidget(edit, 0, Qt.AlignmentFlag.AlignTop)
+                drop = _small_button("x", "Discard")
+                drop.clicked.connect(lambda _c=False, k=it["index"]: self._discard(k, True))
+                rl.addWidget(drop, 0, Qt.AlignmentFlag.AlignTop)
         return row
+
+    def _edit(self, index: int):
+        self.editing = index
+        self.set_items(self.items)
+
+    def _cancel(self):
+        self.editing = None
+        self.set_items(self.items)
+
+    def _save(self, index: int | None, fields: dict):
+        if self.rec is None:
+            return
+        if index is None:
+            actions.add(self.rec, **fields)
+        else:
+            actions.update(self.rec, index, **fields)
+        self.editing = None
+        self._written()
+
+    def _discard(self, index: int, on: bool):
+        if self.rec is not None:
+            actions.discard(self.rec, index, on)
+            self._written()
+
+    def _written(self):
+        self.set_items(items_of(self.rec))
+        self.changed.emit()
 
 
 def items_of(rec) -> list[dict]:
@@ -114,93 +284,9 @@ def items_of(rec) -> list[dict]:
             for k, it in enumerate((d or {}).get("items", []))]
 
 
-class PendingScreen(QWidget):
-    """Open items across the library, newest first, by person and tag."""
-
-    def __init__(self, library, show_recording):
-        super().__init__()
-        self.library = library
-        self.setObjectName("content")
-        lay = QVBoxLayout(self)
-        lay.setContentsMargins(28, 22, 24, 18)
-        lay.setSpacing(12)
-        title = QLabel("Pending")
-        title.setFont(theme.display_font(1.9, QFont.Weight.ExtraBold))  # as a recording's title
-        lay.addWidget(title)
-        bar = QHBoxLayout()
-        self.person = QComboBox()
-        self.person.setAccessibleName("Person")
-        self.person.currentIndexChanged.connect(lambda _i: self.refresh())
-        bar.addWidget(self.person)
-        self.tag = QLineEdit()
-        self.tag.setPlaceholderText("#tag")
-        self.tag.setAccessibleName("Tag")
-        self.tag.setClearButtonEnabled(True)
-        self.tag.textChanged.connect(lambda _t: self.refresh())
-        bar.addWidget(self.tag, 1)
-        lay.addLayout(bar)
-        self.count = _dim()
-        lay.addWidget(self.count)
-        self.list = ActionList(with_recording=True, empty="Nothing open. Action items come from summaries.")
-        self.list.toggled.connect(self._toggle)
-        self.list.play.connect(show_recording)
-        scroll = QScrollArea()
-        scroll.setObjectName("card")
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.Shape.NoFrame)
-        holder = QWidget()
-        holder.setObjectName("card")
-        hl = QVBoxLayout(holder)
-        hl.setContentsMargins(18, 14, 18, 14)
-        hl.addWidget(self.list)
-        hl.addStretch(1)
-        scroll.setWidget(holder)
-        lay.addWidget(scroll, 1)
-
-    def showEvent(self, e):
-        self.refresh()
-        super().showEvent(e)
-
-    def refresh(self) -> None:
-        tags = [t.lstrip("#") for t in self.tag.text().split() if t.lstrip("#")]
-        idx = Index(self.library) if tags else None
-        try:
-            if idx is not None:
-                idx.sync()
-            everyone = actions.open_items(self.library)
-            items = actions.open_items(self.library, idx, self.person.currentData() or "", tags)
-        finally:
-            if idx is not None:
-                idx.close()
-        owners = sorted({i["owner"] for i in everyone if i.get("owner")}, key=fold_tag)
-        keep = self.person.currentData()
-        self.person.blockSignals(True)
-        self.person.clear()
-        self.person.addItem("Everyone", "")
-        for o in owners:
-            self.person.addItem(o, o)
-        self.person.setCurrentIndex(max(0, self.person.findData(keep)) if keep else 0)
-        self.person.blockSignals(False)
-        self.count.setText(f"{len(items)} open item{'s' if len(items) != 1 else ''}")
-        self.count.setVisible(bool(items))  # the list says when there is nothing
-        self.list.set_items(items)
-
-    def _toggle(self, rid: str, index: int, done: bool):
-        rec = self.library.get(rid)
-        if rec is not None:
-            actions.set_done(rec, index, done)
-
-
 def person_section(library, name: str, show_recording) -> QWidget:
-    """A person's open items, for their profile in People."""
-    lst = ActionList(with_recording=True, empty="Nothing open.")
-    lst.set_items(actions.open_items(library, person=name))
-
-    def toggle(rid, index, done):
-        rec = library.get(rid)
-        if rec is not None:
-            actions.set_done(rec, index, done)
-
-    lst.toggled.connect(toggle)
+    """The items assigned to a person across the library, for their profile in People."""
+    lst = ActionList(with_recording=True, empty="No action items assigned to them.")
+    lst.set_items(actions.assigned_to(library, name))
     lst.play.connect(show_recording)
     return lst

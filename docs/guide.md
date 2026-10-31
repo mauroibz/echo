@@ -356,11 +356,14 @@ Summaries are included in notes exported to a folder, under "Resumen".
 Your notes and markers lead the summary: each note and marked moment is covered, expanded from
 what was said around it, and editing a note marks the summary out of date.
 
-Each summary's next steps also become action items, listed under it with their owner, due date
-and a button that plays where each came up; check one when it is done. Pending (the checklist
-button beside People, Ctrl+Shift+T) gathers what is still open across all your recordings, by
-person and by tag (`#acme`), and a person's profile in People shows what they owe. The items are
-kept in `actions.json` in the recording's folder; summarizing again keeps your checks.
+Each summary's next steps also become action items, listed under it with their owner, the date
+they were promised for and a button that plays where each came up. Polish them before they go to
+your team's tracker: the pencil edits the text, owner and date and adds a line of context for
+whoever picks the item up, the cross discards it (discarded items fold into one line, where Show
+lists them with Restore), and Add writes one by hand. Echo does not track whether an item got
+done; that is the tracker's job. A person's profile in People lists the items assigned to them.
+The items are kept in `actions.json` in the recording's folder; summarizing again keeps your
+edits, context, discards and the items you added.
 
 Follow-up, beside Copy, drafts the email you would send after the meeting: what was agreed and
 who does what by when. Edit it, then Copy it or press Open in mail to start a message in your mail

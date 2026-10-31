@@ -26,7 +26,7 @@ def draft(rec: Recording, cfg: config.Config | None = None) -> tuple[str, str]:
     items = (actions.load(rec) or {}).get("items", [])
     if items:
         lines = [f"- {i['text']}" + (f" ({i['owner']})" if i.get("owner") else "")
-                 + (f", by {i['due']}" if i.get("due") else "") for i in items if not i.get("done")]
+                 + (f", by {i['due']}" if i.get("due") else "") for i in items if not i.get("discarded")]
         user += "\n\nAction items:\n" + "\n".join(lines)
     reply = llm.complete(PROMPT.format(language=summary.LANGUAGES.get(lang, lang)), user, cfg).strip()
     subject, body = "", reply
