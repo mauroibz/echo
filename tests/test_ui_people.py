@@ -25,6 +25,12 @@ def test_profile_keeps_notes_tags_and_aliases(window, lib):
     dlg.tags.changed.emit(["client:Acme"])
     dlg.aliases.setText("Anita, Ani")
     dlg.aliases.editingFinished.emit()
+    dlg.email.setText("Ana <ANA@acme.example>")
+    dlg.email.editingFinished.emit()
+    assert dlg.email.text() == "ana@acme.example" and people.load(lib, "Ana López").email == "ana@acme.example"
+    dlg.email.setText("no")
+    dlg.email.editingFinished.emit()
+    assert dlg.email.text() == "ana@acme.example"  # not an address: the saved one stays
     dlg.list.setCurrentRow(1)  # another person: the notes are saved on the way
     prof = people.load(lib, "Ana López")
     assert prof.notes == "CFO de Acme" and prof.tags == ["client:Acme"]

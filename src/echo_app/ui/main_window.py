@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCompleter, QFra
                                QLineEdit, QListView, QMainWindow, QMenu, QMessageBox, QSplitter,
                                QStackedWidget, QSystemTrayIcon, QToolButton, QVBoxLayout, QWidget)
 
-from .. import APP_NAME, features, importer, recorder, sets, transcription
+from .. import APP_NAME, features, importer, recorder, sets, settings, transcription
 from ..index import Index, parse_query
 from ..library import READY, RECORDING, T_QUEUED, T_RUNNING, Library, Recording
 from . import motion, theme
@@ -853,8 +853,32 @@ class MainWindow(LibraryActionsMixin, SearchImportMixin, CaptureMixin, QMainWind
         self._carry_search()
         self._update_actions()
 
+    # ---- recording, for extensions ----
+    def recording_id(self) -> str | None:
+        """The recording being made, if any."""
+        sess = self.recorder_panel.session
+        return sess.rec.id if sess is not None else None
+
+    def start_recording(self, title: str | None = None) -> bool:
+        """Start recording from the current source as the Record button does, for an extension (one
+        that records the meetings in a calendar). `title` names the recording. False when one is
+        already being made or starting; the recording's id comes with `recorder_panel.started`."""
+        if self.recorder_panel.session is not None or self.recorder_panel._busy:
+            return False
+        self._next_title = title
+        self.recorder_panel.start()
+        return True
+
+    def stop_recording(self) -> None:
+        self.recorder_panel.stop()
+
     # ---- recording events ----
     def _recording_started(self, rid: str):
+        title, self._next_title = getattr(self, "_next_title", None), None
+        rec = self.library.get(rid) if title else None
+        if rec is not None:
+            rec.update(title=title, title_auto=False)
+            self.model.refresh()
         self._select(rid)
         self._update_title()
 
@@ -935,6 +959,11 @@ class MainWindow(LibraryActionsMixin, SearchImportMixin, CaptureMixin, QMainWind
             self.show_dock()
             if QSystemTrayIcon.isSystemTrayAvailable():
                 self.tray.show()
+            return
+        if settings.load()[0].background and QSystemTrayIcon.isSystemTrayAvailable():
+            e.ignore()  # kept running in the tray; Quit in its menu ends Echo
+            self.hide()
+            self.tray.show()
             return
         self._quitting = True
         self.shutdown()

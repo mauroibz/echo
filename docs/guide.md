@@ -31,6 +31,11 @@ While recording, the recorder shows the time, the level, Pause (Ctrl+Shift+R), S
 marker button. Closing the window does not stop a recording: it carries on, with a tray icon to
 stop it.
 
+**In the tray.** Settings → General, "Keep Echo running in the tray, and start it when you log
+in", makes closing the window leave Echo in the tray (Quit in the tray's menu ends it) and adds an
+entry to your desktop's autostart (`~/.config/autostart/echo-app.desktop`) that starts it without
+its window. `echo-app gui --background` does the same by hand.
+
 **Gain.** The slider under the level, in the input panel, is the input's gain: keep the loudest
 parts out of the red (double-click for 100%). It is the same setting as the desktop's sound
 settings, so it stays with the microphone; with PortAudio (no PipeWire) it is hidden and those
@@ -181,7 +186,8 @@ merging, and imports a list from a text file.
 **People.** The People button at the top of the sidebar (Ctrl+Shift+P), or "Open profile" on a
 speaker's name, lists everyone
 Echo knows: people in the dictionary and everyone you named as a speaker. A profile keeps notes,
-aliases (other spellings transcription corrects to their name) and tags; lists every recording
+an email (which matches them to a calendar's attendees, for extensions that read one), aliases
+(other spellings transcription corrects to their name) and tags; lists every recording
 they speak in with how long they spoke (double-click to open it); plays a few seconds of their
 voice; and forgets a voice Echo learned wrong. Profiles are files in the data folder
 (`people/`), so they are backed up and synced with your recordings.

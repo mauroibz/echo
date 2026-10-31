@@ -10,7 +10,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QTimer
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
-from PySide6.QtWidgets import QApplication, QMessageBox
+from PySide6.QtWidgets import QApplication, QMessageBox, QSystemTrayIcon
 
 from .. import APP_NAME, settings
 from ..library import Library
@@ -25,13 +25,14 @@ def server_name() -> str:
     return f"echo-app-{os.getuid() if hasattr(os, 'getuid') else getpass.getuser()}"
 
 
-def forward_to_running(files: list[str]) -> bool:
-    """If Echo is already running, hand it our files and ask it to show itself."""
+def forward_to_running(files: list[str], show: bool = True) -> bool:
+    """If Echo is already running, hand it our files and ask it to show itself (unless `show` is
+    off: a second start at login leaves the running one as it is)."""
     sock = QLocalSocket()
     sock.connectToServer(server_name())
     if not sock.waitForConnected(300):
         return False
-    sock.write(json.dumps({"show": True, "files": files}).encode() + b"\n")
+    sock.write(json.dumps({"show": show, "files": files}).encode() + b"\n")
     sock.flush()
     sock.waitForBytesWritten(1000)
     sock.disconnectFromServer()
@@ -65,11 +66,12 @@ class InstanceServer(QLocalServer):
 
 def run(argv: list[str]) -> int:
     files = [str(Path(a).resolve()) for a in argv[1:] if not a.startswith("-") and Path(a).exists()]
+    background = "--background" in argv[1:]  # at login: the tray only, no window
     QApplication.setApplicationName(APP_NAME)
     QApplication.setOrganizationName("echo-app")
     QApplication.setDesktopFileName("echo-app")
     app = QApplication(argv[:1])
-    if forward_to_running(files):
+    if forward_to_running(files, show=not background):
         return 0
     first_run = not settings.settings_path().exists()
     cfg, warning = settings.load()
@@ -104,7 +106,12 @@ def run(argv: list[str]) -> int:
             win.import_paths([Path(f) for f in msg["files"]])
 
     server = InstanceServer(on_message)
-    win.show()
+    if not background:
+        win.show()
+    elif QSystemTrayIcon.isSystemTrayAvailable():
+        win.tray.show()
+    else:
+        win.showMinimized()  # no tray to come back from: a window in the task bar instead
     if warning:
         QTimer.singleShot(300, lambda: QMessageBox.warning(win, APP_NAME, warning))
     if first_run:

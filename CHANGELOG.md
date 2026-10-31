@@ -12,6 +12,11 @@ tag.
 - For extensions: screens in place of the selected recording (`add_screen`), `show_recording` to
   play a recording from a time, sections in a person's profile (`person_sections`), and
   `Index.passages` to quote what was said. Without an extension nothing changes.
+- A person's profile keeps an email; `echo-app people --json` includes it.
+- "Keep Echo running in the tray, and start it when you log in" (Settings → General), and
+  `echo-app gui --background`.
+- For extensions: `start_recording(title)`, `stop_recording()` and `recording_id()` on the
+  window, to record the meetings in a calendar.
 - `install.sh --with-studio` / `--without-studio` choose whether an installed Echo loads Echo
   Studio, remembered across installs; `echo-app doctor` names the loaded extensions.
 

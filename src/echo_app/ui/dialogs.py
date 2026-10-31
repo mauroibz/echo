@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 
@@ -15,6 +16,8 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog,
 from .. import APP_NAME, __version__, dictionary, doctor, features, models, selfcmd, settings, transcription
 from . import motion, theme
 from .common import icon, run_task
+
+log = logging.getLogger(__name__)
 
 
 def _heading(text: str, scale: float = 1.25) -> QLabel:
@@ -618,6 +621,12 @@ class SettingsDialog(QDialog):
                                   "A quick note records until you press the keys again, then its text is copied "
                                   "to the clipboard when it is transcribed.")
         form.addRow("Shortcuts", self.shortcuts)
+        self.background = QCheckBox("Keep Echo running in the tray, and start it when you log in")
+        self.background.setChecked(self.cfg.background)
+        self.background.setToolTip("Closing the window leaves Echo in the tray; Quit in the tray's menu ends it. "
+                                   "At login it starts without its window, so what runs in the background "
+                                   "(an extension recording the meetings in your calendar) keeps working.")
+        form.addRow("", self.background)
         self.shortcuts_note = _dim("")
         form.addRow("", self.shortcuts_note)
         self._explain_shortcuts()
@@ -698,7 +707,14 @@ class SettingsDialog(QDialog):
         self.cfg.worker_idle_minutes = self.idle.value()
         self.cfg.theme = self.theme.currentData()
         self.cfg.reduce_motion = self.reduce_motion.isChecked()
+        self.cfg.background = self.background.isChecked()
         settings.save(self.cfg)
+        try:
+            from .. import autostart
+
+            autostart.set_enabled(self.cfg.background)
+        except OSError as e:
+            log.warning("autostart entry: %s", e)
         motion.refresh()
         try:
             self.dictionary.save()

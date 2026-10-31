@@ -35,6 +35,7 @@ class Settings:
     export_audio: str = "link"  # link, copy or none
     global_shortcuts: bool = True  # Ctrl+Alt+R and Ctrl+Alt+N from any application (desktop portal)
     reduce_motion: bool = False  # no animations (also when the desktop has them off)
+    background: bool = False  # keep running in the tray when the window closes, and start at login
 
     @property
     def data_path(self) -> Path:

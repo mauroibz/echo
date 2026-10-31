@@ -19,12 +19,25 @@ def test_profiles_are_files_and_empty_ones_are_not(tmp_path):
     assert not people.folder(lib).exists()  # reading writes nothing
     people.save(lib, people.Profile("Ana López", "CFO de Acme", ["client:Acme", "client:Acme", "#vip"]))
     f = people.folder(lib) / "ana-lopez.json"
-    assert json.loads(f.read_text()) == {"name": "Ana López", "notes": "CFO de Acme", "tags": ["client:Acme", "vip"]}
+    assert json.loads(f.read_text()) == {"name": "Ana López", "notes": "CFO de Acme", "tags": ["client:Acme", "vip"],
+                                         "email": ""}
     assert people.load(lib, "ana lópez").notes == "CFO de Acme"  # names compare folded
     people.save(lib, people.Profile("ana-lopez", "otra persona"))  # same slug, another name
     assert (people.folder(lib) / "ana-lopez-2.json").exists() and people.load(lib, "Ana López").notes == "CFO de Acme"
     people.save(lib, people.Profile("Ana López"))
     assert not f.exists()
+
+
+def test_an_email_finds_the_person(tmp_path):
+    lib = _lib(tmp_path)
+    assert people.clean_email("Ana López <Ana@Acme.Example>") == "ana@acme.example"
+    assert people.clean_email("no es un correo") == ""
+    people.save(lib, people.Profile("Ana López", email=" ANA@acme.example "))
+    assert people.load(lib, "Ana López").email == "ana@acme.example"
+    assert people.by_email(lib, "mailto:ana@ACME.example").name == "Ana López"
+    assert people.by_email(lib, "otro@acme.example") is None and people.by_email(lib, "") is None
+    people.save(lib, people.Profile("Pedro", email="pedro@acme.example"))  # an email alone keeps the file
+    assert people.by_email(lib, "pedro@acme.example").name == "Pedro"
 
 
 def test_everyone_and_their_recordings(tmp_path):
@@ -77,7 +90,7 @@ def test_cli_people(tmp_path, capsys):
     capsys.readouterr()
     assert cli.main(["people", "--json"]) == 0
     out = {p["name"]: p for p in json.loads(capsys.readouterr().out)["people"]}
-    assert out["Ana"] == {"name": "Ana", "aliases": ["Anita"], "tags": ["client:Acme"], "notes": "CFO",
+    assert out["Ana"] == {"name": "Ana", "email": None, "aliases": ["Anita"], "tags": ["client:Acme"], "notes": "CFO",
                           "voice": False, "recordings": [{"id": a.id, "title": "Weekly", "seconds": 1.5}]}
     assert cli.main(["people"]) == 0
     text = capsys.readouterr().out

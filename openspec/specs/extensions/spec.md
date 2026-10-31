@@ -41,3 +41,12 @@ signal when a recording's transcript is written.
 #### Scenario: A section in exported notes
 - **WHEN** an extension returns a section for a recording and the recording is exported as Markdown
 - **THEN** the note has that section after its header and before the transcript
+
+### Requirement: Recording for an extension
+The window SHALL let an extension start a recording from the current source, with a title, stop
+it, and ask which recording is being made. Starting SHALL do nothing while a recording is being
+made or starting.
+
+#### Scenario: A meeting starts
+- **WHEN** an extension starts a recording titled "Roadmap review"
+- **THEN** Echo records as if Record were pressed, the recording is named "Roadmap review", and a second start is refused until it stops

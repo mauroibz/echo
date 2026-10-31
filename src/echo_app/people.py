@@ -25,10 +25,11 @@ class Profile:
     name: str
     notes: str = ""
     tags: list[str] = field(default_factory=list)
+    email: str = ""  # matches the person to a calendar's attendees and to an extension's records
 
     @property
     def empty(self) -> bool:
-        return not self.notes.strip() and not self.tags
+        return not self.notes.strip() and not self.tags and not self.email
 
 
 @dataclass
@@ -53,7 +54,8 @@ def _slug(name: str) -> str:
 def _read(path: Path) -> Profile | None:
     try:
         d = read_json(path)
-        return Profile(str(d["name"]), str(d.get("notes") or ""), [str(t) for t in d.get("tags") or []])
+        return Profile(str(d["name"]), str(d.get("notes") or ""), [str(t) for t in d.get("tags") or []],
+                       clean_email(str(d.get("email") or "")))
     except (OSError, ValueError, KeyError, TypeError):
         return None
 
@@ -81,7 +83,22 @@ def save(lib: Library, profile: Profile) -> None:
     if profile.empty:
         p.unlink(missing_ok=True)
         return
-    atomic_write_json(p, {"name": profile.name, "notes": profile.notes.strip(), "tags": profile.tags}, mkdir=True)
+    profile.email = clean_email(profile.email)
+    atomic_write_json(p, {"name": profile.name, "notes": profile.notes.strip(), "tags": profile.tags,
+                          "email": profile.email}, mkdir=True)
+
+
+def clean_email(s: str) -> str:
+    """An address as compared: trimmed and lower case, without a display name or angle brackets;
+    "" when it is not an address."""
+    m = re.search(r"[^\s<>\"':]+@[^\s<>\"':]+\.[^\s<>\"':]+", s or "")  # a "mailto:" is left out
+    return m.group(0).lower().strip(".,;") if m else ""
+
+
+def by_email(lib: Library, email: str) -> Profile | None:
+    """The profile with this email, if a person has it."""
+    want = clean_email(email)
+    return next((p for p in profiles(lib) if want and p.email == want), None)
 
 
 def profiles(lib: Library) -> list[Profile]:

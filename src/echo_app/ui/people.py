@@ -13,7 +13,7 @@ import logging
 from PySide6.QtCore import QEvent, Qt, Signal
 from PySide6.QtGui import QFont, QKeySequence, QShortcut
 from PySide6.QtWidgets import (QDialog, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
-                               QPlainTextEdit, QPushButton, QSplitter, QVBoxLayout, QWidget)
+                               QMessageBox, QPlainTextEdit, QPushButton, QSplitter, QVBoxLayout, QWidget)
 
 from .. import dictionary, extensions, people
 from ..audio.playback import Playback
@@ -82,6 +82,12 @@ class PeopleDialog(QDialog):
         voice.addStretch(1)
         pl.addLayout(voice)
         form = QFormLayout()
+        self.email = QLineEdit()
+        self.email.setPlaceholderText("name@example.com")
+        self.email.setToolTip("Matches them to a calendar's attendees and to what extensions keep about them")
+        self.email.setAccessibleName("Email")
+        self.email.editingFinished.connect(self._save_email)
+        form.addRow("Email", self.email)
         self.aliases = QLineEdit()
         self.aliases.setPlaceholderText("Other spellings, separated by commas")
         self.aliases.setToolTip("Transcription writes the name whenever it hears one of these (the dictionary's aliases)")
@@ -187,6 +193,7 @@ class PeopleDialog(QDialog):
         else:
             self.summary.setText("Not named as a speaker in any recording yet")
         self.aliases.setText(", ".join(entry.aliases) if entry else "")
+        self.email.setText(prof.email)
         self.tags.set_known(sorted({t for q in self._people if q.profile for t in q.profile.tags}))
         self.tags.set_tags(prof.tags)
         self.notes.setPlainText(prof.notes)
@@ -218,6 +225,25 @@ class PeopleDialog(QDialog):
         if prof is not None and prof.notes != self.notes.toPlainText().strip():
             prof.notes = self.notes.toPlainText().strip()
             people.save(self.library, prof)
+
+    def _save_email(self):
+        prof = self._profile()
+        if prof is None:
+            return
+        typed = self.email.text().strip()
+        email = people.clean_email(typed)
+        if typed and not email:
+            self.email.setText(prof.email)  # not an address: keep the one saved
+            return
+        other = people.by_email(self.library, email)
+        if other is not None and fold_tag(other.name) != fold_tag(prof.name):
+            QMessageBox.information(self, "People", f"{email} is already {other.name}'s email.")
+            self.email.setText(prof.email)
+            return
+        if prof.email != email:
+            prof.email = email
+            people.save(self.library, prof)
+        self.email.setText(email)
 
     def _save_tags(self, tags: list[str]):
         prof = self._profile()

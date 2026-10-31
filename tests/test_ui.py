@@ -141,6 +141,45 @@ def test_record_from_window(window, lib):
     assert wait_until(lambda: window.player.play_btn.isEnabled(), 3)
 
 
+def test_an_extension_starts_and_stops_a_recording(window, lib):
+    started = []
+    window.recorder_panel.started.connect(started.append)
+    assert window.recording_id() is None
+    assert window.start_recording("Roadmap review")
+    assert not window.start_recording("Otra")  # one at a time
+    assert wait_until(lambda: window.recording_id() is not None)
+    rid = window.recording_id()
+    assert started == [rid] and lib.get(rid).meta.title == "Roadmap review" and not lib.get(rid).meta.title_auto
+    assert not window.start_recording()
+    pump(800)
+    window.stop_recording()
+    assert window.recording_id() is None
+    assert wait_until(lambda: lib.get(rid).meta.state == "ready", 20)
+    assert lib.get(rid).meta.title == "Roadmap review"
+
+
+def test_background_mode_keeps_running_and_starts_at_login(window, monkeypatch):
+    from echo_app import autostart
+    from echo_app.ui import dialogs
+
+    assert not autostart.enabled()
+    dlg = dialogs.SettingsDialog(False, window, [])
+    dlg.background.setChecked(True)
+    dlg.accept()
+    assert settings.load()[0].background and autostart.enabled()
+    assert "gui --background" in autostart.path().read_text()
+    from echo_app.ui import main_window
+
+    monkeypatch.setattr(main_window.QSystemTrayIcon, "isSystemTrayAvailable", staticmethod(lambda: True))
+    window.close()
+    assert not window._quitting and not window.isVisible()  # in the tray, still running
+    window.show_window()
+    dlg = dialogs.SettingsDialog(False, window, [])
+    dlg.background.setChecked(False)
+    dlg.accept()
+    assert not autostart.enabled()
+
+
 def _transcribed(lib, tmp_path):
     rec = importer.import_file(lib, wav(tmp_path / "t.wav", 4)).recording
     segs = [{"start": 0.0, "end": 1.5, "text": "Hola mundo.", "paragraph": True},

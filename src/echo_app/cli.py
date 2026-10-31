@@ -53,7 +53,8 @@ def _cmd_people(args) -> int:
         for p in people.everyone(lib, idx):
             entry = d.find(p.name)
             prof = p.profile or people.Profile(p.name)
-            out.append({"name": p.name, "aliases": list(entry.aliases) if entry else [], "tags": prof.tags,
+            out.append({"name": p.name, "email": prof.email or None,
+                        "aliases": list(entry.aliases) if entry else [], "tags": prof.tags,
                         "notes": prof.notes, "voice": p.has_voice,
                         "recordings": [{"id": r["id"], "title": r["title"], "seconds": r["seconds"]}
                                        for r in people.recordings_of(idx, p.name)]})
@@ -245,7 +246,8 @@ def _cmd_doctor(args) -> int:
 def _cmd_gui(args) -> int:
     from .ui.app import run
 
-    return run(sys.argv[:1] + list(getattr(args, "files", []) or []))
+    return run(sys.argv[:1] + list(getattr(args, "files", []) or [])
+               + (["--background"] if getattr(args, "background", False) else []))
 
 
 COMMANDS: dict[str, tuple[str, object]] = {}
@@ -259,6 +261,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     s = sub.add_parser("gui", help="open the window (default); files given are imported")
     s.add_argument("files", nargs="*")
+    s.add_argument("--background", action="store_true", help="start in the tray, without the window (at login)")
     s.set_defaults(func=_cmd_gui)
 
     s = sub.add_parser("people", help="everyone Echo knows: their recordings, aliases, tags and notes")
