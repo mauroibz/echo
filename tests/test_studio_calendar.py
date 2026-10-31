@@ -289,3 +289,14 @@ def test_skip_and_manual_recordings(window, lib, feed, studio, monkeypatch):
     window.stop_recording()
     assert wait_until(lambda: calendar.event_of(lib.get(rid)) is not None, 10)  # matched by its time
     assert lib.get(rid).meta.title == "Roadmap review"  # a recording made just before the meeting is it
+
+
+def test_doctor_reads_the_calendar(feed, studio):
+    from echo_app import doctor, extensions
+
+    calendar.save_urls(feed.url)
+    check = next(c for c in extensions.gather("doctor_checks") if c.name == "Calendar")
+    assert check.status == doctor.WARN and "Keep Echo running" in check.fix  # auto-record without the tray
+    feed.status = 403
+    check = next(c for c in extensions.gather("doctor_checks") if c.name == "Calendar")
+    assert check.status == doctor.FAIL and "403" in check.detail

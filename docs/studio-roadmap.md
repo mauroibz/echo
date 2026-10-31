@@ -9,17 +9,18 @@ is Studio's development branch until Studio ships.
 
 Version 1 is implemented on the `studio` branch (2026-10-30): summaries from any OpenAI-compatible
 server or Anthropic's API, made as soon as a transcript is ready; built around the user's notes
-and markers; templates per meeting type; titles for unnamed recordings; action items with a
-Pending screen and a person's open items; follow-up drafts; questions about a recording or the
-whole library, with citations that play the audio. The API key is in the desktop's keyring.
-Echo's base gained what Studio needed (`add_screen`, `show_recording`, `person_sections`,
-`Index.passages`, `install.sh --with-studio`). The changes stay open until 1.8 below is done,
-since they all build on the base summary.
+and markers; templates per meeting type; titles for unnamed recordings; action items; follow-up
+drafts; questions about a recording or the whole library, with citations that play the audio.
+The API key is in the desktop's keyring.
 
-Task 1.8 of that change is still open. It checks summaries against five of the user's own
-recordings. Every item below except the window and distribution changes gets its result from a
-prompt, so 1.8 comes first: if the base summary is wrong on real transcripts, every later item
-gets the same error.
+Version 2 is implemented too (2026-10-31, S10 to S15 below): a home for the next meeting and the
+minutes, the calendar read from private ICS addresses, meetings recorded when they start, action
+items polished instead of checked off, people by email with their part in each meeting, and the
+minutes and items on the command line. Echo's base gained what they needed and shipped on `main`
+(`add-background-and-email`, `add-speaker-names-hook`).
+
+Task 1.8 of `add-studio-summaries` is still open: it checks summaries against the user's own
+recordings. The changes stay open until it is done, since they all build on the base summary.
 
 Studio has two rules, which follow from Echo's principles:
 

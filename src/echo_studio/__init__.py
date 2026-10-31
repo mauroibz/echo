@@ -24,19 +24,45 @@ def doctor_checks() -> list:
 
     from . import llm
 
+    checks = _calendar_check()
     cfg = config.load()
     if not cfg.enabled:
-        return []
+        return checks
     name = f"Summaries server ({config.host(cfg.llm_url)})"
     try:
         names = llm.models(cfg)
     except llm.LLMError as e:
-        return [Check(name, FAIL, str(e), "Check the address and key in Settings, Summaries, and that the "
-                                          "server is running.")]
+        return checks + [Check(name, FAIL, str(e), "Check the address and key in Settings, Summaries, and "
+                                                   "that the server is running.")]
     if names and cfg.llm_model not in names:
-        return [Check(name, WARN, f"answers, but has no model “{cfg.llm_model}”",
-                      "It has: " + ", ".join(names[:8]) + ("…" if len(names) > 8 else ""))]
-    return [Check(name, OK, f"answers; model {cfg.llm_model}")]
+        return checks + [Check(name, WARN, f"answers, but has no model “{cfg.llm_model}”",
+                               "It has: " + ", ".join(names[:8]) + ("…" if len(names) > 8 else ""))]
+    return checks + [Check(name, OK, f"answers; model {cfg.llm_model}")]
+
+
+def _calendar_check() -> list:
+    from datetime import datetime, timedelta
+
+    from echo_app import settings
+    from echo_app.doctor import FAIL, OK, WARN, Check
+
+    from . import calendar
+
+    if not calendar.enabled():
+        return []
+    errors = calendar.refresh()
+    if len(errors) == len(calendar.urls()):
+        return [Check("Calendar", FAIL, errors[0], "Copy the private address again from the calendar's settings "
+                                                   "into Settings, Calendar.")]
+    now = datetime.now().astimezone()
+    n = sum(1 for e in calendar.events(now, now + timedelta(days=7)) if not e.all_day)
+    detail = f"{len(calendar.urls())} calendar(s), {n} meeting(s) in the next 7 days"
+    if errors:
+        return [Check("Calendar", WARN, detail + "; " + "; ".join(errors))]
+    if config.load().auto_record and not settings.load()[0].background:
+        return [Check("Calendar", WARN, detail, "Meetings record by themselves only while Echo runs: turn on "
+                                                "“Keep Echo running in the tray” in Settings, General.")]
+    return [Check("Calendar", OK, detail)]
 
 
 def markdown_sections(rec) -> list[tuple[str, str]]:
