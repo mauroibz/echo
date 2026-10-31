@@ -33,6 +33,7 @@ class FakeServer:
                                     "at": "0:06"}])
         self.stop_reason = "end_turn"
         self.title = '"Precio nuevo con Lucía."'
+        self.parts = '```json\n{"LUCIA": "Propuso el precio nuevo y se llevó la propuesta.", "nadie": "x"}\n```'
         server = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -57,7 +58,7 @@ class FakeServer:
                 first = (body.get("system") or body["messages"][0]["content"])
                 server.all_requests.append(body)
                 helpers = ("Write a title", "You extract the action items", "You write the follow-up",
-                           "You answer questions", "You turn a question")
+                           "You answer questions", "You turn a question", "You describe each person")
                 if not first.startswith(helpers):
                     server.requests.append(body)  # the summaries; titles and action items apart
                 server.headers.append(dict(self.headers))
@@ -74,6 +75,7 @@ class FakeServer:
                           "You write the follow-up email": server.mail,
                           "You answer questions about one meeting": "Se habló del precio [0:06].",
                           "You turn a question": '["precio", "@nadie precio"]',
+                          "You describe each person": server.parts,
                           "You answer questions about past meetings": "Lucía habló del precio [1]."}
                 reply = next((v for k, v in canned.items() if first.startswith(k)), server.reply)
                 self._send(200, {"choices": [{"message": {"content": reply}}]})
@@ -381,6 +383,22 @@ def test_action_items_keep_the_users_work(tmp_path, server):
     assert actions.assigned_to(lib, "nadie") == []
 
 
+def test_each_persons_part(tmp_path, server):
+    from echo_studio import parts
+
+    lib = Library(tmp_path / "data")
+    rec = _rec(lib)
+    summary.finish(rec, summary.write(rec))
+    assert not rec.path(parts.FILE).exists()  # nobody named: no request
+    rec.update(speakers={"1": "Lucía", "2": "Pedro"})
+    notes = summary.finish(rec, summary.load(rec))
+    assert "parts for 1 of 2 people" in notes
+    req = next(r for r in server.all_requests if r["messages"][0]["content"].startswith("You describe each person"))
+    assert "Lucía, Pedro" in req["messages"][0]["content"]
+    assert parts.load(rec) == {"Lucía": "Propuso el precio nuevo y se llevó la propuesta."}
+    assert parts.part_of(rec, "lucia").startswith("Propuso") and parts.part_of(rec, "Pedro") == ""
+
+
 def test_version_1_actions_are_read(tmp_path):
     lib = Library(tmp_path / "data")
     rec = _rec(lib)
@@ -582,7 +600,7 @@ def test_cli_data_out(tmp_path, server, capsys, studio):
     assert cli.main(["meetings", "--json"]) == 0
     out = json.loads(capsys.readouterr().out)
     assert [m["id"] for m in out] == [rec.id] and out[0]["action_items"] == 2
-    assert out[0]["minutes"]["excerpt"] == "Lucía habló del precio. Enviar la propuesta (Lucía)"
+    assert out[0]["minutes"]["excerpt"] == "Lucía habló del precio."  # the first section, not the next steps
     assert cli.main(["meetings", "--all"]) == 0 and bare.id in capsys.readouterr().out
     assert cli.main(["meetings", "--since", "mañana"]) == 2
     assert cli.main(["minutes", rec.id, "--json"]) == 0

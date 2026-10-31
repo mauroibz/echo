@@ -55,8 +55,21 @@ def settings_pages() -> list:
     from .calendar_ui import CalendarPage
     from .ui import SettingsPage
 
-    return [("Summaries", SettingsPage(on_saved=_offer_view)),
-            ("Calendar", CalendarPage(on_saved=lambda: _meetings.start() if _meetings is not None else None))]
+    return [("Summaries", SettingsPage(on_saved=_settings_saved)),
+            ("Calendar", CalendarPage(on_saved=_settings_saved))]
+
+
+def window_class():
+    from .window import StudioWindow
+
+    return StudioWindow
+
+
+def active() -> bool:
+    """Studio has something to show: a summaries server, or a calendar."""
+    from . import calendar
+
+    return config.enabled() or calendar.enabled()
 
 
 def attach_window(window) -> None:
@@ -70,8 +83,51 @@ def attach_window(window) -> None:
     _meetings.message.connect(window.show_message)
     window.transcribed.connect(_meetings.transcribed)  # first: the summary reads the event it saves
     window.transcribed.connect(_jobs.transcript_ready)
+    _build_pages(window)
     _meetings.start()
     _offer_view()
+
+
+def open_minutes(rid: str, at: float | None = None) -> None:
+    """Show a recording on its minutes (the Minutes view), playing from `at` when given."""
+    from .ui import SummaryView
+
+    w = _window
+    w.show_recording(rid, at)
+    for k, v in enumerate(w.views.views(), 1):
+        if isinstance(v, SummaryView):
+            w.views.buttons[k].click()
+            break
+
+
+def _build_pages(window) -> None:
+    """The rail's pages, on Studio's window (another extension's window gets none)."""
+    from .window import StudioWindow
+
+    if not isinstance(window, StudioWindow):
+        return
+    from .home import HomeScreen
+    from .people_ui import PeopleScreen
+
+    window.add_page("home", "Home", "audio-lines", HomeScreen(window, _meetings, open_minutes, window.show_settings),
+                    "Ctrl+1")
+    window.add_page("recordings", "Recordings", "layers", window.recordings_page, "Ctrl+2")
+    window.add_page("people", "People", "users", PeopleScreen(window.library, open_minutes,
+                                                              window.open_profile_dialog), "Ctrl+3")
+    window.rail_record = window.rail.add_record()
+    window.rail_record.clicked.connect(window.recorder_panel.toggle_record)
+    window.set_rail(active())
+
+
+def _settings_saved() -> None:
+    w = _window
+    if w is None:
+        return
+    _offer_view()
+    if _meetings is not None:
+        _meetings.start()
+    if hasattr(w, "set_rail"):
+        w.set_rail(active())
 
 
 def speaker_names(rec) -> list[str]:
@@ -83,8 +139,8 @@ def speaker_names(rec) -> list[str]:
 
 
 def _offer_view() -> None:
-    """The Summary view and Studio's screens, once a server is set up (at start, or right after
-    Settings)."""
+    """The Minutes and Ask views and the Ask page, once a server is set up (at start, or right
+    after Settings)."""
     from .ask_ui import AskScreen, AskView
     from .ui import VIEW_TITLE, SummaryView
 
@@ -93,7 +149,11 @@ def _offer_view() -> None:
         return
     w.add_view(VIEW_TITLE, SummaryView(_jobs, message=w.show_message, show_recording=w.show_recording))
     w.add_view("Ask", AskView(w.show_recording))
-    w.add_screen("Ask", "message-circle-question", AskScreen(w.library, w.show_recording), "Ctrl+Shift+A")
+    screen = AskScreen(w.library, w.show_recording)
+    if hasattr(w, "add_page"):
+        w.add_page("ask", "Ask", "message-circle-question", screen, "Ctrl+Shift+A")
+    else:
+        w.add_screen("Ask", "message-circle-question", screen, "Ctrl+Shift+A")
 
 
 def person_sections(name: str) -> list:

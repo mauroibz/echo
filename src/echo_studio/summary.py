@@ -282,7 +282,8 @@ def demoted(text: str, levels: int = 2) -> str:
 
 
 def finish(rec: Recording, data: dict, cfg: config.Config | None = None) -> list[str]:
-    """What follows a new summary: the title (when automatic and wanted) and the action items. A
+    """What follows a new summary: the title (when automatic and wanted), each person's part and the
+    action items. A
     failure here leaves the summary saved; the returned lines say what did not work."""
     from . import actions
 
@@ -294,6 +295,13 @@ def finish(rec: Recording, data: dict, cfg: config.Config | None = None) -> list
                 notes.append(f"titled “{title}”")
         except llm.LLMError as e:
             notes.append(f"no title: {e}")
+    from . import parts
+
+    try:
+        if (p := parts.write(rec, data, cfg)) is not None:
+            notes.append(f"parts for {len(p['parts'])} of {len(parts.names(rec))} people")
+    except llm.LLMError as e:
+        notes.append(f"no parts: {e}")
     try:
         n = len(actions.write(rec, data, cfg)["items"])
         notes.append(f"{n} action item{'s' if n != 1 else ''}")

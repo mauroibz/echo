@@ -85,16 +85,22 @@ def _person_of(lib, email: str) -> str | None:
 
 
 def excerpt(text: str, limit: int = 280) -> str:
-    """A line or two to show for the minutes: the first paragraph of prose, else the first bullets
-    (summaries are mostly headings and lists), cut at a word."""
+    """A line or two to show for the minutes: the first section's prose or bullets (summaries are
+    mostly headings and lists), joined as sentences and cut at a word. The next steps, a later
+    section, are left to the action items."""
     def clean(t: str) -> str:
-        return " ".join(re.sub(r"^\s*(?:[-*]|\d+[.)])\s+", "", t).replace("**", "").split())
+        t = " ".join(re.sub(r"^\s*(?:[-*]|\d+[.)])\s+", "", t).replace("**", "").split())
+        return t if not t or t[-1] in ".!?…:" else t + "."
 
-    lines = [ln for ln in text.splitlines() if ln.strip() and not ln.lstrip().startswith(("#", "|"))]
-    prose = [ln for ln in lines if not re.match(r"\s*(?:[-*]|\d+[.)])\s", ln)]
-    out = clean(prose[0]) if prose else ""
-    for ln in lines if not out else []:
-        nxt = (out + " " if out else "") + clean(ln)
+    out = ""
+    for ln in text.splitlines():
+        if not ln.strip() or ln.lstrip().startswith("|"):
+            continue
+        if ln.lstrip().startswith("#"):
+            if out:
+                break  # the first section is enough
+            continue
+        nxt = f"{out} {clean(ln)}".strip()
         if out and len(nxt) > limit:
             break
         out = nxt

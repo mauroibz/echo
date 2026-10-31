@@ -323,10 +323,12 @@ echo-app transcribe meeting.mp4 --format md --context "Lucía y Martín, presupu
   imported or not found, or transcription is not installed; 2 usage error; 3 timed out, still
   transcribing.
 
-## Echo Studio: summaries, action items and questions
+## Echo Studio: your meetings, before and after
 
-Echo Studio adds what needs a language model to the same app: summaries, action items, follow-up
-drafts and questions about your recordings. Install Echo with `./install.sh --with-studio` (add it
+Echo Studio makes Echo a companion to your calendar and your meetings: it shows the next meeting,
+records it when it starts, and turns each recording into minutes (a summary and action items you
+can polish before they go to your team's tracker), with follow-up drafts and questions about your
+recordings. Install Echo with `./install.sh --with-studio` (add it
 to the transcription flag you used; `--without-studio` takes it out again). Without it Echo is
 unchanged and sends nothing anywhere; `echo-app doctor` says whether Studio is loaded.
 
@@ -339,10 +341,25 @@ models it has. When the server is not on this computer or your network, the page
 transcript of each recording you summarize is sent to it,** as soon as it is ready unless you
 turn automatic summaries off, and the passages a question finds when you ask.
 
-Once a server is set, a Transcript / Summary switch appears over the transcript. Summary shows the
-selected recording's summary, with Summarize (Summarize again once there is one) and Copy. The
-summary is grouped by topic and ends with the next steps and who does them, in the recording's
-language.
+**The window.** Once a server or a calendar is set, a rail at the left holds Home (Ctrl+1),
+Recordings (Ctrl+2: Echo's window as always), People (Ctrl+3), Ask (Ctrl+Shift+A) and Record.
+Home shows the next meeting from your calendar (its time, title, invitation, who is invited, Join
+the call, and whether it will record by itself, with Skip), or, while recording, the time, your
+notes and who was invited; below, the minutes of your last meetings as a timeline. Click one to
+open it on its minutes. Home only shows what your calendar and recordings say: no suggestions and
+no reminders.
+
+**People.** Studio's People lists everyone Echo knows, by name or email. A person's page shows
+their email (the key that matches them to calendar attendees), how many meetings and action items
+they have, their meetings with an excerpt of each minute and a line on their part in it, the
+action items assigned to them, and your notes. "Aliases, tags and voice…" opens Echo's People
+window. The line on each person's part comes from one more short request per summary, for
+everyone named in it, and is kept in `parts.json` in the recording's folder.
+
+**Minutes.** Over the transcript, a Transcript / Minutes / Ask switch. Minutes shows the selected
+recording's summary, with Summarize (Summarize again once there is one) and Copy, and its action
+items under it. The summary is grouped by topic and ends with the next steps and who does them,
+in the recording's language.
 
 Each recording is summarized as soon as its transcript is ready, one at a time; uncheck "Summarize
 each recording when its transcript is ready" in Settings → Summaries to summarize only when you

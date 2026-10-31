@@ -17,7 +17,7 @@ from . import config, followup, keychain, llm, summary, templates
 from .actions_ui import ActionList
 from .reading import ReadingBrowser
 
-VIEW_TITLE = "Summary"
+VIEW_TITLE = "Minutes"
 ACTIONS_MAX_H = 260
 
 
