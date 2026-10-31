@@ -3,9 +3,9 @@ library. Answers cite where they come from; a citation plays the recording from 
 
 from __future__ import annotations
 
-from PySide6.QtCore import QUrl
+from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QFont
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QLineEdit, QTextBrowser, QToolButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QLineEdit, QToolButton, QVBoxLayout, QWidget
 
 from echo_app import settings
 from echo_app.index import Index
@@ -13,6 +13,7 @@ from echo_app.ui import theme
 from echo_app.ui.common import icon, run_task
 
 from . import ask
+from .reading import ReadingBrowser
 
 
 class Conversation(QWidget):
@@ -28,10 +29,9 @@ class Conversation(QWidget):
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(8)
-        self.text = QTextBrowser()
+        self.text = ReadingBrowser()
         self.text.setOpenLinks(False)
         self.text.anchorClicked.connect(self._open)
-        self.text.setFrameShape(QTextBrowser.Shape.NoFrame)
         self.text.setAccessibleName("Answers")
         lay.addWidget(self.text, 1)
         row = QHBoxLayout()
@@ -85,9 +85,10 @@ class Conversation(QWidget):
 
     def _render(self):
         if not self.turns:
-            self.text.setMarkdown("")
+            self.text.show_markdown("")
             return
-        self.text.setMarkdown("\n\n---\n\n".join(f"**{q}**\n\n{shown}" for q, _said, shown in self.turns))
+        # Each question as a small heading over its answer.
+        self.text.show_markdown("\n\n".join(f"### {q}\n\n{shown}" for q, _said, shown in self.turns))
         bar = self.text.verticalScrollBar()
         bar.setValue(bar.maximum())
 
@@ -145,7 +146,7 @@ class AskScreen(QWidget):
         lay.setContentsMargins(28, 22, 24, 18)
         lay.setSpacing(10)
         title = QLabel("Ask")
-        title.setFont(theme.display_font(1.6, QFont.Weight.Bold))
+        title.setFont(theme.display_font(1.9, QFont.Weight.ExtraBold))  # as a recording's title
         lay.addWidget(title)
         hint = QLabel("Ask about anything said in your recordings, for example “what did we agree with Acme "
                       "about prices?”. The passages that match are sent to the server, and each answer "
@@ -154,7 +155,13 @@ class AskScreen(QWidget):
         theme.set_role(hint, dim=True)
         lay.addWidget(hint)
         self.chat = Conversation(self._answer, show_recording, "Ask your recordings…")
-        lay.addWidget(self.chat, 1)
+        card = QFrame()
+        card.setObjectName("card")
+        card.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        cl = QVBoxLayout(card)
+        cl.setContentsMargins(16, 12, 16, 12)
+        cl.addWidget(self.chat)
+        lay.addWidget(card, 1)
 
     def _answer(self, question, history):
         index = Index(self.library)

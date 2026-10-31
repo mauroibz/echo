@@ -35,6 +35,14 @@ def fmt_due(day: str) -> str:
     return f"late, was due {when}" if delta < 0 else f"due {when}"
 
 
+def _strike(box: QCheckBox, done: bool) -> None:
+    """A done item reads as done: struck through and quieter."""
+    f = box.font()
+    f.setStrikeOut(done)
+    box.setFont(f)
+    theme.set_role(box, dim=done)
+
+
 def _dim(text: str = "") -> QLabel:
     lbl = QLabel(text)
     lbl.setWordWrap(True)
@@ -54,7 +62,7 @@ class ActionList(QWidget):
         self.empty = empty
         self.lay = QVBoxLayout(self)
         self.lay.setContentsMargins(0, 0, 0, 0)
-        self.lay.setSpacing(6)
+        self.lay.setSpacing(10)
 
     def set_items(self, items: list[dict]) -> None:
         while self.lay.count():
@@ -76,6 +84,8 @@ class ActionList(QWidget):
         col.setSpacing(0)
         box = QCheckBox(it["text"])
         box.setChecked(bool(it.get("done")))
+        _strike(box, box.isChecked())
+        box.toggled.connect(lambda on, b=box: _strike(b, on))
         box.toggled.connect(lambda on, rid=it["id"], k=it["index"]: self.toggled.emit(rid, k, on))
         col.addWidget(box)
         bits = [b for b in (it.get("owner"), fmt_due(it["due"]) if it.get("due") else "",
@@ -87,8 +97,9 @@ class ActionList(QWidget):
         rl.addLayout(col, 1)
         if it.get("at") is not None:
             b = QToolButton()
+            b.setObjectName("pill")
             b.setText(export.stamp(it["at"]))
-            b.setIcon(icon("play"))
+            b.setIcon(icon("play", "accent_deep"))
             b.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
             b.setToolTip("Play where this came up")
             b.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -114,7 +125,7 @@ class PendingScreen(QWidget):
         lay.setContentsMargins(28, 22, 24, 18)
         lay.setSpacing(12)
         title = QLabel("Pending")
-        title.setFont(theme.display_font(1.6, QFont.Weight.Bold))
+        title.setFont(theme.display_font(1.9, QFont.Weight.ExtraBold))  # as a recording's title
         lay.addWidget(title)
         bar = QHBoxLayout()
         self.person = QComboBox()
@@ -134,11 +145,13 @@ class PendingScreen(QWidget):
         self.list.toggled.connect(self._toggle)
         self.list.play.connect(show_recording)
         scroll = QScrollArea()
+        scroll.setObjectName("card")
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         holder = QWidget()
+        holder.setObjectName("card")
         hl = QVBoxLayout(holder)
-        hl.setContentsMargins(0, 0, 8, 0)
+        hl.setContentsMargins(18, 14, 18, 14)
         hl.addWidget(self.list)
         hl.addStretch(1)
         scroll.setWidget(holder)

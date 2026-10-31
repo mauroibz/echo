@@ -7,7 +7,7 @@ import os
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QActionGroup, QDesktopServices, QFont
 from PySide6.QtWidgets import (QApplication, QCheckBox, QDialog, QFormLayout, QFrame, QHBoxLayout, QLabel,
-                               QLineEdit, QMenu, QPlainTextEdit, QPushButton, QScrollArea, QTextBrowser,
+                               QLineEdit, QMenu, QPlainTextEdit, QPushButton, QScrollArea,
                                QToolButton, QVBoxLayout, QWidget)
 
 from echo_app.ui import theme
@@ -15,8 +15,10 @@ from echo_app.ui.common import icon, run_task
 
 from . import actions, config, followup, keychain, llm, summary, templates
 from .actions_ui import ActionList, items_of
+from .reading import ReadingBrowser
 
 VIEW_TITLE = "Summary"
+ACTIONS_MAX_H = 220
 
 
 def _dim(text: str = "") -> QLabel:
@@ -183,10 +185,9 @@ class SummaryView(QWidget):
         self.copy_btn.clicked.connect(self.copy)
         bar.addWidget(self.copy_btn)
         lay.addLayout(bar)
-        self.text = QTextBrowser()
+        self.text = ReadingBrowser()  # in the reading card, read like the transcript
         self.text.setOpenExternalLinks(True)
         self.text.setAccessibleName("Summary")
-        self.text.setFrameShape(QFrame.Shape.NoFrame)  # it sits in the reading card, like the transcript
         lay.addWidget(self.text, 1)
         # The summary's action items, to check off; their time buttons play where each came up.
         self.actions_box = QWidget()
@@ -200,10 +201,12 @@ class SummaryView(QWidget):
         self.actions.toggled.connect(self._toggle_action)
         self.actions.play.connect(lambda rid, at: self.show_recording(rid, at))
         scroll = QScrollArea()
+        # On the reading card's surface, not the window's.
+        scroll.setStyleSheet("QScrollArea, QScrollArea > QWidget > QWidget { background: transparent; }")
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setMaximumHeight(220)
         scroll.setWidget(self.actions)
+        self.actions_scroll = scroll
         al.addWidget(scroll)
         lay.addWidget(self.actions_box)
         self.show_subject(None, None)
@@ -223,8 +226,10 @@ class SummaryView(QWidget):
         items = items_of(rec) if data is not None else []
         self.actions.set_items(items)
         self.actions_box.setVisible(bool(items))
+        # As tall as the items, up to a third of a typical card; more scroll.
+        self.actions_scroll.setFixedHeight(min(ACTIONS_MAX_H, self.actions.sizeHint().height() + 4))
         if data is not None:
-            self.text.setMarkdown(data["text"])
+            self.text.show_markdown(data["text"])
         else:
             self.text.clear()
         if linked is not None:
