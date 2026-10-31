@@ -1,4 +1,5 @@
-"""`echo-app summarize`: summaries from the command line, for scripts and agents."""
+"""Studio on the command line, for scripts and agents: `summarize` and `ask` use the server; `meetings`,
+`minutes` and `actions` only read what is saved (the way minutes and items leave Echo)."""
 
 from __future__ import annotations
 
@@ -124,6 +125,116 @@ def cmd_ask(args) -> int:
     return OK
 
 
+def _library():
+    from echo_app.library import Library
+    from echo_app.settings import load
+
+    return Library(load()[0].data_path)
+
+
+def _bad_date(*values) -> str | None:
+    from . import data
+
+    for v in values:
+        if v:
+            try:
+                data._day(v, end=False)
+            except ValueError:
+                return v
+    return None
+
+
+def cmd_meetings(args) -> int:
+    from . import data
+
+    bad = _bad_date(args.since, args.until)
+    if bad:
+        _err(f"not a date: {bad} (YYYY-MM-DD, today or yesterday)")
+        return USAGE
+    recs = sorted((r for r in _library().all() if data.in_range(r, args.since, args.until)
+                   and (args.all or summary.load(r) is not None)), key=lambda r: r.meta.created, reverse=True)
+    if args.json:
+        print(json.dumps([data.meeting(r, full=False) for r in recs], ensure_ascii=False, indent=2))
+        return OK
+    for r in recs:
+        n = len(data.action_items(r))
+        tail = f"  ({n} action item{'s' if n != 1 else ''})" if summary.load(r) is not None else "  (no minutes)"
+        print(f"{r.id}  {r.meta.created[:16].replace('T', ' ')}  {r.meta.title}{tail}")
+    return OK
+
+
+def cmd_minutes(args) -> int:
+    from . import data
+
+    lib = _library()
+    out, code = [], OK
+    for rid in args.ids:
+        rec = lib.get(rid)
+        if rec is None:
+            _err(f"{rid}: no such recording (see: echo-app meetings)")
+            code = FAILED
+            continue
+        if summary.load(rec) is None:
+            _err(f"{rid}: no minutes yet (see: echo-app summarize {rid})")
+            code = FAILED
+            continue
+        m = data.meeting(rec)
+        if args.json:
+            out.append(m)
+            continue
+        print(f"# {rec.meta.title}\n\n{m['minutes']['text'].strip()}\n")
+        if m["action_items"]:
+            print("## Action items\n")
+            for it in m["action_items"]:
+                print(_item_line(it))
+            print()
+    if args.json:
+        print(json.dumps(out[0] if len(args.ids) == 1 and out else out, ensure_ascii=False, indent=2))
+    return code
+
+
+def _item_line(it: dict) -> str:
+    bits = [b for b in (it["owner"], f"by {it['due']}" if it["due"] else "", it["at_stamp"]) if b]
+    line = f"- {it['text']}" + (f" ({', '.join(bits)})" if bits else "")
+    return line + (f"\n  {it['context']}" if it["context"] else "")
+
+
+def cmd_actions(args) -> int:
+    from echo_app.library import fold_tag
+
+    from . import data
+
+    bad = _bad_date(args.since, args.until)
+    if bad:
+        _err(f"not a date: {bad} (YYYY-MM-DD, today or yesterday)")
+        return USAGE
+    lib = _library()
+    if args.ids:
+        recs = [lib.get(i) for i in args.ids]
+        if any(r is None for r in recs):
+            _err("no such recording: " + ", ".join(i for i, r in zip(args.ids, recs) if r is None))
+            return FAILED
+    else:
+        recs = sorted((r for r in lib.all() if data.in_range(r, args.since, args.until)),
+                      key=lambda r: r.meta.created, reverse=True)
+    want = fold_tag(args.owner) if args.owner else None
+    items = []
+    for r in recs:
+        for it in data.action_items(r, discarded=args.discarded):
+            if want is None or fold_tag(it["owner"]) == want:
+                items.append({**it, "title": r.meta.title, "created": r.meta.created})
+    if args.json:
+        print(json.dumps(items, ensure_ascii=False, indent=2))
+        return OK
+    last = None
+    for it in items:
+        if it["recording"] != last:
+            print(("\n" if last else "") + f"{it['title']} ({it['recording']})")
+            last = it["recording"]
+        print(_item_line(it))
+    return OK
+
+
 def _needs(rec) -> bool:
     data = summary.load(rec)
     return data is None or summary.stale(rec, data)
@@ -179,4 +290,54 @@ exit codes: 0 answered, 1 failed, 2 usage error, 3 no server set up""",
         formatter_class=argparse.RawDescriptionHelpFormatter)
     a.add_argument("words", nargs="+", metavar="[ID] QUESTION")
     a.set_defaults(func=cmd_ask)
+
+    keys = ("JSON keys are only ever added, never renamed or removed, so a sync can rely on them. Reads what "
+            "is saved; sends nothing.")
+    m = sub.add_parser(
+        "meetings", help="list recordings with minutes, newest first (Echo Studio)",
+        description="Recordings that have minutes (a summary), newest first. " + keys,
+        epilog="""examples:
+  echo-app meetings --since today
+  echo-app meetings --since 2026-10-01 --until 2026-10-31 --json""",
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    m.add_argument("--since", metavar="DATE", help="made on or after this day (YYYY-MM-DD, today, yesterday)")
+    m.add_argument("--until", metavar="DATE", help="made on or before this day")
+    m.add_argument("--all", action="store_true", help="also recordings without minutes")
+    m.add_argument("--json", action="store_true", help="as JSON: each recording (as info --json) with "
+                   "\"minutes\" (created, stale, template, excerpt) and the number of \"action_items\"")
+    m.set_defaults(func=cmd_meetings)
+
+    n = sub.add_parser(
+        "minutes", help="a recording's minutes and action items (Echo Studio)",
+        description="The summary and the action items (not the discarded ones) of each recording. " + keys,
+        epilog="""JSON: the recording (as info --json) with "minutes" {path, created, stale, template, excerpt, text}
+and "action_items", each {index, text, owner, due, at, at_stamp, context, edited, added_by_user,
+quote, recording}; "quote" is what was said around the item's time. One ID gives one object,
+several give a list.
+
+examples:
+  echo-app minutes 20261031-110000-ab12
+  echo-app minutes 20261031-110000-ab12 --json""",
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    n.add_argument("ids", nargs="+", metavar="ID")
+    n.add_argument("--json", action="store_true", help="as JSON")
+    n.set_defaults(func=cmd_minutes)
+
+    t = sub.add_parser(
+        "actions", help="action items across recordings, newest first (Echo Studio)",
+        description="Action items as polished in the minutes, newest recording first; discarded ones are left "
+                    "out. Echo does not track whether they got done. " + keys,
+        epilog="""examples:
+  echo-app actions --since today --json
+  echo-app actions 20261031-110000-ab12
+  echo-app actions --owner "Sofía Paz" --since 2026-10-01""",
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    t.add_argument("ids", nargs="*", metavar="ID", help="these recordings only")
+    t.add_argument("--since", metavar="DATE", help="recordings made on or after this day")
+    t.add_argument("--until", metavar="DATE", help="recordings made on or before this day")
+    t.add_argument("--owner", metavar="NAME", help="one person's items")
+    t.add_argument("--discarded", action="store_true", help="include the discarded ones")
+    t.add_argument("--json", action="store_true", help="as JSON: the items as in minutes --json, with the "
+                   "recording's \"title\" and \"created\"")
+    t.set_defaults(func=cmd_actions)
 

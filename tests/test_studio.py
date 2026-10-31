@@ -566,6 +566,43 @@ def test_cli(tmp_path, server, capsys, studio):
     assert "Summaries need a language-model server" in capsys.readouterr().err
 
 
+def test_cli_data_out(tmp_path, server, capsys, studio):
+    from echo_app import settings
+
+    s = settings.load()[0]
+    s.data_dir = str(tmp_path / "data")
+    settings.save(s)
+    lib = Library(tmp_path / "data")
+    rec = _rec(lib)
+    bare = _rec(lib)
+    summary.finish(rec, summary.write(rec))
+    actions.update(rec, 0, context="con el descuento")
+    actions.add(rec, "Reservar sala", owner="Ana")
+    capsys.readouterr()
+    assert cli.main(["meetings", "--json"]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert [m["id"] for m in out] == [rec.id] and out[0]["action_items"] == 2
+    assert out[0]["minutes"]["excerpt"] == "Lucía habló del precio. Enviar la propuesta (Lucía)"
+    assert cli.main(["meetings", "--all"]) == 0 and bare.id in capsys.readouterr().out
+    assert cli.main(["meetings", "--since", "mañana"]) == 2
+    assert cli.main(["minutes", rec.id, "--json"]) == 0
+    m = json.loads(capsys.readouterr().out)
+    first = m["action_items"][0]
+    assert m["minutes"]["text"].startswith("# Tema") and first["context"] == "con el descuento"
+    assert first["at_stamp"] == "0:06" and "Lucía" in first["quote"] and first["recording"] == rec.id
+    assert m["action_items"][1]["added_by_user"] is True
+    assert cli.main(["minutes", rec.id]) == 0
+    text = capsys.readouterr().out
+    assert "## Action items" in text and "- Enviar la propuesta (lucia, by 2026-10-31, 0:06)\n  con el descuento" in text
+    assert cli.main(["minutes", bare.id]) == 1
+    actions.discard(rec, 1, True)
+    assert cli.main(["actions", "--owner", "ana", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out) == []
+    assert cli.main(["actions", "--discarded", "--json"]) == 0
+    assert [i["text"] for i in json.loads(capsys.readouterr().out)] == ["Enviar la propuesta", "Reservar sala"]
+    assert cli.main(["actions", "--since", "today"]) == 0  # the test recordings were made today
+
+
 def test_cli_all_summarizes_what_is_missing(tmp_path, server, capsys, studio):
     from echo_app import settings
 

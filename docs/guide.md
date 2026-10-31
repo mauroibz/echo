@@ -388,6 +388,14 @@ every transcribed recording that has no current summary (the ones from before yo
 server, for example), `--json` gives the recording with a `summary` key, `--force` summarizes
 again, `--template NAME` sets the kind of meeting, `--follow-up` prints the follow-up draft. Exit codes: 0 done, 1 a recording failed, 2 usage error, 3 no server set up. `echo-app doctor` checks the server.
 
+Minutes and action items leave Echo through the command line, for a script, a scheduled sync or
+an agent that loads them into your tracker: `echo-app meetings --since today` lists the
+recordings with minutes, `echo-app minutes ID` prints one meeting's summary and action items, and
+`echo-app actions --since 2026-10-01 --owner "Sofía Paz"` the items across meetings. Add `--json`
+for scripts: each item carries its text, owner, date, time, your context and what was said around
+it; discarded items are left out. These commands only read what is saved. `agents/echo/SKILL.md`
+in Echo's folder explains them to an agent.
+
 The server settings are in `~/.config/echo/studio.toml`. The key is kept in your desktop's
 keyring (KDE Wallet or GNOME Keyring, through `secret-tool`), never in a file; to keep it
 elsewhere, set `$ECHO_LLM_API_KEY` (for example from a `.env` you load) and Settings uses that.

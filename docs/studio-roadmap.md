@@ -288,7 +288,7 @@ that tells an agent how to read them.
 | 4 | `add-studio-ask-library` | done; archives after `add-studio-summaries` |
 | 4 | `add-studio-install` | done but the release: merging `studio` into `main` waits for the user |
 | v2a | `change-studio-action-edits` | done; archives after `add-studio-actions` |
-| v2a | `add-studio-cli-data` | planned |
+| v2a | `add-studio-cli-data` | done; archives with the other Studio changes |
 | v2b | `add-studio-people` | planned |
 | v2b | `add-studio-calendar` | planned |
 | v2c | `add-studio-auto-record` | planned |
