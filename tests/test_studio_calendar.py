@@ -222,7 +222,8 @@ def test_minutes_json_has_the_event(feed, tmp_path, server, capsys, studio):
     assert m["event"]["title"] == "Product sync" and m["event"]["link"].startswith("https://meet.google.com/")
     assert [a["email"] for a in m["attendees"]] == ["carla@acme.example", "sofia@ejemplo.com"]
     assert m["action_items"][0]["owner_email"] == "lucia@acme.example"
-    assert cli.main(["calendar", "--days", "400"]) == 0
+    feed.text = _now_feed(datetime.now().astimezone() + timedelta(hours=2))  # ahead whatever today is
+    assert cli.main(["calendar", "--refresh"]) == 0
     out = capsys.readouterr().out
     assert "Roadmap review" in out and "[video]" in out
 
@@ -280,8 +281,11 @@ def test_skip_and_manual_recordings(window, lib, feed, studio, monkeypatch):
     cfg = config.load()
     cfg.auto_record = False
     config.save(cfg)
-    m.skip(ev, False)
-    assert not m.will_record(ev)
+    assert not m.will_record(ev)  # recording meetings is off now...
+    m.set_record(ev, True)  # ...but this one is turned on by hand
+    assert m.is_wanted(ev) and m.will_record(ev) and meetings.Meetings(window).will_record(ev)
+    m.set_record(ev, False)
+    assert not m.will_record(ev) and not m.is_wanted(ev)
     window.recorder_panel.start()  # the user records by hand during the meeting
     assert wait_until(lambda: window.recording_id() is not None)
     rid = window.recording_id()

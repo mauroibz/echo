@@ -1,6 +1,7 @@
-"""Studio's home: the next meeting from the calendar (or the one being recorded), and the minutes
-of past meetings as a timeline. It shows what the calendar and the recordings say, nothing more:
-no suggestions, no reminders."""
+"""Studio's Briefing: the next meeting from the calendar (or the one being recorded), the meetings
+coming up with a switch each for whether it is recorded, and the minutes of past meetings as a
+timeline of cards (the gist, the action items, your notes). It shows what the calendar and the
+recordings say, nothing more: no suggestions, no reminders."""
 
 from __future__ import annotations
 
@@ -15,11 +16,16 @@ from PySide6.QtWidgets import (QFrame, QHBoxLayout, QPlainTextEdit, QPushButton,
 from echo_app.ui import theme
 from echo_app.ui.common import fmt_duration
 
-from . import calendar, data, summary
-from .widgets import Avatar, AvatarStack, Hero, TimelineDot, label, minutes_long
+from . import actions, calendar, data, marks, summary
+from .actions_ui import fmt_due
+from .widgets import Avatar, AvatarStack, Hero, StarButton, TimelineDot, Toggle, label, minutes_long
 
 MINUTES_SHOWN = 12
 DESCRIPTION_LINES = 3
+CARD_ITEMS = 3  # action items shown on a minutes card; the rest are counted
+NOTES_CHARS = 180
+COMING_DAYS = 7
+COMING_SHOWN = 14
 
 
 def _clear(lay):
@@ -57,42 +63,74 @@ def when_label(ev, now: datetime) -> str:
 
 
 class MinutesCard(QFrame):
+    """A meeting's minutes at a glance: the gist, the first action items with their owners, your
+    notes, who was there, its tags and a star. Clicking it opens the minutes."""
+
     clicked = Signal(str)
 
-    def __init__(self, rec, lib):
+    def __init__(self, rec, lib, footer: bool = True):
         super().__init__()
         self.rid = rec.id
         self.setObjectName("card")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setAccessibleName(f"Minutes of {rec.meta.title}")
+        t = theme.current()
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(22, 16, 22, 16)
-        lay.setSpacing(6)
+        lay.setContentsMargins(22, 14, 14, 16)
+        lay.setSpacing(8)
         top = QHBoxLayout()
         top.setSpacing(10)
-        top.addWidget(label(rec.meta.title, 1.2, QFont.Weight.ExtraBold))
+        top.addWidget(label(rec.meta.title, 1.2, QFont.Weight.ExtraBold, wrap=True), 1)
         bits = [minutes_long(rec.meta.duration)]
         d = summary.load(rec)
         if d and d.get("template"):
             bits.append(d["template"])
-        top.addWidget(label(" · ".join(bits), dim=True))
-        top.addStretch(1)
+        top.addWidget(label(" · ".join(bits), dim=True), 0, Qt.AlignmentFlag.AlignTop)
+        self.star = StarButton(marks.starred(rec))
+        self.star.starred.connect(lambda on, r=rec: marks.set_starred(r, on))
+        top.addWidget(self.star, 0, Qt.AlignmentFlag.AlignTop)
         lay.addLayout(top)
         text = data.excerpt(d["text"]) if d else ""
         if text:
             lay.addWidget(label(text, 1.0, display=False, wrap=True))
+        items = [it for it in (actions.load(rec) or {}).get("items", []) if not it["discarded"]]
+        if items:
+            box = QFrame()
+            box.setStyleSheet(f"QFrame {{ background: {t.raised}; border-radius: 12px; }} "
+                              "QLabel { background: transparent; }")
+            bl = QVBoxLayout(box)
+            bl.setContentsMargins(14, 10, 14, 10)
+            bl.setSpacing(5)
+            bl.addWidget(label(f"ACTION ITEMS · {len(items)}", 0.8, QFont.Weight.ExtraBold, eyebrow=True))
+            for it in items[:CARD_ITEMS]:
+                row = QHBoxLayout()
+                row.setSpacing(8)
+                if it["owner"]:
+                    row.addWidget(Avatar(it["owner"], 20), 0, Qt.AlignmentFlag.AlignTop)
+                row.addWidget(label(it["text"], 0.95, QFont.Weight.DemiBold, wrap=True), 1)
+                if it["due"]:
+                    row.addWidget(label(fmt_due(it["due"]), 0.85, dim=True), 0, Qt.AlignmentFlag.AlignTop)
+                bl.addLayout(row)
+            if len(items) > CARD_ITEMS:
+                bl.addWidget(label(f"+{len(items) - CARD_ITEMS} more", 0.85, QFont.Weight.Bold, dim=True))
+            lay.addWidget(box)
+        notes = " ".join((rec.meta.notes or "").split())
+        if notes:
+            cut = notes if len(notes) <= NOTES_CHARS else notes[:NOTES_CHARS].rsplit(" ", 1)[0] + "…"
+            n = label(f"Your notes: {cut}", 0.95, display=False, wrap=True, dim=True)
+            lay.addWidget(n)
         names = [n for n in dict.fromkeys(rec.meta.speakers.values()) if n]
-        n_items = len(data.action_items(rec))
-        if names or n_items:
+        tags = [tg for tg in rec.meta.tags if not tg.lower().startswith("template:")]
+        if footer and (names or tags):  # a person's page has its own tag editor and no avatars
             row = QHBoxLayout()
             row.setSpacing(10)
             if names:
                 row.addWidget(AvatarStack(names, 26))
-            if n_items:
-                chip = label(f"{n_items} action item{'s' if n_items != 1 else ''}", 0.9, QFont.Weight.Bold)
-                chip.setStyleSheet(f"color: {theme.current().accent_deep}; background: {theme.current().accent_soft};"
-                                   " border-radius: 10px; padding: 2px 10px;")
+            for tg in tags[:4]:
+                chip = label(f"#{tg}", 0.85, QFont.Weight.Bold)
+                chip.setStyleSheet(f"color: {t.accent_deep}; background: {t.accent_soft}; border-radius: 9px;"
+                                   " padding: 1px 8px;")
                 row.addWidget(chip)
             row.addStretch(1)
             lay.addLayout(row)
@@ -101,6 +139,81 @@ class MinutesCard(QFrame):
         if e.button() == Qt.MouseButton.LeftButton:
             self.clicked.emit(self.rid)
         super().mouseReleaseEvent(e)
+
+
+class ComingUp(QWidget):
+    """The meetings of the next days, by day, each with a switch: recorded when it starts or not.
+    A meeting with a video link starts on (when recording meetings is on in Settings); one without
+    starts off and can be turned on (an in-person meeting)."""
+
+    def __init__(self, meetings):
+        super().__init__()
+        self.meetings = meetings
+        self.lay = QVBoxLayout(self)
+        self.lay.setContentsMargins(0, 0, 0, 0)
+        self.lay.setSpacing(4)
+
+    def fill(self, now: datetime | None = None):
+        _clear(self.lay)
+        now = now or datetime.now().astimezone()
+        head = QHBoxLayout()
+        head.setSpacing(10)
+        head.addWidget(label("Coming up", 1.6, QFont.Weight.ExtraBold))
+        head.addStretch(1)
+        head.addWidget(label("records?", 0.9, dim=True), 0, Qt.AlignmentFlag.AlignBottom)
+        self.lay.addLayout(head)
+        self.lay.addSpacing(10)
+        evs = calendar.upcoming(now, hours=COMING_DAYS * 24) if calendar.enabled() else []
+        if not evs:
+            self.lay.addWidget(label(f"Nothing in the next {COMING_DAYS} days.", 1.0, dim=True))
+            return
+        day = None
+        for ev in evs[:COMING_SHOWN]:
+            start = ev.start.astimezone(now.tzinfo)
+            if start.date() != day:
+                day = start.date()
+                delta = (day - now.date()).days
+                when = "TODAY" if delta == 0 else "TOMORROW" if delta == 1 else f"{start:%A %d}".upper()
+                if self.lay.count() > 2:
+                    self.lay.addSpacing(8)
+                self.lay.addWidget(label(when, 0.8, QFont.Weight.ExtraBold, eyebrow=True))
+            self.lay.addWidget(self._row(ev, start, now))
+        if len(evs) > COMING_SHOWN:
+            self.lay.addWidget(label(f"+{len(evs) - COMING_SHOWN} more this week", 0.9, dim=True))
+
+    def _row(self, ev, start: datetime, now: datetime) -> QWidget:
+        row = QFrame()
+        row.setObjectName("card")
+        row.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        rl = QHBoxLayout(row)
+        rl.setContentsMargins(14, 10, 12, 10)
+        rl.setSpacing(12)
+        tl = label(f"{start:%H:%M}", 1.05, QFont.Weight.ExtraBold, tabular=True)
+        tl.setFixedWidth(46)
+        rl.addWidget(tl, 0, Qt.AlignmentFlag.AlignTop)
+        col = QVBoxLayout()
+        col.setSpacing(1)
+        col.addWidget(label(ev.title, 1.0, QFont.Weight.Bold, wrap=True))
+        people = [a.name or a.email.split("@")[0] for a in ev.attendees if a.status != "DECLINED"]
+        bits = [f"{minutes_long((ev.end - ev.start).total_seconds())}"]
+        bits.append("video call" if ev.link else "no video link")
+        if people:
+            bits.append(", ".join(people[:2]) + (f" +{len(people) - 2}" if len(people) > 2 else ""))
+        col.addWidget(label(" · ".join(bits), 0.88, dim=True, wrap=True))
+        rl.addLayout(col, 1)
+        if self.meetings.active is not None and self.meetings.active[1].uid == ev.uid \
+                and self.meetings.active[1].start == ev.start:
+            st = label("● REC", 0.8, QFont.Weight.ExtraBold)
+            st.setStyleSheet(f"color: {theme.current().coral_deep};")
+            rl.addWidget(st, 0, Qt.AlignmentFlag.AlignVCenter)
+        elif self.meetings.was_started(ev):
+            rl.addWidget(label("Recorded", 0.85, dim=True), 0, Qt.AlignmentFlag.AlignVCenter)
+        else:
+            on = self.meetings.will_record(ev)
+            sw = Toggle(on, f"Record “{ev.title}” when it starts")
+            sw.toggled.connect(lambda v, e=ev: self.meetings.set_record(e, v))
+            rl.addWidget(sw, 0, Qt.AlignmentFlag.AlignVCenter)
+        return row
 
 
 class HomeScreen(QWidget):
@@ -132,11 +245,19 @@ class HomeScreen(QWidget):
         self.hero_lay.setContentsMargins(44, 34, 44, Hero.WAVE_H + 26)
         self.hero_lay.setSpacing(32)
         self.body.addWidget(self.hero)
+        below = QHBoxLayout()
+        below.setContentsMargins(44, 8, 44, 40)
+        below.setSpacing(32)
         minutes = QWidget()
         self.minutes = QVBoxLayout(minutes)
-        self.minutes.setContentsMargins(44, 8, 44, 40)
+        self.minutes.setContentsMargins(0, 0, 0, 0)
         self.minutes.setSpacing(4)
-        self.body.addWidget(minutes)
+        below.addWidget(minutes, 3, Qt.AlignmentFlag.AlignTop)
+        self.coming = ComingUp(meetings)
+        self.coming.setMaximumWidth(400)
+        self.coming.setMinimumWidth(280)
+        below.addWidget(self.coming, 2, Qt.AlignmentFlag.AlignTop)
+        self.body.addLayout(below)
         self.body.addStretch(1)
         self.timer = QTimer(self)
         self.timer.timeout.connect(self._tick)
@@ -177,6 +298,9 @@ class HomeScreen(QWidget):
             else:
                 self._empty()
         self._fill_minutes()
+        self.coming.setVisible(calendar.enabled())
+        if calendar.enabled():
+            self.coming.fill()
 
     def _recording(self, rid: str):
         self.hero.set_live(True)
@@ -298,16 +422,18 @@ class HomeScreen(QWidget):
         status.setSpacing(10)
         if self.meetings.will_record(ev):
             status.addWidget(label(f"●  Records by itself at {start:%H:%M}", 1.0, QFont.Weight.Bold))
-            skip = QPushButton("Skip")
+            skip = QPushButton("Don't record")
             theme.set_role(skip, quiet=True)
             skip.setToolTip("Do not record this meeting by itself")
-            skip.clicked.connect(lambda: self.meetings.skip(ev))
+            skip.clicked.connect(lambda: self.meetings.set_record(ev, False))
             status.addWidget(skip)
-        elif self.meetings.is_skipped(ev):
+        elif self.meetings.is_skipped(ev) or (ev.start > datetime.now().astimezone()
+                                               and not self.meetings.was_started(ev)):
             status.addWidget(label("Not recording this one", 1.0, dim=True))
             undo = QPushButton("Record it")
             theme.set_role(undo, quiet=True)
-            undo.clicked.connect(lambda: self.meetings.skip(ev, False))
+            undo.setToolTip("Record this meeting when it starts")
+            undo.clicked.connect(lambda: self.meetings.set_record(ev, True))
             status.addWidget(undo)
         else:
             rec = QPushButton("Record now")

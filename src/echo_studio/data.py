@@ -14,7 +14,7 @@ from echo_app import export
 from echo_app.cli_json import record
 from echo_app.library import Recording
 
-from . import actions, summary
+from . import actions, marks, summary
 
 QUOTE_BEFORE, QUOTE_AFTER = 5.0, 25.0  # seconds of transcript around an item's time, for its quote
 
@@ -43,10 +43,11 @@ def _email_of(lib, name: str) -> str | None:
 
 
 def action_dict(rec: Recording, it: dict, index: int, lib=None) -> dict:
-    return {"index": index, "text": it["text"], "owner": it["owner"], "owner_email": _email_of(lib, it["owner"]),
+    return {"index": index, "text": it["text"], "description": it["description"], "owner": it["owner"],
+            "owner_email": _email_of(lib, it["owner"]),
             "due": it["due"] or None,
             "at": it["at"], "at_stamp": export.stamp(it["at"]) if it["at"] is not None else None,
-            "context": it["context"], "edited": it["edited"], "added_by_user": it["origin"] == "user",
+            "context": it["context"], "note": it["note"], "edited": it["edited"], "added_by_user": it["origin"] == "user",
             "quote": quote(rec, it["at"]), "recording": rec.id}
 
 
@@ -66,6 +67,7 @@ def meeting(rec: Recording, full: bool = True, lib=None) -> dict:
         "stale": summary.stale(rec, data), "template": data.get("template"),
         "excerpt": excerpt(data["text"]), **({"text": data["text"]} if full else {})}
     d["action_items"] = items if full else len(items)
+    d["starred"] = marks.starred(rec)
     from . import calendar
 
     ev = calendar.event_of(rec)

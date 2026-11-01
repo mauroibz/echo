@@ -1,4 +1,4 @@
-"""Studio on the command line, for scripts and agents: `summarize` and `ask` use the server; `meetings`,
+"""Studio on the command line, for scripts and agents: `summarize` uses the server; `meetings`,
 `minutes` and `actions` only read what is saved (the way minutes and items leave Echo)."""
 
 from __future__ import annotations
@@ -82,49 +82,6 @@ def cmd_summarize(args) -> int:
     return code
 
 
-def cmd_ask(args) -> int:
-    from echo_app.export import stamp
-    from echo_app.index import Index
-    from echo_app.library import Library
-    from echo_app.settings import load
-
-    from . import ask
-
-    if not config.load().enabled:
-        _err("Asking needs a language-model server: set one in Settings, Summaries.")
-        return NOT_SET_UP
-    if len(args.words) not in (1, 2):
-        _err('usage: echo-app ask [ID] "question"')
-        return USAGE
-    s = load()[0]
-    lib = Library(s.data_path)
-    try:
-        if len(args.words) == 2:
-            rec = lib.get(args.words[0])
-            if rec is None:
-                _err(f"{args.words[0]}: no such recording (see: echo-app list)")
-                return FAILED
-            print(ask.ask_recording(rec, args.words[1]).strip())
-            return OK
-        idx = Index(lib)
-        try:
-            idx.sync()
-            answer, passages = ask.ask_library(idx, args.words[0], language=s.language)
-        finally:
-            idx.close()
-    except (ValueError, llm.LLMError) as e:
-        _err(str(e))
-        return FAILED
-    if not passages:
-        print("Nothing in the recordings matches that.")
-        return OK
-    print(answer.strip() + "\n")
-    for n, p in enumerate(passages, 1):
-        if f"[{n}]" in answer or f"{n}," in answer or f", {n}]" in answer:
-            print(f"[{n}] {p['title']} ({p['id']}) at {stamp(p['start'])}")
-    return OK
-
-
 def _library():
     from echo_app.library import Library
     from echo_app.settings import load
@@ -145,7 +102,7 @@ def _bad_date(*values) -> str | None:
 
 
 def cmd_meetings(args) -> int:
-    from . import data
+    from . import data, marks
 
     bad = _bad_date(args.since, args.until)
     if bad:
@@ -153,14 +110,16 @@ def cmd_meetings(args) -> int:
         return USAGE
     lib = _library()
     recs = sorted((r for r in lib.all() if data.in_range(r, args.since, args.until)
-                   and (args.all or summary.load(r) is not None)), key=lambda r: r.meta.created, reverse=True)
+                   and (args.all or summary.load(r) is not None)
+                   and (not args.starred or marks.starred(r))), key=lambda r: r.meta.created, reverse=True)
     if args.json:
         print(json.dumps([data.meeting(r, full=False, lib=lib) for r in recs], ensure_ascii=False, indent=2))
         return OK
     for r in recs:
         n = len(data.action_items(r, lib=lib))
         tail = f"  ({n} action item{'s' if n != 1 else ''})" if summary.load(r) is not None else "  (no minutes)"
-        print(f"{r.id}  {r.meta.created[:16].replace('T', ' ')}  {r.meta.title}{tail}")
+        star = "★ " if marks.starred(r) else ""
+        print(f"{r.id}  {r.meta.created[:16].replace('T', ' ')}  {star}{r.meta.title}{tail}")
     return OK
 
 
@@ -197,7 +156,10 @@ def cmd_minutes(args) -> int:
 def _item_line(it: dict) -> str:
     bits = [b for b in (it["owner"], f"by {it['due']}" if it["due"] else "", it["at_stamp"]) if b]
     line = f"- {it['text']}" + (f" ({', '.join(bits)})" if bits else "")
-    return line + (f"\n  {it['context']}" if it["context"] else "")
+    for extra in (it["description"], f"Context: {it['context']}" if it["context"] else ""):
+        if extra:
+            line += f"\n  {extra}"
+    return line  # the user's note stays out: it is theirs, not the tracker's (it is in --json)
 
 
 def cmd_actions(args) -> int:
@@ -314,20 +276,6 @@ exit codes:
     s.add_argument("--json", action="store_true", help="print the result as JSON")
     s.set_defaults(func=cmd_summarize)
 
-    a = sub.add_parser(
-        "ask", help="ask a question about a recording or all of them (Echo Studio)",
-        description="Answer a question from what was said, with the language-model server set in Settings, "
-                    "Summaries. With an ID, the recording's transcript is sent; without, Echo's search finds "
-                    "the passages that match and only those are sent.",
-        epilog="""examples:
-  echo-app ask 20261029-103000-ab12 "¿qué precio se acordó?"
-  echo-app ask "¿qué acordamos con Acme sobre precios en octubre?"
-
-exit codes: 0 answered, 1 failed, 2 usage error, 3 no server set up""",
-        formatter_class=argparse.RawDescriptionHelpFormatter)
-    a.add_argument("words", nargs="+", metavar="[ID] QUESTION")
-    a.set_defaults(func=cmd_ask)
-
     keys = ("JSON keys are only ever added, never renamed or removed, so a sync can rely on them. Reads what "
             "is saved; sends nothing.")
     m = sub.add_parser(
@@ -340,16 +288,19 @@ exit codes: 0 answered, 1 failed, 2 usage error, 3 no server set up""",
     m.add_argument("--since", metavar="DATE", help="made on or after this day (YYYY-MM-DD, today, yesterday)")
     m.add_argument("--until", metavar="DATE", help="made on or before this day")
     m.add_argument("--all", action="store_true", help="also recordings without minutes")
+    m.add_argument("--starred", action="store_true", help="only the meetings you starred")
     m.add_argument("--json", action="store_true", help="as JSON: each recording (as info --json) with "
-                   "\"minutes\" (created, stale, template, excerpt) and the number of \"action_items\"")
+                   "\"minutes\" (created, stale, template, excerpt), \"starred\" and the number of \"action_items\"")
     m.set_defaults(func=cmd_meetings)
 
     n = sub.add_parser(
         "minutes", help="a recording's minutes and action items (Echo Studio)",
         description="The summary and the action items (not the discarded ones) of each recording. " + keys,
         epilog="""JSON: the recording (as info --json) with "minutes" {path, created, stale, template, excerpt, text}
-and "action_items", each {index, text, owner, due, at, at_stamp, context, edited, added_by_user,
-quote, recording}; "quote" is what was said around the item's time. One ID gives one object,
+and "action_items", each {index, text, description, owner, owner_email, due, at, at_stamp, context,
+note, edited, added_by_user, quote, recording}; "description" is what exactly and why, as said;
+"context" is the user's, for whoever picks the item up; "note" is the user's own and not meant for
+a tracker; "quote" is what was said around the item's time. One ID gives one object,
 several give a list.
 
 examples:

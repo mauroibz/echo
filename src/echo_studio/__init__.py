@@ -135,7 +135,7 @@ def _build_pages(window) -> None:
     from .home import HomeScreen
     from .people_ui import PeopleScreen
 
-    window.add_page("home", "Home", "audio-lines", HomeScreen(window, _meetings, open_minutes, window.show_settings),
+    window.add_page("home", "Briefing", "audio-lines", HomeScreen(window, _meetings, open_minutes, window.show_settings),
                     "Ctrl+1")
     window.add_page("recordings", "Recordings", "layers", window.recordings_page, "Ctrl+2")
     window.add_page("people", "People", "users", PeopleScreen(window.library, open_minutes,
@@ -165,21 +165,13 @@ def speaker_names(rec) -> list[str]:
 
 
 def _offer_view() -> None:
-    """The Minutes and Ask views and the Ask page, once a server is set up (at start, or right
-    after Settings)."""
-    from .ask_ui import AskScreen, AskView
+    """The Minutes view, once a server is set up (at start, or right after Settings)."""
     from .ui import VIEW_TITLE, SummaryView
 
     w = _window
     if w is None or not config.enabled() or any(isinstance(v, SummaryView) for v in w.views.views()):
         return
     w.add_view(VIEW_TITLE, SummaryView(_jobs, message=w.show_message, show_recording=w.show_recording))
-    w.add_view("Ask", AskView(w.show_recording))
-    screen = AskScreen(w.library, w.show_recording)
-    if hasattr(w, "add_page"):
-        w.add_page("ask", "Ask", "message-circle-question", screen, "Ctrl+Shift+A")
-    else:
-        w.add_screen("Ask", "message-circle-question", screen, "Ctrl+Shift+A")
 
 
 def person_sections(name: str) -> list:

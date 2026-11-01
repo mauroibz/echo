@@ -8,9 +8,9 @@ from __future__ import annotations
 
 import hashlib
 
-from PySide6.QtCore import QEvent, QPointF, QRectF, QSize, Qt
+from PySide6.QtCore import QEvent, QPointF, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QLinearGradient, QPainter, QPainterPath
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QWidget
+from PySide6.QtWidgets import QAbstractButton, QHBoxLayout, QLabel, QToolButton, QWidget
 
 from echo_app.ui import theme
 
@@ -195,3 +195,65 @@ class TimelineDot(QWidget):
         p.setBrush(theme.color("accent") if self.filled else theme.color("canvas"))
         p.drawEllipse(QPointF(cx, 26), 6, 6)
         p.end()
+
+
+class Toggle(QAbstractButton):
+    """An on/off switch: a pill with a knob, coral when on (it means "this will be recorded")."""
+
+    def __init__(self, on: bool = False, tip: str = "", parent=None):
+        super().__init__(parent)
+        self.setCheckable(True)
+        self.setChecked(on)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFixedSize(40, 22)
+        if tip:
+            self.setToolTip(tip)
+            self.setAccessibleName(tip)
+
+    def sizeHint(self) -> QSize:
+        return QSize(40, 22)
+
+    def paintEvent(self, _):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        r = QRectF(self.rect()).adjusted(1, 1, -1, -1)
+        on = self.isChecked()
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(theme.color("coral") if on else theme.color("ink", 0.18))
+        p.drawRoundedRect(r, r.height() / 2, r.height() / 2)
+        d = r.height() - 6
+        x = r.right() - 3 - d if on else r.left() + 3
+        p.setBrush(QColor("#ffffff"))
+        p.drawEllipse(QRectF(x, r.top() + 3, d, d))
+        if self.hasFocus():
+            p.setPen(theme.color("accent"))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawRoundedRect(QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5), 11, 11)
+        p.end()
+
+
+class StarButton(QToolButton):
+    """A meeting's star: filled in amber when on."""
+
+    starred = Signal(bool)
+
+    def __init__(self, on: bool, parent=None):
+        super().__init__(parent)
+        self.setCheckable(True)
+        self.setAutoRaise(True)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setIconSize(QSize(18, 18))
+        self.setChecked(on)
+        self._paint_state()
+        self.toggled.connect(self._toggled)
+
+    def _toggled(self, on: bool):
+        self._paint_state()
+        self.starred.emit(on)
+
+    def _paint_state(self):
+        on = self.isChecked()
+        self.setIcon(theme.tinted("star-filled" if on else "star", "amber" if on else "muted"))
+        tip = "Unstar this meeting" if on else "Star this meeting"
+        self.setToolTip(tip)
+        self.setAccessibleName("Starred" if on else "Star")

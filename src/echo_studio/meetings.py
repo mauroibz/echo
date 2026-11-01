@@ -2,8 +2,9 @@
 meetings with a video link recorded when they start.
 
 Echo must be running for a meeting to be recorded, which is what "Keep Echo running in the tray"
-is for. A meeting is started at most once: when the user stops it early, or presses Skip on the
-home before it starts, Studio leaves it alone. Both are kept in a small state file, so
+is for. A meeting is started at most once: when the user stops it early, or turns it off on the
+Briefing before it starts, Studio leaves it alone. The user can also turn on a meeting without a
+link (an in-person one). What was started, skipped or wanted is kept in a small state file, so
 restarting Echo in the middle of a meeting does not start it again.
 """
 
@@ -25,7 +26,8 @@ log = logging.getLogger(__name__)
 TICK_MS = 20_000
 START_WINDOW_S = 10 * 60  # a meeting found already running (Echo opened late) is recorded this far in
 STOP_AFTER_S = calendar.AFTER_END_S  # past the event's end, a recording Studio started is stopped
-KEEP_DAYS = 3  # how long a started or skipped meeting is remembered
+KEEP_DAYS = 3  # how long a started meeting is remembered after it started
+PARTS = ("started", "skipped", "wanted")
 
 
 def key(ev: ics.Event) -> str:
@@ -83,21 +85,41 @@ class Meetings(QObject):
         evs = calendar.upcoming(now, hours=36) if calendar.enabled() else []
         return evs[0] if evs else None
 
-    def will_record(self, ev: ics.Event) -> bool:
-        return (config.load().auto_record and bool(ev.link) and key(ev) not in self._state["skipped"]
-                and key(ev) not in self._state["started"])
+    def by_default(self, ev: ics.Event) -> bool:
+        """Whether the meeting records by itself unless turned off: it has a video link and the
+        setting is on."""
+        return config.load().auto_record and bool(ev.link)
 
-    def skip(self, ev: ics.Event, on: bool = True):
+    def will_record(self, ev: ics.Event) -> bool:
         k = key(ev)
-        if on:
-            self._state["skipped"][k] = datetime.now().astimezone().isoformat()
-        else:
-            self._state["skipped"].pop(k, None)
+        if k in self._state["started"]:
+            return False
+        return k in self._state["wanted"] or (self.by_default(ev) and k not in self._state["skipped"])
+
+    def was_started(self, ev: ics.Event) -> bool:
+        return key(ev) in self._state["started"]
+
+    def set_record(self, ev: ics.Event, on: bool):
+        """The user's toggle for one meeting: kept only where it differs from the default."""
+        k = key(ev)
+        stamp = ev.end.isoformat()  # remembered until the meeting is over and a few days more
+        self._state["skipped"].pop(k, None)
+        self._state["wanted"].pop(k, None)
+        if on and not self.by_default(ev):
+            self._state["wanted"][k] = stamp
+        elif not on and self.by_default(ev):
+            self._state["skipped"][k] = stamp
         self._save()
         self.changed.emit()
 
+    def skip(self, ev: ics.Event, on: bool = True):
+        self.set_record(ev, not on)
+
     def is_skipped(self, ev: ics.Event) -> bool:
         return key(ev) in self._state["skipped"]
+
+    def is_wanted(self, ev: ics.Event) -> bool:
+        return key(ev) in self._state["wanted"]
 
     # ---- recording the meetings ----
     def tick(self, now: datetime | None = None):
@@ -167,7 +189,7 @@ class Meetings(QObject):
             d = {}
         cutoff = datetime.now().astimezone() - timedelta(days=KEEP_DAYS)
         out = {}
-        for part in ("started", "skipped"):
+        for part in PARTS:
             out[part] = {}
             for k, when in (d.get(part) or {}).items() if isinstance(d, dict) else []:
                 try:

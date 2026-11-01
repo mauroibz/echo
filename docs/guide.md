@@ -339,26 +339,38 @@ example `http://127.0.0.1:8080/v1`, or `https://api.anthropic.com/v1` for Claude
 name and, if it needs one, an API key; Test asks the server which
 models it has. When the server is not on this computer or your network, the page says so: **the
 transcript of each recording you summarize is sent to it,** as soon as it is ready unless you
-turn automatic summaries off, and the passages a question finds when you ask.
+turn automatic summaries off.
 
-**The window.** Once a server or a calendar is set, a rail at the left holds Home (Ctrl+1),
-Recordings (Ctrl+2: Echo's window as always), People (Ctrl+3), Ask (Ctrl+Shift+A) and Record.
-Home shows the next meeting from your calendar (its time, title, invitation, who is invited, Join
-the call, and whether it will record by itself, with Skip), or, while recording, the time, your
-notes and who was invited; below, the minutes of your last meetings as a timeline. Click one to
-open it on its minutes. Home only shows what your calendar and recordings say: no suggestions and
-no reminders.
+**The window.** Once a server or a calendar is set, a rail at the left holds Briefing (Ctrl+1),
+Recordings (Ctrl+2: Echo's window as always), People (Ctrl+3) and Record.
+
+**Briefing.** At the top, the next meeting from your calendar: its time, title, invitation, who
+is invited, Join the call, and whether it will record by itself (Don't record / Record it); while
+recording, the time, your notes and who was invited. Below, at the left, the minutes of your last
+meetings as cards: the gist, the first action items with their owners and dates, your notes, who
+was there, the tags and a star. Click a card to open it on its minutes. At the right, Coming up:
+the meetings of the next 7 days, by day, each with a switch for whether it is recorded when it
+starts. Meetings with a video link start switched on (when "Record the meetings…" is on in
+Settings → Calendar); one without, like an in-person meeting, starts off and can be switched on.
+The Briefing only shows what your calendar and recordings say: no suggestions and no reminders.
 
 **People.** Studio's People lists everyone Echo knows, by name or email. A person's page shows
 their email (the key that matches them to calendar attendees), how many meetings and action items
-they have, their meetings with an excerpt of each minute and a line on their part in it, the
-action items assigned to them, and your notes. "Aliases, tags and voice…" opens Echo's People
-window. The line on each person's part comes from one more short request per summary, for
-everyone named in it, and is kept in `parts.json` in the recording's folder.
+they have, their meetings, the action items assigned to them, and your notes. "Aliases, tags and
+voice…" opens Echo's People window.
 
-**Minutes.** Over the transcript, a Transcript / Minutes / Ask switch. Minutes shows the selected
+Each meeting shows its minutes card and their part in it: a line on what they brought and the
+points that make it up (what they reported, proposed, asked, objected to or took on). Star the
+meetings worth finding again and tag them (the recording's own tags, so search finds them too);
+the chips above the list show all of them, the starred ones or one tag. Their action items can be
+polished there as under a meeting's minutes. Each person's part comes from one more short request
+per summary, for everyone named in it, and is kept in `parts.json` in the recording's folder; a
+meeting summarized before this version has the line without the points until you summarize it
+again. Stars are kept in `marks.json`.
+
+**Minutes.** Over the transcript, a Transcript / Minutes switch. Minutes shows the selected
 recording's summary, with Summarize (Summarize again once there is one) and Copy, and its action
-items under it. The summary is grouped by topic and ends with the next steps and who does them,
+items in a column beside it. The summary is grouped by topic and ends with the next steps and who does them,
 in the recording's language.
 
 Each recording is summarized as soon as its transcript is ready, one at a time; uncheck "Summarize
@@ -373,14 +385,18 @@ Summaries are included in notes exported to a folder, under "Resumen".
 Your notes and markers lead the summary: each note and marked moment is covered, expanded from
 what was said around it, and editing a note marks the summary out of date.
 
-Each summary's next steps also become action items, listed under it with their owner, the date
-they were promised for and a button that plays where each came up. Polish them before they go to
-your team's tracker: the pencil edits the text, owner and date and adds a line of context for
-whoever picks the item up, the cross discards it (discarded items fold into one line, where Show
-lists them with Restore), and Add writes one by hand. Echo does not track whether an item got
-done; that is the tracker's job. A person's profile in People lists the items assigned to them.
-The items are kept in `actions.json` in the recording's folder; summarizing again keeps your
-edits, context, discards and the items you added.
+Each summary's commitments also become action items, beside it: each with a title, a description
+(what exactly and why, with the details that were said, so it stands on its own in a tracker), its
+owner, the date it was promised for and a button that plays where it came up. They come from a
+request of their own over the summary and the transcript, so they can include commitments the
+summary's next steps leave out. Polish them before they go to your team's tracker: the pencil
+edits the title, description, owner and date, adds context for whoever picks the item up and a
+note only for you; the cross discards it (discarded items fold into one line, where Show lists
+them with Restore), and Add writes one by hand. Echo does not track whether an item got done;
+that is the tracker's job. A person's page in People lists the items assigned to them, to polish
+there too. The items are kept in `actions.json` in the recording's folder; summarizing again keeps
+your edits, context, notes, discards and the items you added. Items from summaries made before
+this version have no description until you summarize again.
 
 Follow-up, beside Copy, drafts the email you would send after the meeting: what was agreed and
 who does what by when. Edit it, then Copy it or press Open in mail to start a message in your mail
@@ -402,17 +418,11 @@ meetings (`--refresh` reads the calendar first, `--json` for scripts).
 **Recording the meetings.** With "Record the meetings that have a video link when they start"
 on (Settings → Calendar), a meeting with a Google Meet, Teams, Zoom or similar link starts
 recording by itself when it starts, titled after it, and stops 10 minutes after it ends unless
-you stop it first. A meeting is started once: stop it and it stays stopped. Skip on the home
-leaves the next one alone. Echo has to be running, so turn on "Keep Echo running in the tray,
+you stop it first. A meeting is started once: stop it and it stays stopped. Switch a meeting off
+in Coming up (or press Don't record on the next one) and it is left alone; switch one without a
+link on and it records too. Echo has to be running, so turn on "Keep Echo running in the tray,
 and start it when you log in" in Settings → General. Recording people may need their consent;
 it is your call, as with the Record button.
-
-**Ask.** With a server set, an Ask view sits beside Transcript and Summary: ask about the shown
-recording ("¿qué precio se acordó?") and the answer comes from its transcript, citing the times;
-click a time to hear it. The Ask screen (the question button beside People, Ctrl+Shift+A) asks
-across all your recordings: Echo's search finds the passages that match, only those are sent to
-the server, and the answer cites them; click a citation to open the recording there. From the
-command line: `echo-app ask ID "question"`, or `echo-app ask "question"` for all of them.
 
 The arrow beside Summarize picks the kind of meeting: a general one, or a template with its own
 sections (`uno-a-uno`, `entrevista`, `clase`, `cliente`). The choice is kept as a tag such as

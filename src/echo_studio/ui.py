@@ -7,7 +7,7 @@ import os
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QActionGroup, QDesktopServices, QFont
 from PySide6.QtWidgets import (QApplication, QCheckBox, QDialog, QFormLayout, QFrame, QHBoxLayout, QLabel,
-                               QLineEdit, QMenu, QPlainTextEdit, QPushButton, QScrollArea,
+                               QLineEdit, QMenu, QPlainTextEdit, QPushButton, QScrollArea, QSplitter,
                                QToolButton, QVBoxLayout, QWidget)
 
 from echo_app.ui import theme
@@ -18,7 +18,6 @@ from .actions_ui import ActionList
 from .reading import ReadingBrowser
 
 VIEW_TITLE = "Minutes"
-ACTIONS_MAX_H = 260
 
 
 def _dim(text: str = "") -> QLabel:
@@ -185,39 +184,59 @@ class SummaryView(QWidget):
         self.copy_btn.clicked.connect(self.copy)
         bar.addWidget(self.copy_btn)
         lay.addLayout(bar)
+        # The summary at the left, its action items at the right: the items are what leaves the
+        # meeting, so they get a column of their own, as tall as the card.
+        split = QSplitter(Qt.Orientation.Horizontal)
+        split.setChildrenCollapsible(False)
         self.text = ReadingBrowser()  # in the reading card, read like the transcript
         self.text.setOpenExternalLinks(True)
         self.text.setAccessibleName("Summary")
-        lay.addWidget(self.text, 1)
-        # The summary's action items, to polish before they go to the team's tracker; their time
-        # buttons play where each came up.
+        split.addWidget(self.text)
         self.actions_box = QWidget()
+        self.actions_box.setMinimumWidth(300)
         al = QVBoxLayout(self.actions_box)
-        al.setContentsMargins(0, 6, 0, 0)
-        al.setSpacing(6)
+        al.setContentsMargins(14, 4, 0, 0)
+        al.setSpacing(4)
         ah = QHBoxLayout()
+        ah.setSpacing(8)
         head = QLabel("Action items")
-        head.setFont(theme.display_font(0.95, QFont.Weight.Bold))
+        head.setFont(theme.display_font(1.25, QFont.Weight.ExtraBold))
         ah.addWidget(head)
+        self.count = QLabel()
+        self.count.setFont(theme.display_font(0.9, QFont.Weight.Bold))
+        ah.addWidget(self.count)
         ah.addStretch(1)
-        self.add_btn = QToolButton()
-        self.add_btn.setText("Add")
+        self.add_btn = QPushButton("Add")
+        self.add_btn.setIcon(icon("pencil"))
         self.add_btn.setToolTip("Add an action item")
         self.add_btn.clicked.connect(lambda: self.actions.start_add())
         ah.addWidget(self.add_btn)
         al.addLayout(ah)
+        al.addWidget(_dim("Polish them before they go to your team's tracker: edit, add context or a note "
+                          "for yourself, discard what does not apply."))
+        al.addSpacing(6)
         self.actions = ActionList(editable=True)
         self.actions.play.connect(lambda rid, at: self.show_recording(rid, at))
-        self.actions.relaid.connect(self._fit_actions)
+        self.actions.relaid.connect(self._count)
         scroll = QScrollArea()
         # On the reading card's surface, not the window's.
         scroll.setStyleSheet("QScrollArea, QScrollArea > QWidget > QWidget { background: transparent; }")
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setWidget(self.actions)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        inner = QWidget()
+        il = QVBoxLayout(inner)
+        il.setContentsMargins(0, 0, 6, 0)
+        il.addWidget(self.actions)
+        il.addStretch(1)
+        scroll.setWidget(inner)
         self.actions_scroll = scroll
-        al.addWidget(scroll)
-        lay.addWidget(self.actions_box)
+        al.addWidget(scroll, 1)
+        split.addWidget(self.actions_box)
+        split.setStretchFactor(0, 3)
+        split.setStretchFactor(1, 2)
+        split.setSizes([560, 420])
+        lay.addWidget(split, 1)
         self.show_subject(None, None)
 
     def show_subject(self, rec, linked):
@@ -234,7 +253,6 @@ class SummaryView(QWidget):
         self.follow_btn.setVisible(data is not None and not busy)
         self.actions.set_recording(rec if data is not None else None)
         self.actions_box.setVisible(data is not None and not busy)
-        self._fit_actions()
         if data is not None:
             self.text.show_markdown(data["text"])
         else:
@@ -288,10 +306,12 @@ class SummaryView(QWidget):
 
         run_task(lambda: followup.draft(rec), on_done=done, on_error=failed)
 
-    def _fit_actions(self):
-        """As tall as the items (or the editor), up to a third of a typical card; more scroll."""
-        self.actions.adjustSize()
-        self.actions_scroll.setFixedHeight(min(ACTIONS_MAX_H, self.actions.sizeHint().height() + 4))
+    def _count(self):
+        n = sum(1 for it in self.actions.items if not it.get("discarded"))
+        self.count.setText(str(n) if n else "")
+        t = theme.current()
+        self.count.setStyleSheet(f"color: {t.accent_deep}; background: {t.accent_soft}; border-radius: 9px; "
+                                 "padding: 1px 8px;" if n else "")
 
     def _fill_templates(self):
         m = self.template_menu

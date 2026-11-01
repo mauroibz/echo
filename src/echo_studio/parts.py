@@ -1,9 +1,9 @@
-"""Each participant's part in a meeting, one line per person, in parts.json (stdlib only).
+"""Each participant's part in a meeting, in parts.json (stdlib only): a line on what they brought,
+and the points that make it up (what they reported, proposed, asked, objected to or took on).
 
-A person's page lists their meetings with the minutes' excerpt and this line: what they brought,
-asked or took on. It comes from one short request over the finished summary and the transcript
-with names (when it fits), for everyone named in the recording at once, so a meeting of six costs
-one request, not six.
+A person's page lists their meetings with the minutes' excerpt and this part. It comes from one
+short request over the finished summary and the transcript with names (when it fits), for
+everyone named in the recording at once, so a meeting of six costs one request, not six.
 """
 
 from __future__ import annotations
@@ -19,23 +19,35 @@ from echo_app.library import Recording, fold_tag
 from . import config, llm, summary
 
 FILE = "parts.json"
-VERSION = 1
-LINE_MAX = 220
+VERSION = 2
+LINE_MAX = 260
+POINT_MAX = 200
+POINTS_MAX = 5
 
 PROMPT = """You describe each person's part in a meeting, from its summary and, when it fits, its
 transcript. Answer with a JSON object only, no prose and no code fence: one key per person, exactly
-as written here: {names}. Each value is one sentence in {language}, at most 25 words, about what
-that person contributed: what they proposed, reported, asked, decided or took on. Concrete, no
-praise, no "participated in". Leave out a person who barely spoke."""
+as written here: {names}. Each value is an object, in {language}:
+
+{{"part": "one sentence, at most 30 words: what this person brought to the meeting",
+  "points": ["up to 5 short points, each at most 20 words: what they reported, proposed, asked,
+             objected to, decided or took on, with the figures, names and dates they gave"]}}
+
+Concrete, no praise, no "participated in"; points in the order they came up. Leave out a person
+who barely spoke."""
 
 
 def names(rec: Recording) -> list[str]:
     return [n for n in dict.fromkeys(rec.meta.speakers.values()) if n]
 
 
-def parse(reply: str, wanted: list[str]) -> dict[str, str]:
+def _clean(v, limit: int) -> str:
+    return " ".join(str(v or "").split())[:limit]
+
+
+def parse(reply: str, wanted: list[str]) -> dict[str, dict]:
     """The model's object, tolerant of a fence or text around it, keeping only the asked names
-    (compared folded) under their own spelling."""
+    (compared folded) under their own spelling; each {"part", "points"}. A bare sentence (the
+    first version's answer) is a part without points."""
     m = re.search(r"\{.*\}", reply, re.DOTALL)
     if not m:
         return {}
@@ -47,10 +59,19 @@ def parse(reply: str, wanted: list[str]) -> dict[str, str]:
     out = {}
     for k, v in raw.items() if isinstance(raw, dict) else []:
         name = by_fold.get(fold_tag(str(k)))
-        line = " ".join(str(v or "").split())
-        if name and line:
-            out[name] = line[:LINE_MAX]
+        entry = _entry(v)
+        if name and entry["part"]:
+            out[name] = entry
     return out
+
+
+def _entry(v) -> dict:
+    if isinstance(v, dict):
+        pts = v.get("points") if isinstance(v.get("points"), list) else []
+        points = [p for p in (_clean(x, POINT_MAX) for x in pts) if p][:POINTS_MAX]
+        part = _clean(v.get("part"), LINE_MAX) or (points[0] if points else "")
+        return {"part": part, "points": points}
+    return {"part": _clean(v, LINE_MAX), "points": []}
 
 
 def write(rec: Recording, data: dict, cfg: config.Config | None = None) -> dict | None:
@@ -71,15 +92,20 @@ def write(rec: Recording, data: dict, cfg: config.Config | None = None) -> dict 
     return out
 
 
-def load(rec: Recording) -> dict[str, str]:
+def load(rec: Recording) -> dict[str, dict]:
+    """Name → {"part", "points"}; a first-version file (a line per name) has no points."""
     try:
         d = read_json(rec.path(FILE))
     except (OSError, ValueError):
         return {}
     parts = d.get("parts") if isinstance(d, dict) else None
-    return {str(k): str(v) for k, v in parts.items()} if isinstance(parts, dict) else {}
+    return {str(k): _entry(v) for k, v in parts.items()} if isinstance(parts, dict) else {}
+
+
+def entry_of(rec: Recording, name: str) -> dict:
+    want = fold_tag(name)
+    return next((v for k, v in load(rec).items() if fold_tag(k) == want), {"part": "", "points": []})
 
 
 def part_of(rec: Recording, name: str) -> str:
-    want = fold_tag(name)
-    return next((v for k, v in load(rec).items() if fold_tag(k) == want), "")
+    return entry_of(rec, name)["part"]

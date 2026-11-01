@@ -2,9 +2,11 @@
 
 They come from a second, short request over the finished summary (and the transcript with its
 times, when it fits), so the summary prompt stays the one task 1.8 measured and no request is
-asked for two formats. Each item has its text, owner (a name as Echo knows it, or ""), due date
-(ISO, or ""), the time in the audio where it came up (seconds, or None), and what the user did to
-it: a line of context, edited, discarded, or added by hand. Items are informative: whether they
+asked for two formats. Each item has its text (a title), a description (what exactly and why, from
+what was said, so the item stands on its own in a tracker), owner (a name as Echo knows it, or
+""), due date (ISO, or ""), the time in the audio where it came up (seconds, or None), and what the
+user did to it: context for whoever picks it up, a note only for the user, edited, discarded, or
+added by hand. Items are informative: whether they
 got done is the team tracker's business, so there is no done flag. Summarizing again keeps the
 user's work on every item the model gives again (matched by the text the model first gave it)
 and keeps the items the user added.
@@ -24,14 +26,16 @@ from . import config, llm, summary
 
 FILE = "actions.json"
 VERSION = 2
-USER_FIELDS = ("text", "owner", "due", "context", "discarded", "edited")  # what the user may change
+USER_FIELDS = ("text", "description", "owner", "due", "context", "note", "discarded", "edited")  # what the user may change
+DESCRIPTION_MAX = 600
 WITH_TRANSCRIPT_MAX = summary.SINGLE_MAX  # longer transcripts: the summary alone, items without times
 
 PROMPT = """You extract the action items agreed in a meeting. You get its summary and, when it fits,
 its transcript with times. Answer with a JSON array only, no prose and no code fence. One object
 per action that someone agreed to do:
 
-{{"text": "the action, short, imperative, in {language}",
+{{"text": "the action as a short title, imperative, in {language}",
+  "description": "one to three sentences in {language} that let someone who was not there act on it: what exactly is to be done, why, and the details, names, numbers, constraints or dependencies that were said about it. Only what was said; \"\" if nothing more was said",
   "owner": "who does it, exactly as one of these names if it is one of them: {names}; else as said; else \\"\\"",
   "due": "YYYY-MM-DD if a date or day was said (the meeting was on {date}), else \\"\\"",
   "at": "m:ss or h:mm:ss in the transcript where it was agreed, else \\"\\""}}
@@ -71,14 +75,16 @@ def parse(reply: str) -> list[dict]:
             datetime.strptime(due, "%Y-%m-%d")
         except ValueError:
             due = ""
-        items.append(_item(" ".join(str(it["text"]).split()), str(it.get("owner") or "").strip(), due,
-                           _stamp_seconds(str(it.get("at") or ""))))
+        new = _item(" ".join(str(it["text"]).split()), str(it.get("owner") or "").strip(), due,
+                    _stamp_seconds(str(it.get("at") or "")))
+        new["description"] = " ".join(str(it.get("description") or "").split())[:DESCRIPTION_MAX]
+        items.append(new)
     return items
 
 
 def _item(text: str, owner: str = "", due: str = "", at: float | None = None, origin: str = "model") -> dict:
-    return {"text": text, "owner": owner, "due": due, "at": at, "context": "", "discarded": False,
-            "edited": False, "origin": origin, "key": fold_tag(text)}
+    return {"text": text, "description": "", "owner": owner, "due": due, "at": at, "context": "", "note": "",
+            "discarded": False, "edited": False, "origin": origin, "key": fold_tag(text)}
 
 
 def _upgrade(it: dict) -> dict:
@@ -86,7 +92,9 @@ def _upgrade(it: dict) -> dict:
     out = _item(str(it.get("text") or ""), str(it.get("owner") or ""), str(it.get("due") or ""), it.get("at"),
                 "user" if it.get("origin") == "user" else "model")
     out["key"] = str(it.get("key") or out["key"])
+    out["description"] = str(it.get("description") or "")
     out["context"] = str(it.get("context") or "")
+    out["note"] = str(it.get("note") or "")
     out["discarded"] = bool(it.get("discarded"))
     out["edited"] = bool(it.get("edited"))
     return out
@@ -94,11 +102,11 @@ def _upgrade(it: dict) -> dict:
 
 def merge(new: list[dict], old: list[dict]) -> list[dict]:
     """The new extraction with the user's work carried over: an old model item that was edited,
-    given context or discarded wins over the new item with the same key (its time comes from the
+    given context or a note, or discarded wins over the new item with the same key (its time comes from the
     new one when it had none); old items the user added stay at the end. Old model items the new
     summary no longer has are dropped, as they were only the model's."""
     worked = {i["key"]: i for i in old
-              if i.get("origin") == "model" and (i["edited"] or i["context"] or i["discarded"])}
+              if i.get("origin") == "model" and (i["edited"] or i["context"] or i["note"] or i["discarded"])}
     out = []
     for i in new:
         o = worked.get(i["key"])
@@ -145,15 +153,16 @@ def _save(rec: Recording, d: dict) -> None:
 
 
 def update(rec: Recording, index: int, **fields) -> None:
-    """Change an item's text, owner, due date or context; text, owner or date marks it edited."""
+    """Change an item's text, description, owner, due date, context or note; the model's fields (text,
+    description, owner, date) mark it edited."""
     d = load(rec)
     if d is None or not 0 <= index < len(d["items"]):
         return
     it = d["items"][index]
-    for f in ("text", "owner", "due", "context"):
+    for f in ("text", "description", "owner", "due", "context", "note"):
         if f in fields:
-            v = " ".join(str(fields[f] or "").split()) if f != "context" else str(fields[f] or "").strip()
-            if f != "context" and v != it[f]:
+            v = str(fields[f] or "").strip() if f in ("context", "note") else " ".join(str(fields[f] or "").split())
+            if f not in ("context", "note") and v != it[f]:
                 it["edited"] = True
             it[f] = v
     if not it["text"]:
@@ -169,7 +178,8 @@ def discard(rec: Recording, index: int, on: bool = True) -> None:
     _save(rec, d)
 
 
-def add(rec: Recording, text: str, owner: str = "", due: str = "", context: str = "") -> None:
+def add(rec: Recording, text: str, owner: str = "", due: str = "", context: str = "", description: str = "",
+        note: str = "") -> None:
     """An item the user adds by hand; summarizing again keeps it."""
     text = " ".join(text.split())
     if not text:
@@ -178,17 +188,19 @@ def add(rec: Recording, text: str, owner: str = "", due: str = "", context: str 
                       "summary_created": None, "items": []}
     it = _item(text, owner.strip(), due.strip(), origin="user")
     it["context"] = context.strip()
+    it["description"] = " ".join(description.split())
+    it["note"] = note.strip()
     d["items"].append(it)
     _save(rec, d)
 
 
-def assigned_to(library, person: str) -> list[dict]:
+def assigned_to(library, person: str, discarded: bool = False) -> list[dict]:
     """The items assigned to `person` (folded, as tags compare) across the library, newest recording
-    first, discarded ones left out; each with its recording's id, title and date and its index."""
+    first, discarded ones only when asked; each with its recording's id, title and date and its index."""
     want = fold_tag(person.strip())
     out = []
     for rec in sorted(library.all(), key=lambda r: r.meta.created, reverse=True):
         for k, it in enumerate((load(rec) or {}).get("items", [])):
-            if not it["discarded"] and want and fold_tag(it["owner"]) == want:
+            if (discarded or not it["discarded"]) and want and fold_tag(it["owner"]) == want:
                 out.append({**it, "id": rec.id, "title": rec.meta.title, "created": rec.meta.created, "index": k})
     return out

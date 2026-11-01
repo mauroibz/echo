@@ -30,10 +30,12 @@ class FakeServer:
         self.all_requests: list[dict] = []
         self.mail = "Asunto: Seguimiento de la charla\n\nHola a todos:\n\n- Lucía envía la propuesta."
         self.actions = json.dumps([{"text": "Enviar la propuesta", "owner": "lucia", "due": "2026-10-31",
-                                    "at": "0:06"}])
+                                    "at": "0:06", "description": "La versión con el precio nuevo, para Acme."}])
         self.stop_reason = "end_turn"
         self.title = '"Precio nuevo con Lucía."'
-        self.parts = '```json\n{"LUCIA": "Propuso el precio nuevo y se llevó la propuesta.", "nadie": "x"}\n```'
+        self.parts = ('```json\n{"LUCIA": {"part": "Propuso el precio nuevo y se llevó la propuesta.", "points": '
+                      '["Propuso subir el precio un 10 %.", "Se llevó la propuesta para el viernes."]}, '
+                      '"nadie": "x"}\n```')
         server = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -58,7 +60,7 @@ class FakeServer:
                 first = (body.get("system") or body["messages"][0]["content"])
                 server.all_requests.append(body)
                 helpers = ("Write a title", "You extract the action items", "You write the follow-up",
-                           "You answer questions", "You turn a question", "You describe each person")
+                           "You describe each person")
                 if not first.startswith(helpers):
                     server.requests.append(body)  # the summaries; titles and action items apart
                 server.headers.append(dict(self.headers))
@@ -73,10 +75,7 @@ class FakeServer:
                     return
                 canned = {"Write a title": server.title, "You extract the action items": server.actions,
                           "You write the follow-up email": server.mail,
-                          "You answer questions about one meeting": "Se habló del precio [0:06].",
-                          "You turn a question": '["precio", "@nadie precio"]',
-                          "You describe each person": server.parts,
-                          "You answer questions about past meetings": "Lucía habló del precio [1]."}
+                          "You describe each person": server.parts}
                 reply = next((v for k, v in canned.items() if first.startswith(k)), server.reply)
                 self._send(200, {"choices": [{"message": {"content": reply}}]})
 
@@ -343,8 +342,8 @@ def test_title_from_the_summary_only_when_automatic(window, lib, server, studio)
 
 
 def _model_item(text, owner="", due="", at=None):
-    return {"text": text, "owner": owner, "due": due, "at": at, "context": "", "discarded": False, "edited": False,
-            "origin": "model", "key": actions.fold_tag(text)}
+    return {"text": text, "description": "", "owner": owner, "due": due, "at": at, "context": "", "note": "",
+            "discarded": False, "edited": False, "origin": "model", "key": actions.fold_tag(text)}
 
 
 def test_action_items_parsed_tolerantly():
@@ -363,8 +362,11 @@ def test_action_items_keep_the_users_work(tmp_path, server):
     req = server.all_requests[-1]
     assert req["messages"][0]["content"].startswith("You extract the action items")
     assert "Transcript with times:" in req["messages"][1]["content"] and "[0:06]" in req["messages"][1]["content"]
-    assert actions.load(rec)["items"] == [_model_item("Enviar la propuesta", "lucia", "2026-10-31", 6.0)]
-    actions.update(rec, 0, text="Enviar la propuesta de precios", context="la versión con descuento")
+    assert actions.load(rec)["items"] == [{**_model_item("Enviar la propuesta", "lucia", "2026-10-31", 6.0),
+                                           "description": "La versión con el precio nuevo, para Acme."}]
+    actions.update(rec, 0, text="Enviar la propuesta de precios", context="la versión con descuento",
+                   note="Para mí: revisar el descuento")
+    assert not actions.load(rec)["items"][0]["note"].startswith(" ")
     actions.add(rec, "Reservar sala", owner="Ana")
     server.actions = json.dumps([{"text": "enviar la PROPUESTA", "owner": "Lucía"}, {"text": "Llamar a Ana"},
                                  {"text": "Mandar la grabación"}])
@@ -378,9 +380,13 @@ def test_action_items_keep_the_users_work(tmp_path, server):
         ("Mandar la grabación", True, "model"),  # still discarded
         ("Reservar sala", False, "user")]  # added by hand: kept; "Llamar a Ana" is gone with the model
     assert items[0]["edited"] and items[0]["context"] == "la versión con descuento" and items[0]["at"] == 6.0
+    assert items[0]["note"] == "Para mí: revisar el descuento"
     assert "done" not in items[0]
     assert [i["text"] for i in actions.assigned_to(lib, "ANA")] == ["Reservar sala"]
     assert actions.assigned_to(lib, "nadie") == []
+    actions.discard(rec, 2, True)
+    assert actions.assigned_to(lib, "Ana") == []
+    assert [i["discarded"] for i in actions.assigned_to(lib, "Ana", discarded=True)] == [True]
 
 
 def test_each_persons_part(tmp_path, server):
@@ -395,7 +401,11 @@ def test_each_persons_part(tmp_path, server):
     assert "parts for 1 of 2 people" in notes
     req = next(r for r in server.all_requests if r["messages"][0]["content"].startswith("You describe each person"))
     assert "Lucía, Pedro" in req["messages"][0]["content"]
-    assert parts.load(rec) == {"Lucía": "Propuso el precio nuevo y se llevó la propuesta."}
+    assert parts.load(rec) == {"Lucía": {"part": "Propuso el precio nuevo y se llevó la propuesta.",
+                                         "points": ["Propuso subir el precio un 10 %.",
+                                                    "Se llevó la propuesta para el viernes."]}}
+    rec.path(parts.FILE).write_text(json.dumps({"version": 1, "parts": {"Lucía": "Propuso el precio."}}))
+    assert parts.entry_of(rec, "LUCÍA") == {"part": "Propuso el precio.", "points": []}  # the first version
     assert parts.part_of(rec, "lucia").startswith("Propuso") and parts.part_of(rec, "Pedro") == ""
 
 
@@ -424,8 +434,9 @@ def test_polishing_items_in_the_summary_view(window, lib, server, studio):
     view.show_subject(lib.get(rec.id), None)
     assert view.actions_box.isVisibleTo(view) and not view.actions.findChildren(QCheckBox)
     texts = lambda: [lbl.text() for lbl in view.actions.findChildren(QLabel)]  # noqa: E731
-    assert "Enviar la propuesta" in texts()
+    assert "Enviar la propuesta" in texts() and "La versión con el precio nuevo, para Acme." in texts()
     assert any(t.startswith("lucia") and "by " in t for t in texts())
+    assert view.count.text() == "1"
     played = []
     window._seek_and_play = played.append
     next(b for b in view.actions.findChildren(QToolButton) if b.objectName() == "pill").click()
@@ -433,11 +444,15 @@ def test_polishing_items_in_the_summary_view(window, lib, server, studio):
     edit = next(b for b in view.actions.findChildren(QToolButton) if b.toolTip() == "Edit")
     edit.click()
     view.actions.findChildren(QLineEdit)[0].setText("Enviar la propuesta final")
-    view.actions.findChildren(QPlainTextEdit)[0].setPlainText("pedirle el número a Tomás")
+    areas = {a.accessibleName(): a for a in view.actions.findChildren(QPlainTextEdit)}
+    assert areas["Description"].toPlainText() == "La versión con el precio nuevo, para Acme."
+    areas["Context"].setPlainText("pedirle el número a Tomás")
+    areas["Your note"].setPlainText("confirmar con Pedro antes")
     next(b for b in view.actions.findChildren(QPushButton) if b.text() == "Save").click()
     it = actions.load(lib.get(rec.id))["items"][0]
     assert it["text"] == "Enviar la propuesta final" and it["edited"] and it["context"] == "pedirle el número a Tomás"
-    assert "pedirle el número a Tomás" in texts()
+    assert it["note"] == "confirmar con Pedro antes"
+    assert "Context: pedirle el número a Tomás" in texts() and "Your note: confirmar con Pedro antes" in texts()
     next(b for b in view.actions.findChildren(QToolButton) if b.toolTip() == "Discard").click()
     assert actions.load(lib.get(rec.id))["items"][0]["discarded"] and "1 discarded" in texts()
     next(b for b in view.actions.findChildren(QPushButton) if b.text() == "Show").click()
@@ -452,6 +467,14 @@ def test_polishing_items_in_the_summary_view(window, lib, server, studio):
     [(title, section)] = echo_studio.person_sections("Lucia")  # People: the items assigned to them
     assert title == "Action items" and not section.findChildren(QCheckBox)
     assert "Enviar la propuesta final" in [lbl.text() for lbl in section.findChildren(QLabel)]
+    # Polished there too: the edit goes to the item's own recording.
+    next(b for b in section.findChildren(QToolButton) if b.toolTip() == "Edit").click()
+    section.findChildren(QLineEdit)[0].setText("Enviar la propuesta, versión 2")
+    next(b for b in section.findChildren(QPushButton) if b.text() == "Save").click()
+    assert actions.load(lib.get(rec.id))["items"][0]["text"] == "Enviar la propuesta, versión 2"
+    next(b for b in section.findChildren(QToolButton) if b.toolTip() == "Discard").click()
+    assert actions.load(lib.get(rec.id))["items"][0]["discarded"]
+    assert "1 discarded" in [lbl.text() for lbl in section.findChildren(QLabel)]
 
 
 def test_follow_up_draft(window, lib, server, studio, capsys, tmp_path, monkeypatch):
@@ -486,49 +509,6 @@ def test_follow_up_draft(window, lib, server, studio, capsys, tmp_path, monkeypa
     settings.save(s)
     assert cli.main(["summarize", rec.id, "--follow-up"]) == 0
     assert "Subject: Seguimiento de la charla" in capsys.readouterr().out
-
-
-def test_ask_a_recording_and_the_library(window, lib, server, studio, capsys, monkeypatch):
-    from echo_app import settings
-    from echo_studio import ask
-    from echo_studio.ask_ui import AskScreen, AskView
-
-    rec = _rec(lib)
-    said = ask.ask_recording(rec, "¿De qué hablaron?", [("¿Quién estaba?", "Lucía [0:00].")])
-    user = server.all_requests[-1]["messages"][1]["content"]
-    assert "[0:06] Hablemos del precio." in user and "Q: ¿Quién estaba?" in user and user.endswith("¿De qué hablaron?")
-    assert ask.link_times(said, rec.id) == f"Se habló del precio [0:06](echo:{rec.id}@6)."
-    assert ask.parse_link(f"echo:{rec.id}@6") == (rec.id, 6.0) and ask.parse_link("https://x") is None
-    assert ask.link_refs("Sí [1, 3] y [2].", [{"id": "a", "start": 1.5}, {"id": "b", "start": 0.0}]) == \
-        "Sí [[1](echo:a@1.5), 3] y [[2](echo:b@0)]."
-    window.model.refresh()
-    _attach(window)
-    view = next(v for v in window.views.views() if isinstance(v, AskView))
-    window._select(rec.id)
-    assert view.chat.isVisibleTo(view)
-    played = []
-    monkeypatch.setattr(window, "_seek_and_play", played.append)
-    view.chat.box.setText("¿De qué hablaron?")
-    view.chat.ask()
-    assert wait_until(lambda: len(view.chat.turns) == 1)
-    assert "echo:" in view.chat.turns[0][2]
-    view.chat._open(QUrl(f"echo:{rec.id}@6"))
-    assert played == [6.0]
-    screen = next(w for w in window._screen_buttons if isinstance(w, AskScreen))
-    screen.chat.box.setText("¿Qué se dijo del precio?")
-    screen.chat.ask()
-    assert wait_until(lambda: len(screen.chat.turns) == 1)
-    passages = server.all_requests[-1]["messages"][1]["content"]
-    assert passages.startswith("Passages:\n\n[1] Charla con Lucía") and "Hablemos del precio." in passages
-    assert f"(echo:{rec.id}@" in screen.chat.turns[0][2]
-    s = settings.load()[0]
-    s.data_dir = str(lib.data_dir)
-    settings.save(s)
-    assert cli.main(["ask", rec.id, "¿Precio?"]) == 0
-    assert "Se habló del precio [0:06]." in capsys.readouterr().out
-    assert cli.main(["ask", "¿Precio?"]) == 0
-    out = capsys.readouterr().out
-    assert "Lucía habló del precio [1]." in out and f"[1] Charla con Lucía ({rec.id}) at 0:" in out
 
 
 def test_due_dates_read_as_days():
@@ -594,24 +574,35 @@ def test_cli_data_out(tmp_path, server, capsys, studio):
     rec = _rec(lib)
     bare = _rec(lib)
     summary.finish(rec, summary.write(rec))
-    actions.update(rec, 0, context="con el descuento")
+    actions.update(rec, 0, context="con el descuento", note="solo para mí")
     actions.add(rec, "Reservar sala", owner="Ana")
     capsys.readouterr()
     assert cli.main(["meetings", "--json"]) == 0
     out = json.loads(capsys.readouterr().out)
     assert [m["id"] for m in out] == [rec.id] and out[0]["action_items"] == 2
     assert out[0]["minutes"]["excerpt"] == "Lucía habló del precio."  # the first section, not the next steps
+    assert out[0]["starred"] is False
     assert cli.main(["meetings", "--all"]) == 0 and bare.id in capsys.readouterr().out
+    from echo_studio import marks
+
+    marks.set_starred(rec, True)
+    assert cli.main(["meetings", "--starred", "--all"]) == 0
+    text = capsys.readouterr().out
+    assert f"★ {rec.meta.title}" in text and bare.id not in text
     assert cli.main(["meetings", "--since", "mañana"]) == 2
     assert cli.main(["minutes", rec.id, "--json"]) == 0
     m = json.loads(capsys.readouterr().out)
     first = m["action_items"][0]
     assert m["minutes"]["text"].startswith("# Tema") and first["context"] == "con el descuento"
+    assert first["description"] == "La versión con el precio nuevo, para Acme." and first["note"] == "solo para mí"
     assert first["at_stamp"] == "0:06" and "Lucía" in first["quote"] and first["recording"] == rec.id
     assert m["action_items"][1]["added_by_user"] is True
     assert cli.main(["minutes", rec.id]) == 0
     text = capsys.readouterr().out
-    assert "## Action items" in text and "- Enviar la propuesta (lucia, by 2026-10-31, 0:06)\n  con el descuento" in text
+    assert "## Action items" in text and ("- Enviar la propuesta (lucia, by 2026-10-31, 0:06)\n"
+                                          "  La versión con el precio nuevo, para Acme.\n"
+                                          "  Context: con el descuento") in text
+    assert "solo para mí" not in text  # the user's note is not for a tracker
     assert cli.main(["minutes", bare.id]) == 1
     actions.discard(rec, 1, True)
     assert cli.main(["actions", "--owner", "ana", "--json"]) == 0
@@ -681,6 +672,16 @@ def test_summary_view(window, lib, server, studio):
     view.summarize_btn.click()
     assert wait_until(lambda: rec.path(summary.FILE).exists() and "Lucía habló" in view.text.toPlainText())
     assert view.summarize_btn.text() == "Summarize again" and view.copy_btn.isVisible()
+    from echo_studio import actions
+
+    assert wait_until(lambda: actions.load(lib.get(rec.id)) is not None)
+    pump(300)
+    assert view.actions_scroll.height() > 30  # the item shows, not an empty strip
+    view.summarize_btn.click()  # again, with the list on screen: it was left sized to nothing
+    pump(50)
+    assert wait_until(lambda: view.jobs.state(rec.id) is None)
+    pump(300)
+    assert view.actions.items and view.actions_scroll.height() > 30
     view._fill_templates()
     names = [a.text() for a in view.template_menu.actions() if a.isCheckable()]
     assert names[0] == "General meeting" and "entrevista" in names

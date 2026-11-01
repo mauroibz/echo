@@ -1,21 +1,23 @@
-"""Studio's People: everyone Echo knows, and a page per person with their meetings, their part in
-each, the action items assigned to them and the notes, keyed by their email. Informative only:
-nothing here is a task to keep up."""
+"""Studio's People: everyone Echo knows, and a page per person with their meetings (their part in
+each, to star, tag and filter), the action items assigned to them (to polish like a meeting's) and
+the notes, keyed by their email. Nothing here is a task to keep up: no done flags, no alerts."""
 
 from __future__ import annotations
 
 from PySide6.QtCore import QEvent, Qt
 from PySide6.QtGui import QFont
-from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLineEdit, QListWidget, QListWidgetItem, QMessageBox,
-                               QPlainTextEdit, QPushButton, QScrollArea, QSplitter, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QButtonGroup, QFrame, QHBoxLayout, QLineEdit, QListWidget, QListWidgetItem,
+                               QMessageBox, QPlainTextEdit, QPushButton, QScrollArea, QSplitter, QVBoxLayout,
+                               QWidget)
 
 from echo_app import people
 from echo_app.index import Index
 from echo_app.library import fold_tag
 from echo_app.ui import theme
 from echo_app.ui.common import fmt_date
+from echo_app.ui.tags import TagEditor
 
-from . import actions, data, parts, summary
+from . import actions, data, marks, parts, summary
 from .actions_ui import ActionList
 from .home import MinutesCard, _clear
 from .widgets import Avatar, Hero, label
@@ -51,7 +53,9 @@ def meetings_of(lib, index, name: str) -> list[dict]:
         others = [n for n in dict.fromkeys(rec.meta.speakers.values()) if n and fold_tag(n) != want]
         out.append({"rec": rec, "id": rec.id, "title": rec.meta.title, "created": rec.meta.created,
                     "others": others, "excerpt": data.excerpt(d["text"]) if d else "",
-                    "part": parts.part_of(rec, name), "minutes": d is not None})
+                    "part": parts.entry_of(rec, name), "minutes": d is not None,
+                    "starred": marks.starred(rec), "tags": [t for t in rec.meta.tags
+                                                            if not t.lower().startswith("template:")]})
     return sorted(out, key=lambda m: m["created"], reverse=True)
 
 
@@ -100,6 +104,8 @@ class PersonPage(QWidget):
         finally:
             idx.close()
         items = actions.assigned_to(self.library, name)
+        self.meetings = meetings
+        self.filter_key = "all"
 
         hero = Hero()
         hl = QHBoxLayout(hero)
@@ -121,11 +127,13 @@ class PersonPage(QWidget):
         who.addStretch(1)
         hl.addLayout(who, 1)
         first = min((m["created"] for m in meetings), default=None)
+        self.stats = {}
         for value, what in ((str(len(meetings)), "MEETINGS"), (str(len(items)), "ACTION ITEMS"),
                             (_day(first) if first else "—", "FIRST HEARD")):
             col = QVBoxLayout()
             col.setSpacing(0)
-            col.addWidget(label(value, 2.4, QFont.Weight.ExtraBold, tabular=True))
+            self.stats[what] = label(value, 2.4, QFont.Weight.ExtraBold, tabular=True)
+            col.addWidget(self.stats[what])
             col.addWidget(label(what, 0.8, eyebrow=True))
             col.addStretch(1)
             hl.addLayout(col)
@@ -139,22 +147,27 @@ class PersonPage(QWidget):
         left.addWidget(label("Meetings with them", 1.4, QFont.Weight.ExtraBold))
         if not meetings:
             left.addWidget(label("Not named as a speaker in any recording yet.", 1.0, dim=True))
-        for m in meetings[:MEETINGS_SHOWN]:
-            left.addWidget(self._meeting(m))
-        if len(meetings) > MEETINGS_SHOWN:
-            left.addWidget(label(f"+{len(meetings) - MEETINGS_SHOWN} earlier", 1.0, QFont.Weight.Bold, dim=True))
+        else:
+            left.addWidget(self._filters())
+        self.meeting_list = QVBoxLayout()
+        self.meeting_list.setSpacing(12)
+        left.addLayout(self.meeting_list)
+        self.shown = MEETINGS_SHOWN
+        self._fill_meetings()
         left.addStretch(1)
         cols.addLayout(left, 3)
 
         right = QVBoxLayout()
         right.setSpacing(12)
         right.addWidget(label("Action items assigned to them", 1.15, QFont.Weight.ExtraBold, wrap=True))
-        lst = ActionList(with_recording=True, empty="None assigned to them.")
-        lst.set_items(items)
+        lst = ActionList(editable=True, with_recording=True, empty="None assigned to them.", library=self.library)
+        lst.set_source(lambda n=name: actions.assigned_to(self.library, n, discarded=True))
         lst.play.connect(lambda rid, at: self.open_minutes(rid, at))
+        lst.changed.connect(lambda n=name: self.stats["ACTION ITEMS"].setText(
+            str(len(actions.assigned_to(self.library, n)))))
         right.addWidget(lst)
-        right.addWidget(label("As said in each meeting. Echo does not track whether they got done.", 0.9,
-                              dim=True, wrap=True))
+        right.addWidget(label("As said in each meeting: edit, add context or a note, discard what no longer "
+                              "applies. Echo does not track whether they got done.", 0.9, dim=True, wrap=True))
         right.addSpacing(10)
         notes_card = QFrame()
         notes_card.setObjectName("card")
@@ -192,20 +205,113 @@ class PersonPage(QWidget):
         self.lay.addLayout(cols)
         self.lay.addStretch(1)
 
+    def _filters(self) -> QWidget:
+        """All, Starred, and the tags their meetings have: one at a time."""
+        w = QWidget()
+        row = QHBoxLayout(w)
+        row.setContentsMargins(0, 0, 0, 4)
+        row.setSpacing(6)
+        group = QButtonGroup(w)
+        tags: dict[str, str] = {}
+        for m in self.meetings:
+            for t in m["tags"]:
+                tags.setdefault(fold_tag(t), t)
+        n_star = sum(1 for m in self.meetings if m["starred"])
+        choices = [("all", f"All  {len(self.meetings)}"), ("starred", f"★ Starred  {n_star}")]
+        choices += [(f"#{k}", f"#{t}") for k, t in list(tags.items())[:8]]
+        for key, text in choices:
+            b = QPushButton(text)
+            b.setCheckable(True)
+            b.setChecked(key == self.filter_key)
+            theme.set_role(b, chip=True)
+            b.setObjectName("filterChip")
+            b.setCursor(Qt.CursorShape.PointingHandCursor)
+            b.clicked.connect(lambda _c=False, k=key: self._set_filter(k))
+            group.addButton(b)
+            row.addWidget(b)
+        row.addStretch(1)
+        t = theme.current()
+        w.setStyleSheet(f"""
+            QPushButton#filterChip {{ background: {t.surface}; color: {t.ink}; border: 1px solid {t.line};
+                border-radius: 13px; padding: 3px 12px; font-weight: 700; }}
+            QPushButton#filterChip:checked {{ background: {t.accent_soft}; color: {t.accent_deep};
+                border-color: {t.accent}; }}
+        """)
+        return w
+
+    def _set_filter(self, key: str):
+        self.filter_key = key
+        self.shown = MEETINGS_SHOWN
+        self._fill_meetings()
+
+    def _matching(self) -> list[dict]:
+        k = self.filter_key
+        if k == "starred":
+            return [m for m in self.meetings if m["starred"]]
+        if k.startswith("#"):
+            return [m for m in self.meetings if any(fold_tag(t) == k[1:] for t in m["tags"])]
+        return self.meetings
+
+    def _fill_meetings(self):
+        _clear(self.meeting_list)
+        found = self._matching()
+        if not found and self.meetings:
+            self.meeting_list.addWidget(label("No meetings with them match.", 1.0, dim=True))
+        for m in found[:self.shown]:
+            self.meeting_list.addWidget(self._meeting(m))
+        if len(found) > self.shown:
+            more = QPushButton(f"Show {len(found) - self.shown} earlier")
+            more.setFlat(True)
+            more.clicked.connect(self._show_more)
+            self.meeting_list.addWidget(more, 0, Qt.AlignmentFlag.AlignLeft)
+
+    def _show_more(self):
+        self.shown += MEETINGS_SHOWN
+        self._fill_meetings()
+
+    def _starred(self, m: dict, on: bool):
+        marks.set_starred(m["rec"], on)
+        m["starred"] = on
+
+    def _tagged(self, m: dict, editor: TagEditor, tags: list[str]):
+        rec = self.library.get(m["id"])
+        if rec is None:
+            return
+        saved = rec.set_tags([t for t in rec.meta.tags if t.lower().startswith("template:")] + tags)
+        m["tags"] = [t for t in saved if not t.lower().startswith("template:")]
+        editor.set_tags(m["tags"])
+
     def _meeting(self, m: dict) -> QWidget:
-        card = MinutesCard(m["rec"], self.library)
+        card = MinutesCard(m["rec"], self.library, footer=False)
         card.clicked.connect(lambda rid: self.open_minutes(rid, None))
+        card.star.starred.connect(lambda on, mm=m: self._starred(mm, on))
         lay = card.layout()
         meta = f"{fmt_date(m['created'])}" + (f" · with {', '.join(m['others'][:3])}" if m["others"] else
                                                 " · just you two" if m["minutes"] else "")
         lay.insertWidget(1, label(meta, 0.95, dim=True))
-        if m["part"]:
-            sep = QFrame()
-            sep.setFrameShape(QFrame.Shape.HLine)
-            lay.addWidget(sep)
-            part = label(f"Their part: {m['part']}", 1.0, display=False, wrap=True)
-            part.setStyleSheet(f"color: {theme.current().accent_deep};")
-            lay.addWidget(part)
+        part = m["part"]
+        if part["part"]:
+            t = theme.current()
+            box = QFrame()
+            box.setObjectName("theirPart")
+            box.setStyleSheet(f"QFrame#theirPart {{ border-left: 3px solid {t.accent}; }} "
+                              "QLabel { background: transparent; }")
+            bl = QVBoxLayout(box)
+            bl.setContentsMargins(12, 2, 0, 2)
+            bl.setSpacing(3)
+            bl.addWidget(label("THEIR PART", 0.8, QFont.Weight.ExtraBold, eyebrow=True))
+            line = label(part["part"], 1.0, display=False, wrap=True)
+            line.setStyleSheet(f"color: {t.accent_deep};")
+            bl.addWidget(line)
+            for pt in part["points"]:
+                bl.addWidget(label(f"•  {pt}", 0.95, display=False, wrap=True))
+            lay.addWidget(box)
+        tags = TagEditor()
+        tags.set_known(sorted({t for r in self.library.all() for t in r.meta.tags
+                               if not t.lower().startswith("template:")}, key=str.lower))
+        tags.set_tags(m["tags"])
+        tags.changed.connect(lambda new, mm=m, ed=tags: self._tagged(mm, ed, new))
+        lay.addWidget(tags)
         return card
 
     def eventFilter(self, obj, event):

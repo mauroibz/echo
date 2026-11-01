@@ -1,4 +1,4 @@
-"""Studio's window: Echo's window with a rail at the left (Home, Recordings, People, Ask, Record).
+"""Studio's window: Echo's window with a rail at the left (Briefing, Recordings, People, Record).
 
 Recordings is Echo's window exactly as it is, so turning Studio off or on never moves the user's
 recordings. The rail shows once Studio has something to show (a summaries server or a calendar);

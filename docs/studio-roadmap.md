@@ -19,6 +19,11 @@ items polished instead of checked off, people by email with their part in each m
 minutes and items on the command line. Echo's base gained what they needed and shipped on `main`
 (`add-background-and-email`, `add-speaker-names-hook`).
 
+After first use on real meetings (2026-11-01, S16): the home became the Briefing, with the week's
+meetings and a record switch each; action items gained a description and a note and a column of
+their own; people's pages gained stars, tags and points on each person's part. Questions (S6, S7)
+were withdrawn until there is a concrete use case for them.
+
 Task 1.8 of `add-studio-summaries` is still open: it checks summaries against the user's own
 recordings. The changes stay open until it is done, since they all build on the base summary.
 
@@ -103,7 +108,12 @@ link. Studio sends nothing and holds no mail account. It also works from the CLI
 - Depends on S4.
 - Echo base: none.
 
-### S6 Ask a recording (`add-studio-ask`)
+### S6 Ask a recording (`add-studio-ask`), withdrawn
+
+Built, then removed after first use (`refine-studio-after-first-use`): it worked in principle but
+not well enough in practice. It returns with a concrete use case and stronger retrieval
+(embeddings, search). What follows is the plan as it was.
+
 
 A question box in the Summary view answers from that recording's transcript, with the speakers'
 names. Each answer cites the times it draws on, and clicking a time plays the audio there. The
@@ -115,7 +125,7 @@ conversation is kept only while the recording is shown. It also works from the C
   seeks to a time, so an extension can send the user to a passage. Today seeking is internal
   to the player (`ui/player.py`).
 
-### S7 Ask the library (`add-studio-ask-library`)
+### S7 Ask the library (`add-studio-ask-library`), withdrawn with S6
 
 The Ask screen takes questions across recordings ("what did we agree with Acme about prices in
 October?"):
@@ -224,7 +234,7 @@ assigned to them (informative), and the notes.
 
 ### S14 Studio's home (`add-studio-home`)
 
-With Studio on, the window gets a rail (Home, Recordings, People, Ask, Record) and Lagoon's
+With Studio on, the window gets a rail (Home, now Briefing; Recordings, People, Record) and Lagoon's
 boldest styling: a deep hero band ending in a wave, large type, minutes as a timeline. Home shows
 the next meeting from the calendar (time, title, description, attendees, join link, whether it
 will record) and the minutes of past meetings; while a meeting records it shows the timer, the
@@ -234,6 +244,17 @@ Ask beside them. Recordings is Echo's window as it is today.
 - New capability `studio-home`.
 - Echo base: whatever `window_class` cannot reach today; listed at the start of the change and
   shipped as an Echo release first.
+
+### S16 After first use (`refine-studio-after-first-use`)
+
+What a week of real meetings showed:
+- **Briefing.** The home is renamed Briefing, with "Coming up": the next 7 days with a record
+  switch per meeting.
+- **Minutes cards** show the items and notes at a glance.
+- **Action items** carry a description (what exactly and why) and a private note, sit in a column
+  beside the summary, and are polished on a person's page too.
+- **People.** Their part has points; meetings can be starred, tagged and filtered.
+- **Ask** is withdrawn.
 
 ### S15 Data out (`add-studio-cli-data`)
 
@@ -275,8 +296,9 @@ that tells an agent how to read them.
 | v2a | S10 action edits, S15 data out | Small, and they settle what an item is before anything reads it. |
 | v2b | S13 people by email, S11 calendar | Attendees match people by email, so the email comes first. |
 | v2c | S12 auto-record, S14 home | Both need the calendar; the home shows all of it. |
+| v2d | S16 after first use | What testing the window on real meetings asked for. |
 
-| Phase | Change | Status (2026-10-31) |
+| Phase | Change | Status (2026-11-01) |
 |---|---|---|
 | 0 | `add-studio-summaries` | done; 1.8 on real recordings is open |
 | 1 | `add-studio-notes-first` | done; archives after `add-studio-summaries` |
@@ -285,8 +307,8 @@ that tells an agent how to read them.
 | 2 | `add-studio-window` | replaced by Echo's `add_screen` (`add-extension-screens`, archived) |
 | 3 | `add-studio-actions` | done; archives after `add-studio-summaries` |
 | 3 | `add-studio-follow-up` | done; archives after `add-studio-summaries` |
-| 3 | `add-studio-ask` | done; archives after `add-studio-summaries` |
-| 4 | `add-studio-ask-library` | done; archives after `add-studio-summaries` |
+| 3 | `add-studio-ask` | withdrawn by `refine-studio-after-first-use`; folder removed |
+| 4 | `add-studio-ask-library` | withdrawn with `add-studio-ask` |
 | 4 | `add-studio-install` | done but the release: merging `studio` into `main` waits for the user |
 | v2a | `change-studio-action-edits` | done; archives after `add-studio-actions` |
 | v2a | `add-studio-cli-data` | done; archives with the other Studio changes |
@@ -294,3 +316,4 @@ that tells an agent how to read them.
 | v2b | `add-studio-calendar` | done; archives with the other Studio changes |
 | v2c | `add-studio-auto-record` | done; archives with the other Studio changes |
 | v2c | `add-studio-home` | done; archives with the other Studio changes |
+| v2d | `refine-studio-after-first-use` | done; archives with the other Studio changes |

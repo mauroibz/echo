@@ -62,12 +62,17 @@ def test_home_lists_the_minutes_and_opens_them(swindow, lib, server):
     assert swindow.rail.isVisible() and swindow.page() == "home"
     home = swindow.pages.currentWidget()
     texts = _texts(home)
-    assert "Minutes" in texts and rec.meta.title in texts and "1 action item" in texts
+    assert "Minutes" in texts and rec.meta.title in texts and "ACTION ITEMS · 1" in texts
+    assert "Enviar la propuesta" in texts  # the items at a glance
     assert any("Lucía habló del precio." in t for t in texts)  # the minutes' excerpt
     assert "Add your calendar" in [b.text() for b in home.findChildren(QPushButton)]  # no calendar yet
     from echo_studio.home import MinutesCard
 
     card = next(c for c in home.findChildren(MinutesCard) if c.rid == rec.id)
+    from echo_studio import marks
+
+    card.star.click()
+    assert marks.starred(lib.get(rec.id)) and swindow.page() == "home"  # the star does not open it
     card.clicked.emit(rec.id)
     assert swindow.page() == "recordings" and swindow.current().id == rec.id
     assert isinstance(swindow.views.stack.currentWidget(), SummaryView)  # opened on its minutes
@@ -92,11 +97,20 @@ def test_home_shows_the_next_meeting(swindow, lib, feed, monkeypatch):
     assert start in texts and f"●  Records by itself at {start}" in texts
     buttons = {b.text(): b for b in home.findChildren(QPushButton)}
     assert "Join the call  →" in buttons
-    buttons["Skip"].click()
+    buttons["Don't record"].click()
     assert wait_until(lambda: "Not recording this one" in _texts(home))
     assert echo_studio._meetings.is_skipped(echo_studio._meetings.next_event())
     {b.text(): b for b in home.findChildren(QPushButton)}["Record it"].click()
     assert wait_until(lambda: any(t.startswith("●  Records by itself") for t in _texts(home)))
+    # Coming up: the same meeting with its switch, and one without a link, off until turned on.
+    from echo_studio.widgets import Toggle
+
+    assert "Coming up" in _texts(home)
+    [sw] = home.coming.findChildren(Toggle)
+    assert sw.isChecked() and "Roadmap review" in sw.toolTip()
+    sw.click()
+    assert wait_until(lambda: echo_studio._meetings.is_skipped(echo_studio._meetings.next_event()))
+    assert "Not recording this one" in _texts(home)
 
 
 def test_home_while_recording(swindow, lib, feed):
@@ -136,8 +150,37 @@ def test_people_by_email(swindow, lib, server):
     assert page.name == "Lucía"
     texts = _texts(page)
     assert "lucia@acme.example" in texts and "MEETINGS" in texts
-    assert f"Their part: {parts.part_of(rec, 'Lucía')}" in texts
+    assert "THEIR PART" in texts and parts.part_of(rec, "Lucía") in texts
+    assert "•  Propuso subir el precio un 10 %." in texts  # and the points that make it up
     assert "Reservar sala" in texts
+    # Their meetings: starred and tagged here, then filtered.
+    from echo_app.ui.tags import TagEditor
+    from echo_studio import marks
+    from echo_studio.home import MinutesCard
+
+    [card] = page.findChildren(MinutesCard)
+    card.star.click()
+    assert marks.starred(lib.get(rec.id))
+    ed = card.findChild(TagEditor)
+    ed.entry.setText("precios")
+    ed.entry.returnPressed.emit()
+    assert "precios" in lib.get(rec.id).meta.tags
+    screen.reload()
+    page = screen.page
+    chips = {b.text(): b for b in page.findChildren(QPushButton) if b.objectName() == "filterChip"}
+    assert {"All  1", "★ Starred  1", "#precios"} <= set(chips)
+    lib.get(rec.id).update(tags=[])
+    page.meetings[0]["tags"] = []
+    chips["#precios"].click()
+    assert "No meetings with them match." in _texts(page)
+    chips["★ Starred  1"].click()
+    assert len(page.findChildren(MinutesCard)) == 1
+    # Their items are polished here too.
+    from PySide6.QtWidgets import QToolButton
+
+    next(b for b in page.findChildren(QToolButton) if b.toolTip() == "Discard").click()
+    assert sum(i["discarded"] for i in actions.load(lib.get(rec.id))["items"]) == 1
+    assert page.stats["ACTION ITEMS"].text() == "1"
     page.email.setText("pedro@acme.example")
     people.save(lib, people.Profile("Pedro", email="pedro@acme.example"))
     from PySide6.QtWidgets import QMessageBox
