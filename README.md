@@ -48,7 +48,7 @@ and organizes your meetings around your calendar. Install it with `./install.sh 
 | | Echo | Echo Studio |
 |---|---|---|
 | **Made for** | Recording and transcribing | Running your meetings: before, during and after |
-| **Where it runs** | Entirely on your computer, offline | Echo plus a language-model server you choose: on your computer, or a cloud API such as Anthropic's |
+| **Where it runs** | Entirely on your computer, offline | Echo plus a language-model server you choose: on your computer, or a cloud API |
 | **What you get** | Audio, transcripts, speakers, search, exports | Minutes, action items, people, and a hand-off to the tools your team already uses |
 
 <p align="center">
