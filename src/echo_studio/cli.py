@@ -101,8 +101,14 @@ def _bad_date(*values) -> str | None:
     return None
 
 
+def _processed(rec) -> bool:
+    from . import actions
+
+    return actions.status(actions.load(rec))["processed"]
+
+
 def cmd_meetings(args) -> int:
-    from . import data, marks
+    from . import actions, data, marks
 
     bad = _bad_date(args.since, args.until)
     if bad:
@@ -111,7 +117,8 @@ def cmd_meetings(args) -> int:
     lib = _library()
     recs = sorted((r for r in lib.all() if data.in_range(r, args.since, args.until)
                    and (args.all or summary.load(r) is not None)
-                   and (not args.starred or marks.starred(r))), key=lambda r: r.meta.created, reverse=True)
+                   and (not args.starred or marks.starred(r))
+                   and (not args.unprocessed or not _processed(r))), key=lambda r: r.meta.created, reverse=True)
     if args.json:
         print(json.dumps([data.meeting(r, full=False, lib=lib) for r in recs], ensure_ascii=False, indent=2))
         return OK
@@ -119,6 +126,8 @@ def cmd_meetings(args) -> int:
         n = len(data.action_items(r, lib=lib))
         tail = f"  ({n} action item{'s' if n != 1 else ''})" if summary.load(r) is not None else "  (no minutes)"
         star = "★ " if marks.starred(r) else ""
+        if summary.load(r) is not None and actions.status(actions.load(r))["processed"]:
+            tail += "  processed"
         print(f"{r.id}  {r.meta.created[:16].replace('T', ' ')}  {star}{r.meta.title}{tail}")
     return OK
 
@@ -183,7 +192,7 @@ def cmd_actions(args) -> int:
     want = fold_tag(args.owner) if args.owner else None
     items = []
     for r in recs:
-        for it in data.action_items(r, discarded=args.discarded, lib=lib):
+        for it in data.action_items(r, discarded=args.discarded, lib=lib, state="ready" if args.ready else None):
             if want is None or fold_tag(it["owner"]) == want:
                 items.append({**it, "title": r.meta.title, "created": r.meta.created})
     if args.json:
@@ -195,6 +204,25 @@ def cmd_actions(args) -> int:
             print(("\n" if last else "") + f"{it['title']} ({it['recording']})")
             last = it["recording"]
         print(_item_line(it))
+    return OK
+
+
+def cmd_item(args) -> int:
+    from . import actions
+
+    lib = _library()
+    rec = lib.get(args.id)
+    if rec is None:
+        _err(f"{args.id}: no such recording (see: echo-app meetings)")
+        return FAILED
+    if args.sent is None and args.failed is None:
+        _err("say --sent REF or --failed REASON")
+        return USAGE
+    why = (actions.mark_sent(rec, args.item, args.sent, args.url or "") if args.sent is not None
+           else actions.mark_failed(rec, args.item, args.failed))
+    if why:
+        _err(f"{args.id} {args.item}: {why}")
+        return FAILED
     return OK
 
 
@@ -289,16 +317,22 @@ exit codes:
     m.add_argument("--until", metavar="DATE", help="made on or before this day")
     m.add_argument("--all", action="store_true", help="also recordings without minutes")
     m.add_argument("--starred", action="store_true", help="only the meetings you starred")
+    m.add_argument("--unprocessed", action="store_true",
+                   help="only the meetings not processed yet (not marked ready, or with items not sent)")
     m.add_argument("--json", action="store_true", help="as JSON: each recording (as info --json) with "
-                   "\"minutes\" (created, stale, template, excerpt), \"starred\" and the number of \"action_items\"")
+                   "\"minutes\" (created, stale, template, excerpt), \"starred\", \"tracker\" (ready_at, "
+                   "processed and how many items are proposed, ready, sent, failed, discarded) and the number "
+                   "of \"action_items\"")
     m.set_defaults(func=cmd_meetings)
 
     n = sub.add_parser(
         "minutes", help="a recording's minutes and action items (Echo Studio)",
         description="The summary and the action items (not the discarded ones) of each recording. " + keys,
         epilog="""JSON: the recording (as info --json) with "minutes" {path, created, stale, template, excerpt, text}
-and "action_items", each {index, text, description, owner, owner_email, due, at, at_stamp, context,
-note, edited, added_by_user, quote, recording}; "description" is what exactly and why, as said;
+and "action_items", each {uid, index, text, description, owner, owner_email, due, at, at_stamp,
+context, note, edited, added_by_user, discarded, state, tracker, failure, quote, recording};
+"state" is proposed, ready (the user approved it for the tracker), sent ("tracker" holds ref, url
+and when) or failed ("failure" says why); "description" is what exactly and why, as said;
 "context" is the user's, for whoever picks the item up; "note" is the user's own and not meant for
 a tracker; "quote" is what was said around the item's time. One ID gives one object,
 several give a list.
@@ -325,9 +359,32 @@ examples:
     t.add_argument("--until", metavar="DATE", help="recordings made on or before this day")
     t.add_argument("--owner", metavar="NAME", help="one person's items")
     t.add_argument("--discarded", action="store_true", help="include the discarded ones")
+    t.add_argument("--ready", action="store_true",
+                   help="only the items the user marked ready to send to a tracker, and not sent yet")
     t.add_argument("--json", action="store_true", help="as JSON: the items as in minutes --json, with the "
                    "recording's \"title\" and \"created\"")
     t.set_defaults(func=cmd_actions)
+
+    k = sub.add_parser(
+        "item", help="record what happened to an action item sent to a tracker (Echo Studio)",
+        description="For whatever sends the ready items to a tracker: mark an item sent, with the tracker's "
+                    "reference and link, or failed, with why (the user sees it, fixes the item and marks the "
+                    "meeting ready again). Only ready items can be marked; a sent item is not changed in Echo "
+                    "after that.",
+        epilog="""examples:
+  echo-app actions --ready --json
+  echo-app item 20261031-110000-ab12 3f9c2a7b1e --sent PROJ-123 --url https://tracker.example/PROJ-123
+  echo-app item 20261031-110000-ab12 3f9c2a7b1e --failed "no project for this client"
+
+exit codes: 0 marked, 1 failed (no such recording or item, or the item is not ready), 2 usage error""",
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    k.add_argument("id", metavar="ID", help="the recording")
+    k.add_argument("item", metavar="ITEM", help="the item's uid (or its index)")
+    g = k.add_mutually_exclusive_group()
+    g.add_argument("--sent", metavar="REF", help="the item is in the tracker as REF")
+    g.add_argument("--failed", metavar="REASON", help="the item could not be sent, and why")
+    k.add_argument("--url", help="with --sent: the item's link in the tracker")
+    k.set_defaults(func=cmd_item)
 
     c = sub.add_parser(
         "calendar", help="the meetings in your calendar (Echo Studio)",

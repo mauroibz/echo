@@ -3,6 +3,7 @@ before they go to the team's tracker; on a minutes card, at a glance."""
 
 from __future__ import annotations
 
+import html
 from datetime import date
 
 from PySide6.QtCore import QEvent, Qt, Signal
@@ -272,7 +273,13 @@ class ActionList(QWidget):
         if it.get("discarded"):
             theme.set_role(text, dim=True)
         top.addWidget(text, 1)
-        if self.editable:
+        state = it.get("state", actions.PROPOSED)
+        if state == actions.SENT:
+            top.addWidget(_sent_chip(it.get("tracker") or {}), 0, Qt.AlignmentFlag.AlignTop)
+        elif state == actions.READY:
+            top.addWidget(_chip("Ready", "amber", "Approved for your tracker; not sent yet"), 0,
+                          Qt.AlignmentFlag.AlignTop)
+        if self.editable and state != actions.SENT:  # a sent item is the tracker's
             if it.get("discarded"):
                 restore = _small_button("undo-2", "Restore")
                 restore.clicked.connect(lambda _c=False, k=_key(it): self._discard(k, False))
@@ -299,6 +306,11 @@ class ActionList(QWidget):
                 b.clicked.connect(lambda _c=False, rid=it["id"], at=float(it["at"]): self.play.emit(rid, at))
                 meta.addWidget(b, 0, Qt.AlignmentFlag.AlignVCenter)
             col.addLayout(meta)
+        if state == actions.FAILED and it.get("failure"):
+            fail = QLabel(f"Could not be sent: {it['failure']}")
+            fail.setWordWrap(True)
+            fail.setStyleSheet(f"color: {theme.current().coral_deep}; font-weight: 600;")
+            col.addWidget(fail)
         if not self.compact and not it.get("discarded"):
             if it.get("description"):
                 desc = QLabel(it["description"])
@@ -346,6 +358,29 @@ class ActionList(QWidget):
     def _written(self):
         self.set_items(self.source())
         self.changed.emit()
+
+
+def _chip(text: str, role: str, tip: str = "") -> QLabel:
+    c = QLabel(text)
+    c.setFont(theme.display_font(0.82, QFont.Weight.Bold))
+    t = theme.current()
+    fg = t.accent_deep if role == "accent" else t.ink
+    c.setStyleSheet(f"color: {fg}; background: {theme.rgba(role, 0.2)}; border-radius: 9px; padding: 1px 8px;")
+    if tip:
+        c.setToolTip(tip)
+    return c
+
+
+def _sent_chip(tracker: dict) -> QLabel:
+    """"✓ Sent · PROJ-123", a link to the item in the tracker when there is one."""
+    ref = tracker.get("ref") or "sent"
+    url = tracker.get("url") or ""
+    c = _chip(f"✓ Sent · {ref}", "accent", f"In your tracker as {ref}" + (f": {url}" if url else ""))
+    if url.startswith(("https://", "http://")):
+        c.setText(f'<a href="{html.escape(url)}" style="color: {theme.current().accent_deep}; '
+                  f'text-decoration: none;">✓ Sent · {html.escape(ref)}</a>')
+        c.setOpenExternalLinks(True)
+    return c
 
 
 def _key(it: dict) -> tuple[str, int]:

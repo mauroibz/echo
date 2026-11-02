@@ -343,14 +343,20 @@ def test_title_from_the_summary_only_when_automatic(window, lib, server, studio)
 
 def _model_item(text, owner="", due="", at=None):
     return {"text": text, "description": "", "owner": owner, "due": due, "at": at, "context": "", "note": "",
-            "discarded": False, "edited": False, "origin": "model", "key": actions.fold_tag(text)}
+            "discarded": False, "edited": False, "origin": "model", "key": actions.fold_tag(text),
+            "state": "proposed", "tracker": None, "failure": ""}
+
+
+def _no_uid(items):
+    assert all(len(i["uid"]) == 10 for i in items)
+    return [{k: v for k, v in i.items() if k != "uid"} for i in items]
 
 
 def test_action_items_parsed_tolerantly():
     reply = 'Acá van:\n```json\n[{"text": " Enviar  la propuesta ", "owner": "Lucía", "due": "2026-11-02",' \
             ' "at": "1:02:03"}, {"text": "", "owner": "x"}, {"text": "Llamar", "due": "el viernes", "at": "x"}]\n```'
     items = actions.parse(reply)
-    assert items == [_model_item("Enviar la propuesta", "Lucía", "2026-11-02", 3723.0), _model_item("Llamar")]
+    assert _no_uid(items) == [_model_item("Enviar la propuesta", "Lucía", "2026-11-02", 3723.0), _model_item("Llamar")]
     assert actions.parse("no hay") == [] and actions.parse("[{bad json") == []
 
 
@@ -362,7 +368,7 @@ def test_action_items_keep_the_users_work(tmp_path, server):
     req = server.all_requests[-1]
     assert req["messages"][0]["content"].startswith("You extract the action items")
     assert "Transcript with times:" in req["messages"][1]["content"] and "[0:06]" in req["messages"][1]["content"]
-    assert actions.load(rec)["items"] == [{**_model_item("Enviar la propuesta", "lucia", "2026-10-31", 6.0),
+    assert _no_uid(actions.load(rec)["items"]) == [{**_model_item("Enviar la propuesta", "lucia", "2026-10-31", 6.0),
                                            "description": "La versión con el precio nuevo, para Acme."}]
     actions.update(rec, 0, text="Enviar la propuesta de precios", context="la versión con descuento",
                    note="Para mí: revisar el descuento")
@@ -414,7 +420,8 @@ def test_version_1_actions_are_read(tmp_path):
     rec = _rec(lib)
     rec.path(actions.FILE).write_text(json.dumps({"version": 1, "items": [
         {"text": "Llamar a Ana", "owner": "Lucía", "due": "", "at": 3.0, "done": True}]}))
-    assert actions.load(rec)["items"] == [_model_item("Llamar a Ana", "Lucía", "", 3.0)]
+    assert _no_uid(actions.load(rec)["items"]) == [_model_item("Llamar a Ana", "Lucía", "", 3.0)]
+    assert actions.load(rec)["items"][0]["uid"] == actions.load(rec)["items"][0]["uid"]  # stable before saving
 
 
 def test_polishing_items_in_the_summary_view(window, lib, server, studio):
@@ -755,3 +762,116 @@ def test_settings_page_turns_summaries_on(window, lib, qapp, studio):
     assert any(isinstance(v, SummaryView) for v in window.views.views())  # no restart needed
     page.url.setText("http://127.0.0.1:8080/v1")
     assert not page.warning.text()
+
+
+def test_the_way_to_a_tracker(tmp_path, server, capsys, studio):
+    """Ready by the user, sent or failed by whatever sends them, never changed in Echo once sent;
+    processed when marked ready and nothing is left but sent items."""
+    from echo_app import settings
+
+    s = settings.load()[0]
+    s.data_dir = str(tmp_path / "data")
+    settings.save(s)
+    lib = Library(tmp_path / "data")
+    rec = _rec(lib)
+    server.actions = json.dumps([{"text": "Enviar la propuesta", "owner": "Lucía"}, {"text": "Llamar a Ana"},
+                                 {"text": "Mandar la grabación"}])
+    data = summary.write(rec)
+    summary.finish(rec, data)
+    items = actions.load(rec)["items"]
+    uids = [i["uid"] for i in items]
+    assert len(set(uids)) == 3 and all(i["state"] == "proposed" for i in items)
+    assert not actions.status(actions.load(rec))["processed"]
+    actions.discard(rec, 2, True)
+    capsys.readouterr()
+    assert cli.main(["actions", "--ready", "--json"]) == 0 and json.loads(capsys.readouterr().out) == []
+    assert cli.main(["item", rec.id, uids[0], "--sent", "X-1"]) == 1  # not approved yet
+    made = actions.mark_ready(rec)
+    assert [i["uid"] for i in made] == uids[:2]  # the discarded one stays out
+    assert cli.main(["actions", "--ready", "--json"]) == 0
+    ready = json.loads(capsys.readouterr().out)
+    assert [(i["uid"], i["state"]) for i in ready] == [(uids[0], "ready"), (uids[1], "ready")]
+    # Summarizing again in between keeps the uids, the states and an approved item the model dropped.
+    server.actions = json.dumps([{"text": "Llamar a Ana"}, {"text": "Algo nuevo"}])
+    summary.finish(rec, data)
+    items = actions.load(rec)["items"]
+    assert [(i["text"], i["state"]) for i in items] == [
+        ("Llamar a Ana", "ready"), ("Algo nuevo", "proposed"), ("Enviar la propuesta", "ready")]
+    assert items[0]["uid"] == uids[1] and items[2]["uid"] == uids[0]
+    assert cli.main(["item", rec.id, uids[0], "--sent", "PROJ-7", "--url", "https://tracker.example/7"]) == 0
+    assert cli.main(["item", rec.id, uids[1], "--failed", "no project for  this client"]) == 0
+    assert cli.main(["item", rec.id, "nope", "--sent", "X"]) == 1 and cli.main(["item", rec.id, uids[1]]) == 2
+    items = actions.load(rec)["items"]
+    sent = next(i for i in items if i["uid"] == uids[0])
+    assert sent["state"] == "sent" and sent["tracker"]["ref"] == "PROJ-7" and sent["tracker"]["at"]
+    assert next(i for i in items if i["uid"] == uids[1])["failure"] == "no project for this client"
+    k = items.index(sent)
+    actions.update(rec, k, text="otra cosa")
+    actions.discard(rec, k, True)
+    assert actions.load(rec)["items"][k]["text"] == "Enviar la propuesta"  # the tracker's now
+    st = actions.status(actions.load(rec))
+    assert (st["sent"], st["failed"], st["proposed"], st["processed"]) == (1, 1, 1, False)
+    actions.discard(rec, 1, True)  # "Algo nuevo" does not apply
+    actions.mark_ready(rec)  # the failed one, fixed, goes again
+    assert cli.main(["item", rec.id, uids[1], "--sent", "PROJ-8"]) == 0
+    assert actions.status(actions.load(rec))["processed"]
+    capsys.readouterr()
+    assert cli.main(["meetings", "--unprocessed"]) == 0 and rec.id not in capsys.readouterr().out
+    assert cli.main(["minutes", rec.id, "--json"]) == 0
+    m = json.loads(capsys.readouterr().out)
+    assert m["tracker"]["processed"] and m["action_items"][0]["tracker"]["ref"] in ("PROJ-7", "PROJ-8")
+    # A meeting with nothing to send is processed once the user marks it.
+    bare = _rec(lib)
+    server.actions = "[]"
+    summary.finish(bare, summary.write(bare))
+    assert not actions.status(actions.load(bare))["processed"]
+    actions.mark_ready(bare)
+    assert actions.status(actions.load(bare))["processed"]
+    actions.unmark_ready(bare)
+    assert not actions.status(actions.load(bare))["processed"]
+
+
+def test_ready_to_send_in_the_window(window, lib, server, studio, monkeypatch):
+    from PySide6.QtWidgets import QLabel
+
+    from echo_studio import ui
+    from echo_studio.home import MinutesCard
+    from echo_studio.ui import SummaryView
+
+    server.actions = json.dumps([{"text": "Enviar la propuesta", "owner": "Lucía"}, {"text": "Llamar a Ana"}])
+    rec = _rec(lib)
+    summary.finish(rec, summary.write(rec))
+    window.model.refresh()
+    _attach(window)
+    view = window.views.views()[0]
+    assert isinstance(view, SummaryView)
+    window._select(rec.id)
+    window.views.buttons[1].click()
+    view.show_subject(lib.get(rec.id), None)
+    assert view.ready_btn.isVisible() and view.ready_btn.text() == "Ready to send…"
+    assert view.send_status.text() == "Not sent yet."
+    shown = []
+    monkeypatch.setattr(ui, "confirm_ready", lambda _p, items: shown.append([i["text"] for i in items]) or False)
+    view.ready_btn.click()  # cancelled: nothing changes
+    assert shown == [["Enviar la propuesta", "Llamar a Ana"]]
+    assert actions.status(actions.load(lib.get(rec.id)))["ready"] == 0
+    monkeypatch.setattr(ui, "confirm_ready", lambda _p, items: True)
+    view.ready_btn.click()
+    assert view.send_status.text() == "2 ready, waiting to be sent" and view.unready_btn.isVisible()
+    texts = lambda: [lbl.text() for lbl in view.actions.findChildren(QLabel)]  # noqa: E731
+    assert texts().count("Ready") == 2
+    # Something outside sends one and fails the other; the open view follows.
+    uids = [i["uid"] for i in actions.load(lib.get(rec.id))["items"]]
+    actions.mark_sent(lib.get(rec.id), uids[0], "PROJ-7", "https://tracker.example/7")
+    actions.mark_failed(lib.get(rec.id), uids[1], "no project")
+    assert wait_until(lambda: any("Sent · PROJ-7" in t for t in texts()), 5)
+    assert "Could not be sent: no project" in texts()
+    assert "could not be sent" in view.send_status.text()
+    edits = [b for b in view.actions.findChildren(QToolButton) if b.toolTip() == "Edit"]
+    assert len(edits) == 1  # the sent one cannot be edited
+    view.ready_btn.click()  # fixed: ready again
+    actions.mark_sent(lib.get(rec.id), uids[1], "PROJ-8")
+    assert wait_until(lambda: view.send_status.text().startswith("✓  Processed"), 5)
+    assert not view.ready_btn.isVisible()
+    card = MinutesCard(lib.get(rec.id), lib)
+    assert card.processed and "✓ Processed" in [lbl.text() for lbl in card.findChildren(QLabel)]

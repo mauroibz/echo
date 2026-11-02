@@ -256,6 +256,13 @@ What a week of real meetings showed:
 - **People.** Their part has points; meetings can be starred, tagged and filtered.
 - **Ask** is withdrawn.
 
+### S17 Hand-off to a tracker (`add-studio-tracker-handoff`)
+
+The user marks a meeting's polished items ready. Whatever sends them (an agent, a script) lists
+them with `echo-app actions --ready` and reports back with `echo-app item … --sent REF` or
+`--failed`. Sent items show their link and are frozen. A meeting is processed when everything in
+it is sent, so the call can be archived. Echo talks to no tracker.
+
 ### S15 Data out (`add-studio-cli-data`)
 
 `echo-app meetings --since DATE --json`, `minutes ID --json` (summary, event, attendees, action
@@ -269,8 +276,8 @@ that tells an agent how to read them.
 - **Proactive briefs and catch-up suggestions,** and anything that needs knowledge beyond the
   calendar and the recordings.
 - **Reminders and done-tracking.** The tracker the team uses does that.
-- **Connectors that push** (Plane, Trello, Jira, Slack, Notion, SMTP). The CLI is the way out
-  until one is asked for.
+- **Connectors that push** (Plane, Trello, Jira, Slack, Notion, SMTP). The CLI and the ready /
+  sent hand-off (S17) are the way out; the team's own agent or script does the sending.
 - **An MCP server.** The CLI and an agent skill cover it.
 
 ## Never planned
@@ -297,6 +304,7 @@ that tells an agent how to read them.
 | v2b | S13 people by email, S11 calendar | Attendees match people by email, so the email comes first. |
 | v2c | S12 auto-record, S14 home | Both need the calendar; the home shows all of it. |
 | v2d | S16 after first use | What testing the window on real meetings asked for. |
+| v2e | S17 hand-off to a tracker | Needs S16's polished items; the last piece of call → tracker. |
 
 | Phase | Change | Status (2026-11-01) |
 |---|---|---|
@@ -317,3 +325,4 @@ that tells an agent how to read them.
 | v2c | `add-studio-auto-record` | done; archives with the other Studio changes |
 | v2c | `add-studio-home` | done; archives with the other Studio changes |
 | v2d | `refine-studio-after-first-use` | done; archives with the other Studio changes |
+| v2e | `add-studio-tracker-handoff` | done; archives with the other Studio changes |

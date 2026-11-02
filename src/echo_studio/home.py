@@ -87,6 +87,15 @@ class MinutesCard(QFrame):
         if d and d.get("template"):
             bits.append(d["template"])
         top.addWidget(label(" · ".join(bits), dim=True), 0, Qt.AlignmentFlag.AlignTop)
+        saved = actions.load(rec)
+        st = actions.status(saved)
+        self.processed = bool(d) and st["processed"]
+        if self.processed:
+            chip = label("✓ Processed", 0.82, QFont.Weight.ExtraBold)
+            chip.setToolTip("Marked ready and every item is in your tracker: you can archive the call")
+            chip.setStyleSheet(f"color: {t.accent_deep}; background: {t.accent_soft}; border-radius: 9px;"
+                               " padding: 1px 8px;")
+            top.addWidget(chip, 0, Qt.AlignmentFlag.AlignTop)
         self.star = StarButton(marks.starred(rec))
         self.star.starred.connect(lambda on, r=rec: marks.set_starred(r, on))
         top.addWidget(self.star, 0, Qt.AlignmentFlag.AlignTop)
@@ -94,7 +103,7 @@ class MinutesCard(QFrame):
         text = data.excerpt(d["text"]) if d else ""
         if text:
             lay.addWidget(label(text, 1.0, display=False, wrap=True))
-        items = [it for it in (actions.load(rec) or {}).get("items", []) if not it["discarded"]]
+        items = [it for it in (saved or {}).get("items", []) if not it["discarded"]]
         if items:
             box = QFrame()
             box.setStyleSheet(f"QFrame {{ background: {t.raised}; border-radius: 12px; }} "
@@ -102,13 +111,21 @@ class MinutesCard(QFrame):
             bl = QVBoxLayout(box)
             bl.setContentsMargins(14, 10, 14, 10)
             bl.setSpacing(5)
-            bl.addWidget(label(f"ACTION ITEMS · {len(items)}", 0.8, QFont.Weight.ExtraBold, eyebrow=True))
+            head = f"ACTION ITEMS · {len(items)}"
+            if st["sent"] and not self.processed:
+                head += f" · {st['sent']} SENT"
+            if st["ready"]:
+                head += f" · {st['ready']} READY"
+            if st["failed"]:
+                head += f" · {st['failed']} FAILED"
+            bl.addWidget(label(head, 0.8, QFont.Weight.ExtraBold, eyebrow=True))
             for it in items[:CARD_ITEMS]:
                 row = QHBoxLayout()
                 row.setSpacing(8)
                 if it["owner"]:
                     row.addWidget(Avatar(it["owner"], 20), 0, Qt.AlignmentFlag.AlignTop)
-                row.addWidget(label(it["text"], 0.95, QFont.Weight.DemiBold, wrap=True), 1)
+                sent = "✓  " if it["state"] == actions.SENT else ""
+                row.addWidget(label(sent + it["text"], 0.95, QFont.Weight.DemiBold, wrap=True), 1)
                 if it["due"]:
                     row.addWidget(label(fmt_due(it["due"]), 0.85, dim=True), 0, Qt.AlignmentFlag.AlignTop)
                 bl.addLayout(row)

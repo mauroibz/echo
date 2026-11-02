@@ -43,17 +43,20 @@ def _email_of(lib, name: str) -> str | None:
 
 
 def action_dict(rec: Recording, it: dict, index: int, lib=None) -> dict:
-    return {"index": index, "text": it["text"], "description": it["description"], "owner": it["owner"],
-            "owner_email": _email_of(lib, it["owner"]),
+    return {"uid": it["uid"], "index": index, "text": it["text"], "description": it["description"],
+            "owner": it["owner"], "owner_email": _email_of(lib, it["owner"]),
             "due": it["due"] or None,
             "at": it["at"], "at_stamp": export.stamp(it["at"]) if it["at"] is not None else None,
-            "context": it["context"], "note": it["note"], "edited": it["edited"], "added_by_user": it["origin"] == "user",
+            "context": it["context"], "note": it["note"], "edited": it["edited"],
+            "added_by_user": it["origin"] == "user", "discarded": it["discarded"],
+            "state": it["state"], "tracker": it["tracker"], "failure": it["failure"] or None,
             "quote": quote(rec, it["at"]), "recording": rec.id}
 
 
-def action_items(rec: Recording, discarded: bool = False, lib=None) -> list[dict]:
+def action_items(rec: Recording, discarded: bool = False, lib=None, state: str | None = None) -> list[dict]:
     items = (actions.load(rec) or {}).get("items", [])
-    return [action_dict(rec, it, k, lib) for k, it in enumerate(items) if discarded or not it["discarded"]]
+    return [action_dict(rec, it, k, lib) for k, it in enumerate(items)
+            if (discarded or not it["discarded"]) and (state is None or it["state"] == state)]
 
 
 def meeting(rec: Recording, full: bool = True, lib=None) -> dict:
@@ -68,6 +71,7 @@ def meeting(rec: Recording, full: bool = True, lib=None) -> dict:
         "excerpt": excerpt(data["text"]), **({"text": data["text"]} if full else {})}
     d["action_items"] = items if full else len(items)
     d["starred"] = marks.starred(rec)
+    d["tracker"] = actions.status(actions.load(rec))
     from . import calendar
 
     ev = calendar.event_of(rec)

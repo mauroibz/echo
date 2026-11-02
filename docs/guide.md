@@ -398,6 +398,22 @@ there too. The items are kept in `actions.json` in the recording's folder; summa
 your edits, context, notes, discards and the items you added. Items from summaries made before
 this version have no description until you summarize again.
 
+**Sending them to your tracker.** Echo does not talk to Plane, Trello or Jira itself. Whatever
+you use for that (an agent, a script, a scheduled sync) asks Echo for what you approved and tells
+it what happened. Once you have polished a meeting's items, press **Ready to send…** above them.
+Echo lists the items that will go, and once you confirm they are marked Ready. Discarded ones stay
+out, and until they are sent you can still edit them or take them back with **Back to review**.
+
+When something sends them:
+- Each item shows **✓ Sent · REF**, a link to it in the tracker, and can no longer be edited in
+  Echo: from then on the tracker has it.
+- An item that could not be sent says why. Fix it and press Ready to send again.
+
+When the meeting was marked ready and every item left is sent, the bar above the items and the
+meeting's card on the Briefing say **✓ Processed**: you can archive the call. A meeting with nothing
+to send is processed with **Mark processed**. Summarizing again never changes items that are ready
+or sent.
+
 Follow-up, beside Copy, drafts the email you would send after the meeting: what was agreed and
 who does what by when. Edit it, then Copy it or press Open in mail to start a message in your mail
 program. Echo sends nothing itself. Read it first: a language model wrote it.
@@ -441,8 +457,14 @@ an agent that loads them into your tracker: `echo-app meetings --since today` li
 recordings with minutes, `echo-app minutes ID` prints one meeting's summary and action items, and
 `echo-app actions --since 2026-10-01 --owner "Sofía Paz"` the items across meetings. Add `--json`
 for scripts: each item carries its text, owner, date, time, your context and what was said around
-it; discarded items are left out. These commands only read what is saved. `agents/echo/SKILL.md`
-in Echo's folder explains them to an agent.
+it; discarded items are left out. `echo-app meetings --starred` lists the meetings you starred,
+`--unprocessed` those not processed yet.
+
+For whatever sends items to your tracker, `echo-app actions --ready --json` lists the items you
+marked ready. Each has a `uid` that stays the same when you summarize again. After creating each
+item, the sender runs `echo-app item ID UID --sent REF --url LINK`, or `--failed "why"` if it
+could not. These are the only commands that write. `agents/echo/SKILL.md` in Echo's folder
+explains all of them to an agent.
 
 The server settings are in `~/.config/echo/studio.toml`. The key is kept in your desktop's
 keyring (KDE Wallet or GNOME Keyring, through `secret-tool`), never in a file; to keep it
