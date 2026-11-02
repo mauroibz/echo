@@ -37,9 +37,39 @@ Transcribe made by [SURUS](https://huggingface.co/surus-ai).
 | **Finds things** | Search every transcript, by tag (`#client:acme`) or by speaker (`@ana precio`). People have profiles. |
 | **Exports** | Text, Markdown, SRT, VTT, JSON, or a whole Obsidian vault kept up to date. |
 | **Works from scripts** | `echo-app transcribe meeting.mp4 --format md`, for scripts and AI agents. |
-| **Summarizes, if you want** | Echo Studio (`./install.sh --with-studio`): summaries, action items, follow-up drafts and questions over your recordings, from a language-model server you choose, local or cloud. Off unless installed. |
 
 Everything Echo does, with its shortcuts, is in the **[user guide](docs/guide.md)**.
+
+## Echo Studio: Echo as a meeting manager
+
+Echo Studio is an optional extension that turns the recordings into minutes and action items
+and organizes your meetings around your calendar. Install it with `./install.sh --with-studio`.
+
+| | Echo | Echo Studio |
+|---|---|---|
+| **Made for** | Recording and transcribing | Running your meetings: before, during and after |
+| **Where it runs** | Entirely on your computer, offline | Echo plus a language-model server you choose: on your computer, or a cloud API such as Anthropic's |
+| **What you get** | Audio, transcripts, speakers, search, exports | Minutes, action items, people, and a hand-off to the tools your team already uses |
+
+<p align="center">
+  <img src="docs/studio.png" alt="Echo Studio's Briefing: the next meeting in a deep teal band, the minutes of the last meetings with their action items, and the week's meetings with a record switch each" width="900">
+</p>
+
+- **Briefing.** The next meeting from your calendar (a private ICS address from Google Calendar
+  or Outlook), the week ahead with a switch to record each one or not, and your last minutes.
+- **Records by itself** when a meeting with a video link starts, and names it after the event.
+- **Minutes** written from the transcript and your notes, with a template per kind of meeting.
+- **Action items** with owner, date, a description and the moment they were said. You edit,
+  discard or add them before they go anywhere.
+- **People** by email: the meetings with each one, their part in them and their action items.
+  Star and tag meetings to find them again.
+- **Ready for your tracker.** Mark a meeting ready and any script or agent picks its items up
+  with `echo-app actions --ready --json` and reports back; the call then shows as processed.
+  Echo connects to no tracker itself, so Plane, Jira, Trello or anything else works the same.
+
+When the language-model server is not on your computer, the transcripts you summarize are sent
+to it. Studio says so in its settings. More in the
+[guide](docs/guide.md#echo-studio-your-meetings-before-and-after).
 
 ## Install
 

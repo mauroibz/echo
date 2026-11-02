@@ -5,8 +5,21 @@ tag.
 
 ## Unreleased
 
+## 1.5.0 - 2026-11-01
+
 ### Added
 
+- **Echo Studio**, an optional extension that makes Echo a meeting manager
+  (`./install.sh --with-studio`). It reads your calendar from a private ICS address, records
+  meetings with a video link when they start, and writes minutes and action items from each
+  transcript with a language-model server you choose, on your computer or in the cloud. The
+  Briefing shows the next meeting, the week with a record switch per meeting, and your last
+  minutes. Action items carry an owner, a date, a description and the moment they were said, and
+  you edit, discard or add them. People are kept by email, with the meetings, part and items of
+  each. Meetings can be starred and tagged. A meeting marked ready hands its items to any script
+  or agent (`echo-app actions --ready --json`, `echo-app item`), and shows as processed once they
+  are in your tracker. `echo-app meetings`, `minutes`, `actions` and `calendar` give all of it as
+  JSON.
 - ▶ in the bar that asks for a speaker's name moves the playhead and the transcript to the
   passage it plays.
 - For extensions: screens in place of the selected recording (`add_screen`), `show_recording` to
