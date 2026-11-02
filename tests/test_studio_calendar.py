@@ -87,7 +87,9 @@ def _parse(since, until):
 
 def test_ics_reads_what_google_and_outlook_write():
     evs = _parse(datetime(2026, 10, 26, tzinfo=ART), datetime(2026, 11, 5, tzinfo=ART))
-    got = [(e.start.astimezone(ART).strftime("%m-%d %H:%M"), e.title, e.all_day) for e in evs]
+    # An all-day event is a day in the computer's own zone, so it is not converted.
+    got = [((e.start if e.all_day else e.start.astimezone(ART)).strftime("%m-%d %H:%M"), e.title, e.all_day)
+           for e in evs]
     assert got == [("10-26 11:00", "Product sync", False),  # the 28th is an EXDATE
                    ("10-31 15:00", "Roadmap review", False),  # a Windows zone, through its VTIMEZONE
                    ("11-02 00:00", "Feriado", True),
