@@ -200,6 +200,22 @@ def test_anthropic_spoken_natively(tmp_path, server, monkeypatch):
         llm.complete("Sistema", "Transcripción")
 
 
+def test_anthropic_without_fallbacks(monkeypatch):
+    """A model that does not offer fallbacks rejects the field; the request goes again without it."""
+    monkeypatch.setattr(config, "load", lambda: config.Config("https://api.anthropic.com/v1", "modelo-a"))
+    sent = []
+
+    def request(url, payload, timeout, key=None, extra=None):
+        sent.append(payload)
+        if "fallbacks" in payload:
+            raise llm.LLMError("400: fallbacks: Extra inputs are not permitted")
+        return {"content": [{"type": "text", "text": "Hola"}], "stop_reason": "end_turn"}
+
+    monkeypatch.setattr(llm, "_request", request)
+    assert llm.complete("Sistema", "Transcripción") == "Hola"
+    assert ["fallbacks" in p for p in sent] == [True, False]
+
+
 def test_local_or_remote():
     for url in ("http://127.0.0.1:8080/v1", "http://localhost:11434/v1", "http://192.168.1.20:8000/v1",
                 "http://gpu-box.local:8080/v1", "http://[::1]:8080/v1"):

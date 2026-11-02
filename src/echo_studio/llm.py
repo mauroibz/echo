@@ -24,8 +24,8 @@ ANTHROPIC_VERSION = "2023-06-01"
 # Anthropic's current models always think before answering, and thinking counts against max_tokens:
 # room for both, well under the time a non-streamed request may take.
 ANTHROPIC_MAX_TOKENS = 16000
-# On these models a declined request is answered by another model in the same call ("fallbacks").
-ANTHROPIC_FALLBACK_MODELS = ("modelo-a",)
+# A declined request is answered by another model in the same call ("fallbacks"). Models that do
+# not offer it reject the field, and the request is sent again without it.
 ANTHROPIC_FALLBACK_BETA = "server-side-fallback-2026-07-01"
 
 # Some local servers return a reasoning model's thinking inline, before the answer.
@@ -116,11 +116,14 @@ def _complete_anthropic(system: str, user: str, cfg: config.Config) -> str:
     # No temperature: Anthropic's current models refuse sampling settings.
     payload = {"model": cfg.llm_model, "max_tokens": ANTHROPIC_MAX_TOKENS, "system": system,
                "messages": [{"role": "user", "content": user}]}
-    extra = {}
-    if cfg.llm_model.startswith(ANTHROPIC_FALLBACK_MODELS):
-        payload["fallbacks"] = "default"
-        extra["anthropic-beta"] = ANTHROPIC_FALLBACK_BETA
-    reply = _request(_base(cfg) + "/messages", payload, TIMEOUT_S, extra=extra)
+    url = _base(cfg) + "/messages"
+    try:
+        reply = _request(url, {**payload, "fallbacks": "default"}, TIMEOUT_S,
+                         extra={"anthropic-beta": ANTHROPIC_FALLBACK_BETA})
+    except LLMError as e:
+        if "fallback" not in str(e).lower():
+            raise
+        reply = _request(url, payload, TIMEOUT_S)
     stop = reply.get("stop_reason")
     if stop == "refusal":
         raise LLMError("the model declined to summarize this recording")
