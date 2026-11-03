@@ -33,6 +33,10 @@ tag.
 
 ### Fixed
 
+- Echo Studio: the Action items page opens 2.7x faster with a big library (0.3 s for 180 items),
+  a check mark updates its row instead of the whole page (0.9 s to 0.05 s), the search waits for
+  a pause in typing, and coming back to an unchanged page rebuilds nothing.
+
 - `echo-app stop` (and Stop) returned a moment before a new recording could start, so `stop`
   followed at once by `record` could say another recording was active.
 

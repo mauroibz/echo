@@ -704,8 +704,12 @@ job records its speed in `~/.local/state/echo/speed.json`, from which the window
 dialog and doctor say how long transcription takes on this computer.
 
 A GitHub Actions workflow (`.github/workflows/test.yml`) runs the fast suite on Ubuntu and in a
-Fedora container on every push and checks that the transcription profile still resolves from the
-lockfile. `install.sh` installs the pinned Python with `uv python install` before syncing, because
+Fedora container for each pull request and each push to `main` (once per push: a newer push
+cancels the run still going), and checks that the transcription profile still resolves from the
+lockfile. The suite runs through `.github/run-tests.sh`: some tests wait on real processes and
+timers, and a shared runner is sometimes slow enough to miss one, so the failed tests run once
+more alone. A test that passes then shows as a "Flaky tests" warning on the run, to be fixed;
+one that fails again fails the job. `install.sh` installs the pinned Python with `uv python install` before syncing, because
 distribution builds of uv (Fedora's) turn automatic Python downloads off. Releases are tagged
 `vX.Y.Z` and listed in `CHANGELOG.md`.
 

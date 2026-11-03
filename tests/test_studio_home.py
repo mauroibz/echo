@@ -270,13 +270,14 @@ def test_action_items_page_across_meetings(swindow, lib, server):
     assert page.list.undo_bar.isVisibleTo(page)
     page.list.undo_bar.undo()
     assert tile("open") == 3
-    page.filter.setText("lucia")  # an owner, accents aside
-    assert [it["text"] for it in page.list.items] == ["Reservar sala"]
+    page.filter.setText("lucia")  # an owner, accents aside; filtered once typing pauses
+    assert wait_until(lambda: [it["text"] for it in page.list.items] == ["Reservar sala"], 2)
     page.filter.setText("planificación")  # a meeting
-    assert [it["text"] for it in page.list.items] == ["Revisar contrato"]
+    assert wait_until(lambda: [it["text"] for it in page.list.items] == ["Revisar contrato"], 2)
     page.filter.setText("nada de esto")
-    assert not page.list.isVisibleTo(page) and page.empty_title.text() == "Nothing matches"
+    assert wait_until(lambda: not page.list.isVisibleTo(page), 2) and page.empty_title.text() == "Nothing matches"
     page.filter.clear()
+    page.reload()
     # The band's tiles filter, and an owner's chip.
     page.tiles["unowned"].click()
     assert [it["text"] for it in page.list.items] == ["Pedir presupuesto", "Revisar contrato"]
