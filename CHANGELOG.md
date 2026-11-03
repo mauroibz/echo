@@ -9,46 +9,42 @@ tag.
 
 ### Added
 
-- The speaker naming bar has a dropdown beside the name: the meeting's invitees, the people the
-  voice sounds closest to, and everyone you have named.
-
-- The recording dock has Notes (N): the recording's notes in a field under the dock, saved as
-  you type.
+- Echo Studio: an Action items page in the rail (Ctrl+4) with every meeting's open items: a card
+  per meeting (date, people, tags), each item with its owner, date, moment and tracker state, and
+  round buttons to edit, send (an envelope that lights up), check off and discard. The counts at
+  the top (open, to send, in tracker, no owner) filter, as do owner chips and a search.
+- Echo Studio: Switch all on (or off) for a meeting's items; Undo (and Ctrl+Z) after checking an
+  item off, discarding it or switching them all; keys for the item lists (↑↓ or J/K, Space, T, E,
+  Delete).
+- The recording dock has Notes (N): the recording's notes in a field under the dock, saved as you
+  type. Ctrl+T in it writes the recording's time (`[12:34]`), and Echo Studio's minutes cover what
+  was said at that moment, as they do for a marker.
 - Settings → General: "Switch to the recording dock when a recording starts".
-- Ctrl+T in the dock's notes writes the recording's time (`[12:34]`); Echo Studio's minutes cover
-  what was said at that moment, as they do for a marker.
-- Echo Studio: an Action items page in the rail (Ctrl+4) with every meeting's open items, a card
-  per meeting (date, people, tags), each item with chips for owner, date, moment and tracker
-  state and round buttons for edit, send (an envelope that lights up), done and discard; counts in the band that filter (open, to send, in tracker, no owner), owner
-  chips and a search.
-- Echo Studio: Switch all on (or off) for a meeting's items, Undo (and Ctrl+Z) after checking an
-  item off, discarding it or switching them all, and keys for the item lists (↑↓ or J/K, Space,
-  T, E, Delete).
+- The speaker naming bar has a list beside the name: the meeting's invitees, the people the voice
+  sounds closest to, and everyone you have named.
 
 ### Changed
 
 - Speakers: one person is one speaker. Echo joins the same voice heard on both tracks of a call,
   speakers that sound like the same known person, and fragments of a few seconds; on the calls
-  measured, a 3-person call went from 9 speakers to 3. Recordings already transcribed are
-  grouped the first time they are opened, "Group speakers again" on a name groups them again
-  with the voices learned since, and "Separate again" undoes a join.
+  measured, a 3-person call went from 9 speakers to 3. Recordings already transcribed are grouped
+  the first time they are opened, "Group speakers again" on a name groups them with the voices
+  learned since, and "Separate again" undoes a join.
 - Speakers: a voice learned from two recordings names that person by itself when the match is
-  clear, and suggestions come from 0.75 similarity with a clear lead (they measured right every
-  time on real calls). Naming a speaker with a name already used in the recording joins them.
-
+  clear, and suggestions come from 0.75 similarity with a clear lead (right every time on the
+  calls measured). Naming a speaker with a name already used in the recording joins them.
 - Echo Studio: Record heads the rail, with the waveform and the elapsed time, so recording no
   longer starts from the list of past meetings. The Briefing's icon is a house.
-- Echo Studio: action items have their own view beside Minutes, with a done checkbox and a
-  To tracker switch per item; checked-off items move to the end, folded under "N done". Sending is opt-in: nothing goes to the tracker until switched on.
-  Ready to send… is replaced by "Done with this meeting"; meetings marked ready in 1.5.0 keep
-  their items. Scrolling the items, the Briefing and People no longer repaints every card.
+- Echo Studio: action items have their own view beside Minutes, with a done mark and a To tracker
+  switch per item; checked-off items move to the end, folded under "N done". Sending is opt-in:
+  nothing goes to the tracker until switched on. Ready to send… is replaced by "Done with this
+  meeting"; meetings marked ready in 1.5.0 keep their items.
 
 ### Fixed
 
-- Echo Studio: the Action items page opens 2.7x faster with a big library (0.3 s for 180 items),
-  a check mark updates its row instead of the whole page (0.9 s to 0.05 s), the search waits for
-  a pause in typing, and coming back to an unchanged page rebuilds nothing.
-
+- Echo Studio: scrolling the action items, the Briefing and People no longer stutters, and the
+  Action items page opens 2.7x faster with a big library (0.3 s for 180 items); a check mark
+  updates its row instead of the whole page (0.9 s to 0.05 s).
 - `echo-app stop` (and Stop) returned a moment before a new recording could start, so `stop`
   followed at once by `record` could say another recording was active.
 
