@@ -1,6 +1,5 @@
 """Quick notes, the record toggle and titles from the first sentence."""
 
-import json
 import sys
 import threading
 import time
@@ -9,6 +8,7 @@ from pathlib import Path
 from PySide6.QtWidgets import QApplication
 
 from echo_app import cli, recorder, settings
+from echo_app.fsutil import atomic_write_json
 from echo_app.library import Library, auto_title
 from echo_app.worker.planning import join_text
 from test_ui import _transcribed, lib, pump, qapp, wait_until, wav, window  # noqa: F401 - fixtures
@@ -85,14 +85,19 @@ def test_cli_toggle_and_quick_note(tmp_path, monkeypatch, capsys):
     assert q.rec.meta.quick_note and q.rec.meta.tags == ["nota"]
     time.sleep(0.8)
 
+    # Queued as the recorder queues it when it finishes, so `--wait` never looks in between (it
+    # failed on CI when it did: no request and no transcript yet reads as "not transcribed").
+    q.rec.request_transcription()
+
     def transcribed_later():
         deadline = time.monotonic() + 20
         while time.monotonic() < deadline:
             rec = lib_.get(q.rec.id)
             if rec and rec.meta.state == "ready":
                 segs = [{"start": 0.0, "end": 0.8, "text": "Comprar pan.", "paragraph": True}]
-                rec.path("transcript.json").write_text(json.dumps({"segments": segs, "text": join_text(segs),
-                                                                   "created": "x"}))
+                atomic_write_json(rec.path("transcript.json"), {"segments": segs, "text": join_text(segs),
+                                                                "created": "x"})
+                rec.cancel_transcription()  # the worker's job is done
                 return
             time.sleep(0.1)
 
