@@ -62,9 +62,14 @@ items' column beside the summary was also too narrow once the window was not max
 - The Action items page was first a long list of the meeting view's rows under plain headings,
   hard to read. It is now a card per meeting (a date tile in a color kept per meeting, the people,
   tags and a done bar) with dense rows: owner, date, moment and tracker state as chips, the
-  description on one elided line, the switch in a column named once per card, and edit and
-  discard only on the item under the pointer or the keyboard. The band's counts double as
-  filters. The column is at most 980 px wide so lines stay readable on a wide window. The
+  description on one elided line, and four round buttons on the right: edit, an envelope for
+  the tracker (amber when switched on, teal once sent), a check for done and a cross for
+  discard, always in sight. A checkbox at the left and a switch read less clearly, and the
+  first version showed edit and discard only under the pointer: a row passing under a still
+  pointer while scrolling then cost 3.5 ms of layout against 0.3 ms for a scroll step, which
+  was the stutter the user felt. A done bar in each card's head read as something still
+  loading when nothing was done, and is gone; the head says how many are open and done. The
+  band's counts double as filters. The column is at most 980 px wide so lines stay readable on a wide window. The
   meeting's own view keeps its full rows: there the user polishes items one by one.
 - Ctrl+T writes the recorded audio's length (what `status()["elapsed"]` counts), which is the
   time in the recording the note will play from.

@@ -25,8 +25,9 @@
   current item outlined; test
 - [x] 2.11 The rail's Action items page (Ctrl+4): `open_items` across the library, a heading per
   meeting, a filter; tests
-- [x] 2.13 The page's UI pass: meeting cards with date tile, people, tags and done bar; dense rows
-  with chips; counts that filter; owner chips; tools on hover; light and dark screenshots; tests
+- [x] 2.13 The page's UI pass: meeting cards with date tile, people and tags; dense rows with chips
+  and round edit / envelope / check / cross buttons; counts that filter; owner chips; scrolling
+  measured without hover layout; light and dark screenshots; tests
 - [x] 2.12 A note line starting with a time gets the passage around it in the summary request; test
 
 ## 3. Documents
