@@ -925,10 +925,23 @@ class Session:
             if not self.rec.folder.exists():
                 return "empty"
             if not self.alive():
+                self._wait_for_lock(deadline)
                 self.rec.reload()
                 return "ready" if self.rec.meta.state == READY else "failed"
             time.sleep(0.1)
         return None
+
+    def _wait_for_lock(self, deadline: float) -> None:
+        """The supervisor stops answering a moment before its process lets go of the recording lock;
+        until it has, a new recording is refused ("Another recording is active"). Seen on CI as
+        `stop` then `record` failing; waiting here makes a returned stop mean free to record."""
+        lib = Library(self.rec.folder.parent.parent)
+        while time.monotonic() < deadline:
+            lock = try_lock(lib)
+            if lock is not None:
+                lock.close()
+                return
+            time.sleep(0.05)
 
     def current_take(self) -> Path | None:
         st = read_status(self.rec) or {}
