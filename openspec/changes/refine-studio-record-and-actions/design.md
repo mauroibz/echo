@@ -71,5 +71,13 @@ items' column beside the summary was also too narrow once the window was not max
   loading when nothing was done, and is gone; the head says how many are open and done. The
   band's counts double as filters. The column is at most 980 px wide so lines stay readable on a wide window. The
   meeting's own view keeps its full rows: there the user polishes items one by one.
+- Performance, measured offscreen with 180 open items in 30 meetings: the page took 0.83 s to
+  show and 0.9 s per check mark. Chips are painted widgets (a frame with a style sheet and two
+  labels each cost 6x as much), the one-line description paints its cut instead of setting a new
+  text on every resize (20 times per item during layout), a check mark, discard or switch patches
+  the rows it changed and the meeting cards' counts (`ActionList._patch`; adding or moving rows,
+  as an undo does, rebuilds), the search waits 150 ms after the last key, and the page is built
+  on first show and not rebuilt when nothing changed. Now 0.3 s to show, 0.05 s per check mark,
+  0.06 s to come back.
 - Ctrl+T writes the recorded audio's length (what `status()["elapsed"]` counts), which is the
   time in the recording the note will play from.
