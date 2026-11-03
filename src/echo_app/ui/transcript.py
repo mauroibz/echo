@@ -233,6 +233,13 @@ class TranscriptPanel(SetsMixin, SpeakersMixin, FindMixin, QWidget):
         self.name_edit.setMinimumWidth(160)
         self.name_edit.returnPressed.connect(self._name_typed)
         nl.addWidget(self.name_edit)
+        self.name_pick = QToolButton()
+        self.name_pick.setIcon(icon("chevron-down"))
+        self.name_pick.setToolTip("Choose someone Echo knows: who was invited, the voices this speaker sounds "
+                                  "closest to, everyone else")
+        self.name_pick.setAccessibleName("Choose a known person")
+        self.name_pick.clicked.connect(self._name_choices)
+        nl.addWidget(self.name_pick)
         self.name_yes = QPushButton(icon("ok"), "")
         self.name_yes.clicked.connect(self._name_suggested)
         nl.addWidget(self.name_yes)
@@ -247,7 +254,7 @@ class TranscriptPanel(SetsMixin, SpeakersMixin, FindMixin, QWidget):
         self.name_skip.setToolTip("Do not ask about this recording's speakers again (the margin still names them)")
         self.name_skip.clicked.connect(self._name_dismiss)
         nl.addWidget(self.name_skip)
-        for b in (self.name_play, self.name_yes, self.name_other, self.name_me, self.name_skip):
+        for b in (self.name_play, self.name_pick, self.name_yes, self.name_other, self.name_me, self.name_skip):
             b.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self._ask: int | None = None  # the speaker the bar asks about
         self._ask_typing = False  # "Someone else…" was pressed: the name field replaces the suggestion
@@ -326,6 +333,7 @@ class TranscriptPanel(SetsMixin, SpeakersMixin, FindMixin, QWidget):
             self.state.show_state("No recording selected", "Select a recording on the left to see its transcript.", glyph="audio-lines")
             return
         rec = self.library.get(rec.id) or rec
+        rec = self._group_once(rec)
         self.rec = rec
         st = rec.transcript_status()
         has_text = rec.is_edited() or rec.path(TRANSCRIPT).exists()

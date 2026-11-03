@@ -30,8 +30,8 @@ MIN_SECONDS = 1.5  # shorter passages take a neighbor's speaker instead of an em
 # monologue) never split even at 0.15. On Spanish readers with quick turns 0.4 merged two people
 # in three of eight conversations, 0.35 in one. See docs/design.md.
 THRESHOLD = 0.35
-# A recording's speaker is suggested as a known person when their centroids are at least this
-# similar: different chapters by one reader measured 0.956 or more, different readers 0.72 at most.
+# What `dictionary.recognize` was tuned with: different chapters by one reader measured 0.956 or
+# more, different readers 0.72 at most. Suggestions now use speaker_groups.SUGGEST, measured on calls.
 RECOGNIZE = 0.85
 MIN_SPEAKER_SECONDS = 8.0  # a "speaker" with less speech than this joins the nearest other one
 MIN_GLIMPSE = 0.4  # an interruption shorter than this has no embedding, too little to tell voices by

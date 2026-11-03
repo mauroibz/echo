@@ -134,8 +134,8 @@ def name_user(rec: Recording, record: dict) -> int | None:
     In a call, the one speaker on the microphone track is the user: the track says so, and their
     voice is learned from it. Otherwise it is the speaker whose voice was suggested as the user's;
     that match is not folded back into the voice, so one wrong match cannot drift it. A name the
-    user gave is never replaced, and nobody else is named here: other people are confirmed by the
-    user (see docs/design.md).
+    user gave is never replaced. Other people are named by voice only when certain, after the
+    transcript is saved (speaker_groups.apply, see docs/design.md).
     """
     from .. import dictionary, settings
 
@@ -380,6 +380,15 @@ class Worker:
             rec.path(VOICEPRINTS).unlink(missing_ok=True)
         atomic_write_json(rec.path(TRANSCRIPT), transcript)
         rec.path(RELABELED).unlink(missing_ok=True)  # it was for the labels just replaced
+        if who:
+            try:
+                from .. import speaker_groups
+
+                joined, named = speaker_groups.apply(rec.reload())
+                if joined or named:
+                    log.info("%s: %d speakers joined, %d named by voice", rec.id, joined, len(named))
+            except Exception:  # noqa: BLE001 - grouping must not fail a finished transcription
+                log.exception("%s: speakers not grouped", rec.id)
         if rec.meta.title_auto:
             from ..library import auto_title
 
@@ -523,17 +532,24 @@ class Worker:
                 prev = who
         from .. import dictionary
 
+        from .. import speaker_groups
+
+        voices = dictionary.voices()
         suggestions = {}
         for n, c in centroids.items():
-            best = dictionary.recognize(c, speakers.similarity, speakers.RECOGNIZE)
+            best = speaker_groups.suggestion(c, voices)
             if best:
                 suggestions[str(n)] = best
         record = {"count": len(centroids), "centroids": {str(k): v for k, v in centroids.items()},
                   "suggested": suggestions, "model": f"{models.SPEAKER.repo}@{models.SPEAKER.revision}"}
         if tracks is not None:
             record["tracks"] = tracks
-        if rec.reload().meta.speaker_merges:
-            rec.update(speaker_merges={})  # new labels are numbered afresh: old merges would join strangers
+        if rec.reload().meta.speaker_merges or rec.meta.speakers_by_voice:
+            # New labels are numbered afresh: old merges would join strangers, and the names Echo
+            # gave by voice were for the old numbers.
+            names = {k: v for k, v in rec.meta.speakers.items() if int(k) not in rec.meta.speakers_by_voice}
+            rec.update(speaker_merges={}, speakers_by_voice=[], speakers=names)
+        rec.update(speakers_grouped=0)  # grouped again once the transcript is saved
         me = name_user(rec, record)
         if me is not None:
             record["me"] = me

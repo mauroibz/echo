@@ -124,6 +124,8 @@ class Meta:
     speakers_off: bool = False  # no speaker labels for this recording (a monologue)
     naming_dismissed: bool = False  # "Not now" on the naming bar: do not ask about its speakers again
     speaker_merges: dict[str, int] = field(default_factory=dict)  # speaker -> the speaker it is the same person as
+    speakers_grouped: int = 0  # speaker_groups.VERSION once its speakers were grouped (it runs once)
+    speakers_by_voice: list[int] = field(default_factory=list)  # speakers Echo named by their voice
     # "Said by": [{transcript, segment, speaker, name} + {text, start, end} for words split off a passage]
     speaker_fixes: list[dict[str, Any]] = field(default_factory=list)
     extracted_from: dict[str, Any] | None = None  # source video: name, sha256, size, track, method

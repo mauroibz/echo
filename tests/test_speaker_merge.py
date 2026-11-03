@@ -52,7 +52,7 @@ def test_a_new_transcription_drops_merges(tmp_path, monkeypatch):
 
     lib = Library(tmp_path / "data")
     rec = _call(lib, tmp_path)
-    _embedder(monkeypatch, [1])
+    _embedder(monkeypatch, [1, 2])  # two voices: grouping finds nothing to join by itself
     _process(lib, rec)
     rec.merge_speakers(2, 1)
     assert rec.meta.speaker_merges == {"2": 1}
