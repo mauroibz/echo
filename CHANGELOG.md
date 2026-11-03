@@ -30,7 +30,8 @@ tag.
 - Speakers: one person is one speaker. Echo joins the same voice heard on both tracks of a call,
   speakers that sound like the same known person, and fragments of a few seconds; on the calls
   measured, a 3-person call went from 9 speakers to 3. Recordings already transcribed are
-  grouped the first time they are opened, and "Separate again" undoes a join.
+  grouped the first time they are opened, "Group speakers again" on a name groups them again
+  with the voices learned since, and "Separate again" undoes a join.
 - Speakers: a voice learned from two recordings names that person by itself when the match is
   clear, and suggestions come from 0.75 similarity with a clear lead (they measured right every
   time on real calls). Naming a speaker with a name already used in the recording joins them.

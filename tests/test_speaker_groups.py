@@ -120,3 +120,21 @@ def test_the_window_groups_older_recordings_once_and_offers_known_people(window,
     tp.name_speaker(1, "Lucía")
     tp.name_speaker(3, "Lucía")
     assert rec.reload().speaker(3) == 1
+
+
+def test_group_again_with_voices_learned_since(window, lib, tmp_path, monkeypatch):
+    rec = _call(lib, tmp_path, [(0, _near(1, 0.75), 600), (0, _near(1, 0.75), 400), (1, _near(6, 0.0), 300)])
+    known: dict = {}
+    monkeypatch.setattr(dictionary, "voices", lambda: known)
+    messages = []
+    window.transcript.message.connect(messages.append)
+    window._select(rec.id)
+    pump(200)
+    assert rec.reload().speaker_numbers() == [1, 2, 3]  # grouped once: nothing known, nothing to join
+    known["Lucía"] = {"voice": _near(1, 0.0), "recordings": 2}  # learned since, in other recordings
+    window.transcript.group_again()
+    rec = rec.reload()
+    assert rec.speaker(2) == 1 and rec.meta.speakers.get("1") == "Lucía"
+    assert messages[-1] == "Speakers: joined 1 speaker and named Lucía by voice."
+    window.transcript.group_again()
+    assert messages[-1] == "Speakers: nothing to join; each one sounds like someone else."

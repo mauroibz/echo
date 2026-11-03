@@ -159,7 +159,9 @@ sound like the same person you named before, the same voice on both tracks of a 
 happens without headphones, when the microphone also hears the call), and fragments of a few
 seconds in a long recording, which join the nearest voice. Speakers you named differently are
 never joined, and "Separate again" on a name undoes a join. Recordings transcribed before this
-version are grouped once, the first time you open them.
+version are grouped once, the first time you open them. Echo groups a recording by itself only
+once; after you have named more people, "Group speakers again" on a name joins what the voices
+it knows now tell apart (a join you separated may come back).
 
 **You.** Answer "It's me" once (Echo asks your name, kept under Settings → Your name) and from
 then on Echo names you itself, wherever it recognizes your voice and on the microphone side of

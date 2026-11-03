@@ -152,7 +152,8 @@ speakers that sound like the same known person, speakers on different tracks of 
 voices are at least 0.82 similar, and speakers with under 1.5% of the speech (and under a minute),
 which join the nearest voice. It SHALL never join speakers the user named differently. Recordings
 labeled before SHALL be grouped once, when first shown, and not again after the user separates
-them.
+them unless the user asks: "Group speakers again" SHALL group the recording with the voices
+known then.
 
 A speaker SHALL be suggested as a known person from 0.75 similarity with a lead of 0.1 over
 everyone else, by the voices as they are now, and SHALL be named without asking from 0.85 with a
