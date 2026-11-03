@@ -8,18 +8,52 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QTextCursor
 from PySide6.QtWidgets import QCompleter, QMenu
 
-from .. import align, dictionary, extensions, relabel, settings
+from .. import align, dictionary, extensions, relabel, settings, speaker_groups
 from ..library import Recording
 from .common import icon
 from .transcript_text import NAME_SAMPLE_S, _html, shown_segments
 
 
 log = logging.getLogger(__name__)
+NAME_CHOICES_CLOSEST = 5  # known voices offered as "sounds closest to"
 
 
 class SpeakersMixin:
     """TranscriptPanel's speakers: the naming bar, names and colors, merging and separating,
     voices, and fixing who said a passage. Expects the panel's recording, editor and pieces."""
+
+    # ---- grouping and suggestions ----
+    def _group_once(self, rec: Recording) -> Recording:
+        """A recording labeled before speakers were grouped: group it now, once (speaker_groups)."""
+        if rec.meta.speakers_grouped >= speaker_groups.VERSION or rec.meta.speakers_off \
+                or not (rec.transcript() or {}).get("speakers"):
+            return rec
+        try:
+            joined, named = speaker_groups.apply(rec)
+        except Exception:  # noqa: BLE001 - never in the way of showing the transcript
+            log.exception("%s: speakers not grouped", rec.id)
+            rec.update(speakers_grouped=speaker_groups.VERSION)
+            return rec
+        rec = rec.reload()
+        bits = ([f"joined {joined} speaker{'s' if joined != 1 else ''} that were one person"] if joined else []) + \
+               ([f"named {', '.join(named)} by voice"] if named else [])
+        if bits:
+            self._shown_signature = None  # the margin's names change: draw the text again
+            msg = "Speakers: " + " and ".join(bits) + ". Right-click a name to change it."
+            self.message.emit(msg[0].upper() + msg[1:])
+        return rec
+
+    @staticmethod
+    def _suggestions(rec: Recording) -> dict[str, str]:
+        """Who each unnamed speaker sounds like: from the voices as they are now (they get better as
+        the user names people), else what the worker suggested when it labeled them."""
+        stored = dict(((rec.transcript() or {}).get("speakers") or {}).get("suggested") or {})
+        try:
+            live = {str(k): v for k, v in speaker_groups.suggestions(rec).items()}
+        except Exception:  # noqa: BLE001 - a broken voices file must not hide the transcript
+            log.exception("voices not read")
+            live = {}
+        return {**stored, **live}
 
     # ---- the naming bar ----
     def _unnamed_speaker(self) -> int | None:
@@ -53,7 +87,7 @@ class SpeakersMixin:
         rec = self.rec
         info = (rec.transcript() or {}).get("speakers") or {}
         your_name = settings.load()[0].your_name.strip()
-        suggested = (info.get("suggested") or {}).get(str(n))
+        suggested = self._suggestions(rec).get(str(n))
         if suggested and (suggested == your_name or suggested in rec.meta.speakers.values()):
             suggested = None  # already someone else in this recording
         me_named = info.get("me") is not None or (your_name and your_name in rec.meta.speakers.values())
@@ -74,6 +108,7 @@ class SpeakersMixin:
             completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
             self.name_edit.setCompleter(completer)
         self.name_edit.setVisible(typing)
+        self.name_pick.setVisible(typing and not self._ask_your_name)
         self.name_yes.setVisible(not typing)
         self.name_other.setVisible(bool(suggested) and not typing)
         self.name_me.setVisible(not me_named and not self._ask_your_name)
@@ -96,10 +131,46 @@ class SpeakersMixin:
         self.follow(start, jump=True)
 
     def _name_suggested(self):
-        info = ((self.rec.transcript() or {}).get("speakers") or {}) if self.rec else {}
-        name = (info.get("suggested") or {}).get(str(self._ask))
+        name = self._suggestions(self.rec).get(str(self._ask)) if self.rec else None
         if self._ask is not None and name:
             self.name_speaker(self._ask, name)
+
+    def _name_choices(self):
+        m = self._name_menu()
+        if m is not None:
+            m.exec(self.name_pick.mapToGlobal(self.name_pick.rect().bottomLeft()))
+
+    def _name_menu(self) -> QMenu | None:
+        """The dropdown beside the name: who was invited, the known voices this speaker sounds
+        closest to, then everyone else Echo knows. Choosing one names the speaker."""
+        rec, n = self.rec, self._ask
+        if rec is None or n is None:
+            return None
+        m = QMenu(self)
+        shown: set[str] = set()
+
+        def add(names, title):
+            names = [x for x in dict.fromkeys(names) if x and dictionary.fold(x) not in shown]
+            if not names:
+                return
+            m.addSection(title)
+            for x in names:
+                shown.add(dictionary.fold(x))
+                here = next((k for k, v in rec.meta.speakers.items() if v == x), None)
+                label = f"{x}   (speaker {here} too)" if here else x
+                m.addAction(label, lambda x=x: self.name_speaker(n, x))
+
+        add(extensions.gather("speaker_names", rec), "Invited")
+        try:
+            closest = speaker_groups.ranked(rec, n)[:NAME_CHOICES_CLOSEST]
+        except Exception:  # noqa: BLE001 - a broken voices file: the list without it
+            closest = []
+        add(closest, "Sounds closest to")
+        people = sorted((e.name for e in dictionary.current().entries if e.kind == dictionary.PEOPLE), key=str.lower)
+        add(people, "Everyone")
+        if m.isEmpty():
+            m.addAction("Nobody yet: type a name").setEnabled(False)
+        return m
 
     def _name_someone_else(self):
         self._ask_typing = True
@@ -148,7 +219,7 @@ class SpeakersMixin:
         info = (rec.transcript() or {}).get("speakers") or {}
         if not info:
             return []
-        suggested = info.get("suggested") or {}
+        suggested = self._suggestions(rec)
         out, last = [], None
         for a, _b, _k, who in self._pieces:
             n = rec.speaker(who)  # the user's fixes are in the pieces; merged speakers are one
@@ -184,7 +255,7 @@ class SpeakersMixin:
         if rec is None:
             return
         info = (rec.transcript() or {}).get("speakers") or {}
-        suggested = (info.get("suggested") or {}).get(str(n))
+        suggested = self._suggestions(rec).get(str(n))
         current = rec.meta.speakers.get(str(n))
         m = QMenu(self)
         if suggested and not current:
@@ -293,6 +364,18 @@ class SpeakersMixin:
         whose voice is remembered so later recordings suggest it."""
         rec = self.rec
         if rec is None:
+            return
+        if rec.meta.speakers_by_voice and n in rec.meta.speakers_by_voice:
+            rec.update(speakers_by_voice=[m for m in rec.meta.speakers_by_voice if m != n])  # the user's now
+        # The same name as another speaker here: the labeling found one person twice.
+        same = next((int(k) for k, v in rec.meta.speakers.items()
+                     if name and v and dictionary.fold(v) == dictionary.fold(name) and rec.speaker(int(k)) != n), None)
+        if same is not None:
+            rec.merge_speakers(n, same)
+            self._remember_voice(rec, rec.speaker(same), rec.meta.speakers.get(str(rec.speaker(same)), name))
+            self.message.emit(f"Speaker {n} is {name}: they are one speaker now.")
+            self._update_margin()
+            self.changed.emit(rec.id)
             return
         names = dict(rec.meta.speakers)
         before = names.get(str(n))

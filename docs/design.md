@@ -373,7 +373,7 @@ cluster centroids, stopping at 0.35. Shorter passages take the previous speaker;
 under 8 s of speech joins the nearest one; a recording with one speaker gets no labels. Each
 speaker change starts a paragraph. The transcript keeps each speaker's centroid, and naming a
 speaker stores it as that person's voice (`voices.json` next to the dictionary), so a later
-recording suggests the name when a centroid is at least 0.85 similar.
+recording suggests the name (see "One speaker per person" below for when).
 
 Measured on conversations built from nine LibriVox readers (two to four speakers, 10 minutes
 each), also passed through one shared phone-band, 12 kb/s Opus and noise channel: every
@@ -495,6 +495,28 @@ it cannot make them out, as confidently as real words: 21 of 96 in one real meet
 them with silence made the model invent other text instead. Such a passage is kept with no text
 (the words in `dropped`).
 
+
+**One speaker per person** (`speaker_groups.py`, stdlib only). On real calls the labeling above
+split people: a 3-person call came out as 9 speakers and a 6-person one as 19. Measured on the
+user's 10 latest calls, from the stored centroids only: without headphones each voice reaches
+both tracks, and since clustering is per track almost everyone appeared twice (0.84 to 0.96
+similar across tracks, while different voices across tracks were 0.78 at most), plus fragments
+of 8 to 40 s. So after labeling the speakers are joined, as ordinary merges the user can undo,
+when they sound like the same known person, when they are on different tracks and at least 0.82
+similar, or when one has under 1.5% of the speech (and under a minute): it joins the nearest
+voice. Speakers named differently by the user are never joined. On those calls the 3-person call
+became 3 speakers, the 6-person one 10, with no join of two people the user had named apart. It
+runs in the worker after labeling and in the window, once per recording (`speakers_grouped`), on
+recordings labeled before it.
+
+Known voices: a leave-one-out test on the user's 28 named speakers (each matched against the
+voices learned from the other recordings) found the right person best every time, at 0.74 to
+0.95, with the best wrong person at 0.61 at most. A speaker is suggested from 0.75 when that
+person leads everyone else by 0.1, using the voices as they are now (so older recordings get
+suggestions as voices are learned), and named without asking from 0.85 with a lead of 0.2 for a
+voice learned from at least two recordings. Such a name is marked (`speakers_by_voice`) and does
+not teach the voice, so a wrong match cannot drift it; renaming makes it the user's. A
+recording transcribed again drops those names with its merges.
 ### Audio backends
 
 All device access goes through `audio/backend.py`. PipeWire (its command-line tools) is used

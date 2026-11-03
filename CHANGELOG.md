@@ -9,6 +9,9 @@ tag.
 
 ### Added
 
+- The speaker naming bar has a dropdown beside the name: the meeting's invitees, the people the
+  voice sounds closest to, and everyone you have named.
+
 - The recording dock has Notes (N): the recording's notes in a field under the dock, saved as
   you type.
 - Settings → General: "Switch to the recording dock when a recording starts".
@@ -23,6 +26,14 @@ tag.
   T, E, Delete).
 
 ### Changed
+
+- Speakers: one person is one speaker. Echo joins the same voice heard on both tracks of a call,
+  speakers that sound like the same known person, and fragments of a few seconds; on the calls
+  measured, a 3-person call went from 9 speakers to 3. Recordings already transcribed are
+  grouped the first time they are opened, and "Separate again" undoes a join.
+- Speakers: a voice learned from two recordings names that person by itself when the match is
+  clear, and suggestions come from 0.75 similarity with a clear lead (they measured right every
+  time on real calls). Naming a speaker with a name already used in the recording joins them.
 
 - Echo Studio: Record heads the rail, with the waveform and the elapsed time, so recording no
   longer starts from the list of past meetings. The Briefing's icon is a house.

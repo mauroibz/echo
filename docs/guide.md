@@ -148,12 +148,25 @@ more; in a recorded call it uses the two tracks to tell your side from theirs.
 
 **Naming.** A bar over the transcript asks about one unnamed speaker at a time, whoever speaks
 most first: ▶ plays a few seconds of them (the playhead and the text go there), then type a name
-and press Enter, or click "Yes, Ana" when the voice matches someone you named before. "Not now"
-stops asking about that recording; the names beside the text can still be clicked.
+and press Enter, or click "Yes, Ana" when the voice matches someone you named before. The arrow
+beside the name lists who you can pick: the meeting's invitees (with Echo Studio), the people
+this voice sounds closest to, then everyone you have named. Giving a speaker a name another
+speaker of the recording already has makes them one speaker. "Not now" stops asking about that
+recording; the names beside the text can still be clicked.
+
+**One speaker per person.** After labeling, Echo joins speakers that are one person: two that
+sound like the same person you named before, the same voice on both tracks of a call (which
+happens without headphones, when the microphone also hears the call), and fragments of a few
+seconds in a long recording, which join the nearest voice. Speakers you named differently are
+never joined, and "Separate again" on a name undoes a join. Recordings transcribed before this
+version are grouped once, the first time you open them.
 
 **You.** Answer "It's me" once (Echo asks your name, kept under Settings → Your name) and from
 then on Echo names you itself, wherever it recognizes your voice and on the microphone side of
-every recorded call. Other people are always suggested for you to confirm.
+every recorded call. Other people are suggested for you to confirm ("sounds like Ana") until
+Echo knows their voice from two recordings you named; then, when a speaker clearly sounds like
+them, Echo names them itself. Right-click the name to change it. A name Echo gave never teaches
+the voice; only the names you give do.
 
 **Fixing labels.**
 
