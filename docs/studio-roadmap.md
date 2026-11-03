@@ -263,6 +263,13 @@ them with `echo-app actions --ready` and reports back with `echo-app item … --
 `--failed`. Sent items show their link and are frozen. A meeting is processed when everything in
 it is sent, so the call can be archived. Echo talks to no tracker.
 
+### S18 Record everywhere, items in a view (`refine-studio-record-and-actions`)
+
+After a few days of use: Record heads the rail (waveform, clock) and the Briefing's hero, so
+recording never needs the list of past meetings. Action items get their own view beside Minutes,
+each with a done checkbox (the user's mark; still no late dates or reminders) and a To tracker
+switch, off by default: sending is opt-in per item, and Mark reviewed replaces Ready to send.
+
 ### S15 Data out (`add-studio-cli-data`)
 
 `echo-app meetings --since DATE --json`, `minutes ID --json` (summary, event, attendees, action
@@ -275,7 +282,8 @@ that tells an agent how to read them.
 
 - **Proactive briefs and catch-up suggestions,** and anything that needs knowledge beyond the
   calendar and the recordings.
-- **Reminders and done-tracking.** The tracker the team uses does that.
+- **Reminders, late dates and a pending list.** The tracker the team uses does that; done is only
+  the user's own check mark (S18).
 - **Connectors that push** (Plane, Trello, Jira, Slack, Notion, SMTP). The CLI and the ready /
   sent hand-off (S17) are the way out; the team's own agent or script does the sending.
 - **An MCP server.** The CLI and an agent skill cover it.
@@ -305,6 +313,7 @@ that tells an agent how to read them.
 | v2c | S12 auto-record, S14 home | Both need the calendar; the home shows all of it. |
 | v2d | S16 after first use | What testing the window on real meetings asked for. |
 | v2e | S17 hand-off to a tracker | Needs S16's polished items; the last piece of call → tracker. |
+| v2f | S18 record everywhere, items in a view | What a few days of use asked for. |
 
 | Phase | Change | Status (2026-11-01) |
 |---|---|---|
@@ -326,3 +335,4 @@ that tells an agent how to read them.
 | v2c | `add-studio-home` | done; archives with the other Studio changes |
 | v2d | `refine-studio-after-first-use` | done; archives with the other Studio changes |
 | v2e | `add-studio-tracker-handoff` | done; archives with the other Studio changes |
+| v2f | `refine-studio-record-and-actions` | done; archives with the other Studio changes |

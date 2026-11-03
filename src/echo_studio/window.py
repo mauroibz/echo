@@ -1,17 +1,21 @@
-"""Studio's window: Echo's window with a rail at the left (Briefing, Recordings, People, Record).
+"""Studio's window: Echo's window with a rail at the left (Record, then Briefing, Recordings, People).
 
 Recordings is Echo's window exactly as it is, so turning Studio off or on never moves the user's
-recordings. The rail shows once Studio has something to show (a summaries server or a calendar);
-until then the window is Echo's.
+recordings. Record heads the rail, with the waveform Echo's Record wears, so a recording starts
+from any page without going to the list of past ones; while it runs, the rail shows how long. The
+rail shows once Studio has something to show (a summaries server or a calendar); until then the
+window is Echo's.
 """
 
 from __future__ import annotations
 
-from PySide6.QtCore import QEvent, QSize, Qt
-from PySide6.QtGui import QKeySequence, QShortcut
-from PySide6.QtWidgets import QButtonGroup, QHBoxLayout, QStackedWidget, QToolButton, QVBoxLayout, QWidget
+from PySide6.QtCore import QEvent, QSize, Qt, QTimer
+from PySide6.QtGui import QFont, QKeySequence, QShortcut
+from PySide6.QtWidgets import (QButtonGroup, QHBoxLayout, QLabel, QStackedWidget, QToolButton, QVBoxLayout,
+                               QWidget)
 
 from echo_app.ui import theme
+from echo_app.ui.common import fmt_duration
 from echo_app.ui.main_window import MainWindow
 
 RAIL_W = 76
@@ -42,7 +46,9 @@ class Rail(QWidget):
             QWidget#studioRail QToolButton:hover {{ background: {theme.rgba('on_deep', 0.10)}; }}
             QWidget#studioRail QToolButton:checked {{ background: {t.accent}; }}
             QWidget#studioRail QToolButton#railRecord {{ background: {t.coral}; border-radius: 24px; }}
+            QWidget#studioRail QToolButton#railRecord:hover {{ background: #ff8a8a; }}
             QWidget#studioRail QToolButton#railRecord[live="true"] {{ background: {t.coral_deep}; }}
+            QWidget#studioRail QLabel#railClock {{ color: {t.coral}; background: transparent; }}
         """)
 
     def changeEvent(self, e):
@@ -66,15 +72,23 @@ class Rail(QWidget):
         return b
 
     def add_record(self) -> QToolButton:
+        """Record, at the head of the rail above the pages, with the clock under it."""
         b = QToolButton()
         b.setObjectName("railRecord")
-        b.setIcon(theme.tinted("mic", "on_accent"))
-        b.setIconSize(QSize(20, 20))
+        b.setIcon(theme.tinted("audio-lines", "on_accent"))
+        b.setIconSize(QSize(22, 22))
         b.setFixedSize(48, 48)
         b.setToolTip("Record (Ctrl+R)")
         b.setAccessibleName("Record")
         b.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.lay.addWidget(b, 0, Qt.AlignmentFlag.AlignHCenter)
+        self.lay.insertWidget(0, b, 0, Qt.AlignmentFlag.AlignHCenter)
+        self.clock = QLabel()
+        self.clock.setObjectName("railClock")
+        self.clock.setFont(theme.display_font(0.78, QFont.Weight.ExtraBold))
+        self.clock.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        self.clock.hide()
+        self.lay.insertWidget(1, self.clock, 0, Qt.AlignmentFlag.AlignHCenter)
+        self.lay.insertSpacing(2, 14)  # apart from the pages: an action, not a place
         return b
 
 
@@ -160,7 +174,27 @@ class StudioWindow(MainWindow):
 
     def _mark_live(self, on: bool):
         b = getattr(self, "rail_record", None)
-        if b is not None:
-            theme.set_role(b, live=on)
-            b.setIcon(theme.tinted("square" if on else "mic", "on_accent"))
-            b.setToolTip("Stop recording" if on else "Record (Ctrl+R)")
+        if b is None:
+            return
+        theme.set_role(b, live=on)
+        b.setIcon(theme.tinted("square" if on else "audio-lines", "on_accent"))
+        b.setToolTip("Stop recording (Ctrl+R)" if on else "Record (Ctrl+R)")
+        b.setAccessibleName("Stop recording" if on else "Record")
+        if not hasattr(self, "_rail_tick"):
+            self._rail_tick = QTimer(self)
+            self._rail_tick.timeout.connect(self._update_rail_clock)
+        self.rail.clock.setVisible(on)
+        if on:
+            self.rail.clock.setText("0:00")
+            self._rail_tick.start(1000)
+        else:
+            self._rail_tick.stop()
+
+    def _update_rail_clock(self):
+        sess = self.recorder_panel.session
+        if sess is None:
+            return
+        try:
+            self.rail.clock.setText(fmt_duration(sess.status().get("elapsed", 0)))
+        except Exception:  # noqa: BLE001 - a status read racing the stop
+            pass

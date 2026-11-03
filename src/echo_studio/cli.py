@@ -164,7 +164,7 @@ def cmd_minutes(args) -> int:
 
 def _item_line(it: dict) -> str:
     bits = [b for b in (it["owner"], f"by {it['due']}" if it["due"] else "", it["at_stamp"]) if b]
-    line = f"- {it['text']}" + (f" ({', '.join(bits)})" if bits else "")
+    line = f"- {'[x] ' if it['done'] else ''}{it['text']}" + (f" ({', '.join(bits)})" if bits else "")
     for extra in (it["description"], f"Context: {it['context']}" if it["context"] else ""):
         if extra:
             line += f"\n  {extra}"
@@ -318,10 +318,11 @@ exit codes:
     m.add_argument("--all", action="store_true", help="also recordings without minutes")
     m.add_argument("--starred", action="store_true", help="only the meetings you starred")
     m.add_argument("--unprocessed", action="store_true",
-                   help="only the meetings not processed yet (not marked ready, or with items not sent)")
+                   help="only the meetings not processed yet (not marked reviewed, or with items to send)")
     m.add_argument("--json", action="store_true", help="as JSON: each recording (as info --json) with "
-                   "\"minutes\" (created, stale, template, excerpt), \"starred\", \"tracker\" (ready_at, "
-                   "processed and how many items are proposed, ready, sent, failed, discarded) and the number "
+                   "\"minutes\" (created, stale, template, excerpt), \"starred\", \"tracker\" (ready_at: when the "
+                   "user marked it reviewed, processed, and how many items are proposed, ready, sent, failed, "
+                   "discarded, done) and the number "
                    "of \"action_items\"")
     m.set_defaults(func=cmd_meetings)
 
@@ -330,9 +331,10 @@ exit codes:
         description="The summary and the action items (not the discarded ones) of each recording. " + keys,
         epilog="""JSON: the recording (as info --json) with "minutes" {path, created, stale, template, excerpt, text}
 and "action_items", each {uid, index, text, description, owner, owner_email, due, at, at_stamp,
-context, note, edited, added_by_user, discarded, state, tracker, failure, quote, recording};
-"state" is proposed, ready (the user approved it for the tracker), sent ("tracker" holds ref, url
-and when) or failed ("failure" says why); "description" is what exactly and why, as said;
+context, note, edited, added_by_user, discarded, done, state, tracker, failure, quote, recording};
+"state" is proposed (not chosen for the tracker), ready (the user switched it on for the tracker),
+sent ("tracker" holds ref, url and when) or failed ("failure" says why); "done" is the user's own
+check mark; "description" is what exactly and why, as said;
 "context" is the user's, for whoever picks the item up; "note" is the user's own and not meant for
 a tracker; "quote" is what was said around the item's time. One ID gives one object,
 several give a list.
@@ -348,7 +350,7 @@ examples:
     t = sub.add_parser(
         "actions", help="action items across recordings, newest first (Echo Studio)",
         description="Action items as polished in the minutes, newest recording first; discarded ones are left "
-                    "out. Echo does not track whether they got done. " + keys,
+                    "out. \"done\" is the user's own check mark, nothing more. " + keys,
         epilog="""examples:
   echo-app actions --since today --json
   echo-app actions 20261031-110000-ab12
@@ -360,7 +362,7 @@ examples:
     t.add_argument("--owner", metavar="NAME", help="one person's items")
     t.add_argument("--discarded", action="store_true", help="include the discarded ones")
     t.add_argument("--ready", action="store_true",
-                   help="only the items the user marked ready to send to a tracker, and not sent yet")
+                   help="only the items the user switched on for a tracker, and not sent yet")
     t.add_argument("--json", action="store_true", help="as JSON: the items as in minutes --json, with the "
                    "recording's \"title\" and \"created\"")
     t.set_defaults(func=cmd_actions)
@@ -368,8 +370,8 @@ examples:
     k = sub.add_parser(
         "item", help="record what happened to an action item sent to a tracker (Echo Studio)",
         description="For whatever sends the ready items to a tracker: mark an item sent, with the tracker's "
-                    "reference and link, or failed, with why (the user sees it, fixes the item and marks the "
-                    "meeting ready again). Only ready items can be marked; a sent item is not changed in Echo "
+                    "reference and link, or failed, with why (the user sees it, fixes the item and switches it "
+                    "on again). Only ready items can be marked; a sent item is not changed in Echo "
                     "after that.",
         epilog="""examples:
   echo-app actions --ready --json

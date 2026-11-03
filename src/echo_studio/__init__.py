@@ -118,12 +118,14 @@ def open_minutes(rid: str, at: float | None = None) -> None:
     """Show a recording on its minutes (the Minutes view), playing from `at` when given."""
     from .ui import SummaryView
 
-    w = _window
-    w.show_recording(rid, at)
-    for k, v in enumerate(w.views.views(), 1):
-        if isinstance(v, SummaryView):
-            w.views.buttons[k].click()
-            break
+    _open_view(rid, SummaryView, at)
+
+
+def open_actions(rid: str) -> None:
+    """Show a recording on its Action items view."""
+    from .ui import ActionsView
+
+    _open_view(rid, ActionsView)
 
 
 def _build_pages(window) -> None:
@@ -135,13 +137,13 @@ def _build_pages(window) -> None:
     from .home import HomeScreen
     from .people_ui import PeopleScreen
 
-    window.add_page("home", "Briefing", "audio-lines", HomeScreen(window, _meetings, open_minutes, window.show_settings),
-                    "Ctrl+1")
+    window.rail_record = window.rail.add_record()
+    window.rail_record.clicked.connect(window.recorder_panel.toggle_record)
+    window.add_page("home", "Briefing", "house", HomeScreen(window, _meetings, open_minutes, window.show_settings,
+                                                            open_actions), "Ctrl+1")
     window.add_page("recordings", "Recordings", "layers", window.recordings_page, "Ctrl+2")
     window.add_page("people", "People", "users", PeopleScreen(window.library, open_minutes,
                                                               window.open_profile_dialog), "Ctrl+3")
-    window.rail_record = window.rail.add_record()
-    window.rail_record.clicked.connect(window.recorder_panel.toggle_record)
     window.set_rail(active())
 
 
@@ -165,13 +167,31 @@ def speaker_names(rec) -> list[str]:
 
 
 def _offer_view() -> None:
-    """The Minutes view, once a server is set up (at start, or right after Settings)."""
-    from .ui import VIEW_TITLE, SummaryView
+    """The Minutes and Action items views, once a server is set up (at start, or right after
+    Settings). The Action items tab carries how many are left to do."""
+    from .ui import ACTIONS_TITLE, VIEW_TITLE, ActionsView, SummaryView
 
     w = _window
     if w is None or not config.enabled() or any(isinstance(v, SummaryView) for v in w.views.views()):
         return
     w.add_view(VIEW_TITLE, SummaryView(_jobs, message=w.show_message, show_recording=w.show_recording))
+    view = ActionsView(_jobs, show_recording=w.show_recording)
+    view.counted.connect(lambda n: _view_button(view).setText(f"{ACTIONS_TITLE}  {n}" if n else ACTIONS_TITLE))
+    w.add_view(ACTIONS_TITLE, view)
+
+
+def _view_button(view):
+    w = _window
+    return w.views.buttons[w.views.views().index(view) + 1]
+
+
+def _open_view(rid: str, kind, at: float | None = None) -> None:
+    w = _window
+    w.show_recording(rid, at)
+    for k, v in enumerate(w.views.views(), 1):
+        if isinstance(v, kind):
+            w.views.buttons[k].click()
+            break
 
 
 def person_sections(name: str) -> list:

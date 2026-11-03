@@ -1,5 +1,5 @@
-"""Action items in the window: beside a recording's minutes and on a person's page, to polish
-before they go to the team's tracker; on a minutes card, at a glance."""
+"""Action items in the window: in a recording's Action items view and on a person's page, to
+polish, check off as done and choose for the team's tracker; on a minutes card, at a glance."""
 
 from __future__ import annotations
 
@@ -8,14 +8,15 @@ from datetime import date
 
 from PySide6.QtCore import QEvent, Qt, Signal
 from PySide6.QtGui import QFont
-from PySide6.QtWidgets import (QComboBox, QFrame, QHBoxLayout, QLabel, QLineEdit, QPlainTextEdit, QPushButton,
-                               QToolButton, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QFrame, QHBoxLayout, QLabel, QLineEdit, QPlainTextEdit,
+                               QPushButton, QToolButton, QVBoxLayout, QWidget)
 
 from echo_app import export
 from echo_app.ui import theme
 from echo_app.ui.common import fmt_date, icon
 
 from . import actions
+from .widgets import Toggle
 
 
 def fmt_due(day: str) -> str:
@@ -140,10 +141,11 @@ def _area(text: str, placeholder: str, name: str, lines: int) -> QPlainTextEdit:
 
 
 class ActionList(QWidget):
-    """Action items to polish: a recording's (under its minutes) or a person's across recordings.
-    Each can be edited, given context or a note and discarded; discarded ones fold into one line
-    with Restore. A recording's list can also be added to. `compact` leaves the description, context
-    and note out (a card's glance). A time button plays where an item came up."""
+    """Action items to work on: a recording's (its Action items view) or a person's across
+    recordings. Each can be checked off as done, switched on for the tracker, edited, given context
+    or a note and discarded; discarded ones fold into one line with Restore. A recording's list can
+    also be added to. `compact` leaves the description, context and note out. A time button plays
+    where an item came up."""
 
     play = Signal(str, float)  # recording id, seconds
     changed = Signal()  # an actions.json was written
@@ -173,6 +175,8 @@ class ActionList(QWidget):
         self.setStyleSheet(f"""
             QFrame#actionItem {{ background: {t.raised}; border: 1px solid {t.line}; border-radius: 12px; }}
             QFrame#actionItem[discarded="true"] {{ background: transparent; }}
+            QFrame#actionItem[done="true"] {{ background: transparent; }}
+            QFrame#actionItem QCheckBox {{ spacing: 0; padding-top: 2px; }}
             QWidget#actionEditor {{ background: {t.surface}; border: 1px solid {t.accent}; border-radius: 12px; }}
             QLabel#actionNote {{ background: {theme.rgba('amber', 0.16)}; border-radius: 8px; padding: 4px 8px; }}
         """)
@@ -257,27 +261,55 @@ class ActionList(QWidget):
         row = QFrame()
         row.setObjectName("actionItem")
         row.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        if it.get("discarded"):
+        gone, done = bool(it.get("discarded")), bool(it.get("done"))
+        if gone:
             theme.set_role(row, discarded=True)
-        col = QVBoxLayout(row)
-        col.setContentsMargins(12, 8, 6, 10)
+        elif done:
+            theme.set_role(row, done=True)
+        outer = QHBoxLayout(row)
+        outer.setContentsMargins(12, 8, 6, 10)
+        outer.setSpacing(10)
+        if self.editable and not gone:
+            check = QCheckBox()
+            check.setChecked(done)
+            check.setToolTip("Done" if not done else "Not done yet")
+            check.setAccessibleName(f"Done: {it['text']}")
+            check.setCursor(Qt.CursorShape.PointingHandCursor)
+            check.toggled.connect(lambda on, k=_key(it): self._done(k, on))
+            outer.addWidget(check, 0, Qt.AlignmentFlag.AlignTop)
+        col = QVBoxLayout()
         col.setSpacing(3)
+        outer.addLayout(col, 1)
         top = QHBoxLayout()
         top.setSpacing(2)
         text = QLabel(it["text"])
         text.setWordWrap(True)
         text.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         f = theme.display_font(1.0, QFont.Weight.Bold)
-        f.setStrikeOut(bool(it.get("discarded")))
+        f.setStrikeOut(gone or done)
         text.setFont(f)
-        if it.get("discarded"):
+        if gone or done:
             theme.set_role(text, dim=True)
         top.addWidget(text, 1)
         state = it.get("state", actions.PROPOSED)
         if state == actions.SENT:
             top.addWidget(_sent_chip(it.get("tracker") or {}), 0, Qt.AlignmentFlag.AlignTop)
+        elif self.editable and not gone:
+            # Opt-in: an item goes to the tracker only once switched on here.
+            send = Toggle(state == actions.READY, f"Send “{it['text']}” to your tracker", role="accent")
+            send.toggled.connect(lambda on, k=_key(it): self._send(k, on))
+            lbl = _dim("To tracker")
+            lbl.setWordWrap(False)
+            box = QHBoxLayout()
+            box.setSpacing(6)
+            box.addWidget(lbl)
+            box.addWidget(send)
+            top.addSpacing(8)
+            top.addLayout(box)
+            top.setAlignment(box, Qt.AlignmentFlag.AlignTop)
+            top.addSpacing(4)
         elif state == actions.READY:
-            top.addWidget(_chip("Ready", "amber", "Approved for your tracker; not sent yet"), 0,
+            top.addWidget(_chip("To send", "amber", "Chosen for your tracker; not sent yet"), 0,
                           Qt.AlignmentFlag.AlignTop)
         if self.editable and state != actions.SENT:  # a sent item is the tracker's
             if it.get("discarded"):
@@ -307,11 +339,11 @@ class ActionList(QWidget):
                 meta.addWidget(b, 0, Qt.AlignmentFlag.AlignVCenter)
             col.addLayout(meta)
         if state == actions.FAILED and it.get("failure"):
-            fail = QLabel(f"Could not be sent: {it['failure']}")
+            fail = QLabel(f"Could not be sent: {it['failure']}. Switch it on to send it again.")
             fail.setWordWrap(True)
             fail.setStyleSheet(f"color: {theme.current().coral_deep}; font-weight: 600;")
             col.addWidget(fail)
-        if not self.compact and not it.get("discarded"):
+        if not self.compact and not gone and not done:  # a done item keeps to its line
             if it.get("description"):
                 desc = QLabel(it["description"])
                 desc.setWordWrap(True)
@@ -353,6 +385,18 @@ class ActionList(QWidget):
         rec = self._rec_of(k[0])
         if rec is not None:
             actions.discard(rec, k[1], on)
+            self._written()
+
+    def _done(self, k: tuple[str, int], on: bool):
+        rec = self._rec_of(k[0])
+        if rec is not None:
+            actions.set_done(rec, k[1], on)
+            self._written()
+
+    def _send(self, k: tuple[str, int], on: bool):
+        rec = self._rec_of(k[0])
+        if rec is not None:
+            actions.set_send(rec, k[1], on)
             self._written()
 
     def _written(self):

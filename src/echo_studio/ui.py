@@ -1,14 +1,15 @@
-"""Studio in the window: the Summaries settings page and the Summary view beside the transcript."""
+"""Studio in the window: the Summaries settings page, and the Minutes and Action items views beside
+the transcript."""
 
 from __future__ import annotations
 
 import os
 
-from PySide6.QtCore import Qt, QTimer, QUrl
+from PySide6.QtCore import Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QActionGroup, QDesktopServices, QFont
 from PySide6.QtWidgets import (QApplication, QCheckBox, QDialog, QFormLayout, QFrame, QHBoxLayout, QLabel,
-                               QLineEdit, QMenu, QMessageBox, QPlainTextEdit, QPushButton, QScrollArea, QSplitter,
-                               QToolButton, QVBoxLayout, QWidget)
+                               QLineEdit, QMenu, QPlainTextEdit, QPushButton, QScrollArea, QToolButton,
+                               QVBoxLayout, QWidget)
 
 from echo_app.ui import theme
 from echo_app.ui.common import icon, run_task
@@ -18,6 +19,7 @@ from .actions_ui import ActionList
 from .reading import ReadingBrowser
 
 VIEW_TITLE = "Minutes"
+ACTIONS_TITLE = "Action items"
 
 
 def _dim(text: str = "") -> QLabel:
@@ -184,88 +186,12 @@ class SummaryView(QWidget):
         self.copy_btn.clicked.connect(self.copy)
         bar.addWidget(self.copy_btn)
         lay.addLayout(bar)
-        # The summary at the left, its action items at the right: the items are what leaves the
-        # meeting, so they get a column of their own, as tall as the card.
-        split = QSplitter(Qt.Orientation.Horizontal)
-        split.setChildrenCollapsible(False)
+        # The summary alone: the action items have a view of their own (ActionsView), so neither is
+        # squeezed beside the other when the window is narrow.
         self.text = ReadingBrowser()  # in the reading card, read like the transcript
         self.text.setOpenExternalLinks(True)
         self.text.setAccessibleName("Summary")
-        split.addWidget(self.text)
-        self.actions_box = QWidget()
-        self.actions_box.setMinimumWidth(300)
-        al = QVBoxLayout(self.actions_box)
-        al.setContentsMargins(14, 4, 0, 0)
-        al.setSpacing(4)
-        ah = QHBoxLayout()
-        ah.setSpacing(8)
-        head = QLabel("Action items")
-        head.setFont(theme.display_font(1.25, QFont.Weight.ExtraBold))
-        ah.addWidget(head)
-        self.count = QLabel()
-        self.count.setFont(theme.display_font(0.9, QFont.Weight.Bold))
-        ah.addWidget(self.count)
-        ah.addStretch(1)
-        self.add_btn = QPushButton("Add")
-        self.add_btn.setIcon(icon("pencil"))
-        self.add_btn.setToolTip("Add an action item")
-        self.add_btn.clicked.connect(lambda: self.actions.start_add())
-        ah.addWidget(self.add_btn)
-        al.addLayout(ah)
-        al.addWidget(_dim("Polish them before they go to your team's tracker: edit, add context or a note "
-                          "for yourself, discard what does not apply. Then mark the meeting ready to send."))
-        al.addSpacing(4)
-        # The way to the tracker: Ready to send, what is waiting, what failed, processed.
-        self.send_bar = QFrame()
-        self.send_bar.setObjectName("sendBar")
-        self.send_bar.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        sbv = QVBoxLayout(self.send_bar)
-        sbv.setContentsMargins(12, 9, 9, 9)
-        sbv.setSpacing(6)
-        self.send_status = QLabel()
-        self.send_status.setWordWrap(True)
-        sbv.addWidget(self.send_status)
-        sb = QHBoxLayout()
-        sb.setSpacing(8)
-        sb.addStretch(1)
-        sbv.addLayout(sb)
-        self.ready_btn = QPushButton("Ready to send…")
-        self.ready_btn.setToolTip("Approve this meeting's items for your tracker")
-        self.ready_btn.clicked.connect(self.mark_ready)
-        sb.addWidget(self.ready_btn)
-        self.unready_btn = QPushButton("Back to review")
-        self.unready_btn.setFlat(True)
-        self.unready_btn.setToolTip("Take back the items not sent yet")
-        self.unready_btn.clicked.connect(self.unmark_ready)
-        sb.insertWidget(1, self.unready_btn)
-        al.addWidget(self.send_bar)
-        al.addSpacing(6)
-        self.actions = ActionList(editable=True)
-        self.actions.play.connect(lambda rid, at: self.show_recording(rid, at))
-        self.actions.relaid.connect(self._count)
-        self.actions.changed.connect(self._seen)
-        self._mtime = None
-        self.poll = QTimer(self)  # whatever sends the items writes actions.json from outside
-        self.poll.timeout.connect(self._poll)
-        scroll = QScrollArea()
-        # On the reading card's surface, not the window's.
-        scroll.setStyleSheet("QScrollArea, QScrollArea > QWidget > QWidget { background: transparent; }")
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        inner = QWidget()
-        il = QVBoxLayout(inner)
-        il.setContentsMargins(0, 0, 6, 0)
-        il.addWidget(self.actions)
-        il.addStretch(1)
-        scroll.setWidget(inner)
-        self.actions_scroll = scroll
-        al.addWidget(scroll, 1)
-        split.addWidget(self.actions_box)
-        split.setStretchFactor(0, 3)
-        split.setStretchFactor(1, 2)
-        split.setSizes([560, 420])
-        lay.addWidget(split, 1)
+        lay.addWidget(self.text, 1)
         self.show_subject(None, None)
 
     def show_subject(self, rec, linked):
@@ -280,9 +206,6 @@ class SummaryView(QWidget):
         self.summarize_btn.setText("Summarize again" if data else "Summarize")
         self.copy_btn.setVisible(data is not None)
         self.follow_btn.setVisible(data is not None and not busy)
-        self.actions.set_recording(rec if data is not None else None)
-        self._mtime = self._actions_mtime()
-        self.actions_box.setVisible(data is not None and not busy)
         if data is not None:
             self.text.show_markdown(data["text"])
         else:
@@ -336,94 +259,6 @@ class SummaryView(QWidget):
 
         run_task(lambda: followup.draft(rec), on_done=done, on_error=failed)
 
-    def _count(self):
-        n = sum(1 for it in self.actions.items if not it.get("discarded"))
-        self.count.setText(str(n) if n else "")
-        t = theme.current()
-        self.count.setStyleSheet(f"color: {t.accent_deep}; background: {t.accent_soft}; border-radius: 9px; "
-                                 "padding: 1px 8px;" if n else "")
-        self._send_bar()
-
-    def _send_bar(self):
-        rec = self.actions.rec
-        st = actions.status(actions.load(rec)) if rec is not None else None
-        if st is None:
-            return
-        t = theme.current()
-        live = st["proposed"] + st["ready"] + st["sent"] + st["failed"]
-        to_review = st["proposed"] + st["failed"]
-        if st["processed"]:
-            text = ("✓  Processed: every item is in your tracker. You can archive the call." if live
-                    else "✓  Processed: nothing to send. You can archive the call.")
-            bg, fg = theme.rgba("accent", 0.14), t.accent_deep
-        elif st["failed"]:
-            n = st["failed"]
-            text = (f"{n} could not be sent: fix {'it' if n == 1 else 'them'} and mark the meeting ready "
-                    "again." + (f" {st['ready']} waiting." if st["ready"] else "")
-                    + (f" {st['sent']} sent." if st["sent"] else ""))
-            bg, fg = theme.rgba("coral", 0.14), t.coral_deep
-        elif st["ready"] and not st["proposed"]:
-            text = (f"{st['ready']} ready, waiting to be sent" + (f" · {st['sent']} sent" if st["sent"] else ""))
-            bg, fg = theme.rgba("amber", 0.16), t.ink
-        elif st["ready_at"] and st["proposed"]:
-            text = f"{st['proposed']} new since you marked it ready."
-            bg, fg = t.raised, t.ink
-        else:
-            text = "Not sent yet." if live else "No action items."
-            bg, fg = t.raised, t.muted
-        self.send_status.setText(text)
-        self.send_status.setStyleSheet(f"color: {fg}; background: transparent; font-weight: 600;")
-        self.send_bar.setStyleSheet(f"QFrame#sendBar {{ background: {bg}; border-radius: 12px; }}")
-        self.ready_btn.setVisible(bool(to_review) or not st["ready_at"])
-        self.ready_btn.setText("Ready to send…" if to_review else "Mark processed")
-        self.unready_btn.setVisible(st["ready"] > 0)
-
-    def mark_ready(self):
-        rec = self.actions.rec
-        if rec is None:
-            return
-        going = [it for it in (actions.load(rec) or {}).get("items", [])
-                 if not it["discarded"] and it["state"] in (actions.PROPOSED, actions.FAILED)]
-        if going and not confirm_ready(self, going):
-            return
-        actions.mark_ready(rec)
-        self.actions.set_recording(rec)
-        self._seen()
-
-    def unmark_ready(self):
-        rec = self.actions.rec
-        if rec is not None:
-            actions.unmark_ready(rec)
-            self.actions.set_recording(rec)
-            self._seen()
-
-    def _actions_mtime(self):
-        rec = self.actions.rec
-        try:
-            return rec.path(actions.FILE).stat().st_mtime_ns if rec is not None else None
-        except OSError:
-            return None
-
-    def _seen(self):
-        self._mtime = self._actions_mtime()
-        self._send_bar()
-
-    def _poll(self):
-        if self.actions.rec is None or self.actions.editing is not None:
-            return
-        m = self._actions_mtime()
-        if m != self._mtime:
-            self._mtime = m
-            self.actions.set_recording(self.actions.rec)
-
-    def showEvent(self, e):
-        self.poll.start(2000)
-        super().showEvent(e)
-
-    def hideEvent(self, e):
-        self.poll.stop()
-        super().hideEvent(e)
-
     def _fill_templates(self):
         m = self.template_menu
         m.clear()
@@ -463,21 +298,192 @@ class SummaryView(QWidget):
             self.message("Summary copied.")
 
 
-def confirm_ready(parent, items: list[dict]) -> bool:
-    """What marking the meeting ready will approve: the items, as they will go."""
-    lines = []
-    for it in items:
-        who = f" ({it['owner']})" if it["owner"] else ""
-        lines.append(f"•  {it['text']}{who}")
-    box = QMessageBox(parent)
-    box.setWindowTitle("Ready to send")
-    box.setText(f"Mark {len(items)} action item{'s' if len(items) != 1 else ''} ready for your tracker?")
-    box.setInformativeText("\n".join(lines[:12]) + (f"\n…and {len(lines) - 12} more" if len(lines) > 12 else "")
-                           + "\n\nDiscarded items stay out. Until they are sent you can still edit them, "
-                           "or take them back with Back to review.")
-    box.setStandardButtons(QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel)
-    box.button(QMessageBox.StandardButton.Ok).setText("Mark ready")
-    return box.exec() == QMessageBox.StandardButton.Ok
+class ActionsView(QWidget):
+    """The selected recording's action items, the width of the view: check them off, choose which
+    go to the tracker (none until switched on), correct them, add and discard. The bar on top says
+    how far the meeting is on its way to the tracker, and Mark reviewed says the user is through
+    with it. `counted(n)` gives the number of live items, for the view's tab."""
+
+    counted = Signal(int)
+
+    def __init__(self, jobs, show_recording=None):
+        super().__init__()
+        self.show_recording = show_recording or (lambda _rid, _at: None)
+        self.jobs = jobs
+        self.rec = None
+        jobs.changed.connect(self._on_changed)
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(16, 12, 16, 10)
+        lay.setSpacing(8)
+        head = QHBoxLayout()
+        head.setSpacing(8)
+        title = QLabel(ACTIONS_TITLE)
+        title.setFont(theme.display_font(1.25, QFont.Weight.ExtraBold))
+        head.addWidget(title)
+        self.count = QLabel()
+        self.count.setFont(theme.display_font(0.9, QFont.Weight.Bold))
+        head.addWidget(self.count)
+        head.addStretch(1)
+        self.add_btn = QPushButton("Add")
+        self.add_btn.setIcon(icon("pencil"))
+        self.add_btn.setToolTip("Add an action item")
+        self.add_btn.clicked.connect(lambda: self.actions.start_add())
+        head.addWidget(self.add_btn)
+        lay.addLayout(head)
+        self.hint = _dim("Check off what is done. Switch on what goes to your team's tracker: nothing goes "
+                         "until you do.")
+        lay.addWidget(self.hint)
+        # The way to the tracker: what is chosen, waiting, sent or failed, and Mark reviewed.
+        self.send_bar = QFrame()
+        self.send_bar.setObjectName("sendBar")
+        self.send_bar.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        sb = QHBoxLayout(self.send_bar)
+        sb.setContentsMargins(12, 7, 9, 7)
+        sb.setSpacing(8)
+        self.send_status = QLabel()
+        self.send_status.setWordWrap(True)
+        sb.addWidget(self.send_status, 1)
+        self.review_btn = QPushButton("Mark reviewed")
+        self.review_btn.setToolTip("You are through with this meeting's items; it is processed once what you "
+                                   "switched on is sent")
+        self.review_btn.clicked.connect(lambda: self._review(True))
+        sb.addWidget(self.review_btn)
+        self.reopen_btn = QPushButton("Reopen")
+        self.reopen_btn.setFlat(True)
+        self.reopen_btn.setToolTip("Not through with this meeting after all")
+        self.reopen_btn.clicked.connect(lambda: self._review(False))
+        sb.addWidget(self.reopen_btn)
+        lay.addWidget(self.send_bar)
+        self.actions = ActionList(editable=True)
+        self.actions.play.connect(lambda rid, at: self.show_recording(rid, at))
+        self.actions.relaid.connect(self._count)
+        self.actions.changed.connect(self._seen)
+        self._mtime = None
+        self.poll = QTimer(self)  # whatever sends the items writes actions.json from outside
+        self.poll.timeout.connect(self._poll)
+        scroll = QScrollArea()
+        scroll.setStyleSheet("QScrollArea, QScrollArea > QWidget > QWidget { background: transparent; }")
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        inner = QWidget()
+        il = QVBoxLayout(inner)
+        il.setContentsMargins(0, 4, 6, 0)
+        il.addWidget(self.actions)
+        il.addStretch(1)
+        scroll.setWidget(inner)
+        self.actions_scroll = scroll
+        self.body = QWidget()
+        bl = QVBoxLayout(self.body)
+        bl.setContentsMargins(0, 0, 0, 0)
+        bl.addWidget(scroll, 1)
+        lay.addWidget(self.body, 1)
+        self.placeholder = ReadingBrowser()
+        lay.addWidget(self.placeholder, 1)
+        self.show_subject(None, None)
+
+    def show_subject(self, rec, linked):
+        self.rec = rec if linked is None else None
+        data = summary.load(self.rec) if self.rec is not None else None
+        busy = self.rec is not None and self.jobs.state(self.rec.id) is not None
+        on = data is not None and not busy
+        self.actions.set_recording(self.rec if on else None)
+        self._mtime = self._actions_mtime()
+        for w in (self.add_btn, self.hint, self.send_bar, self.body):
+            w.setVisible(on)
+        self.placeholder.setVisible(not on and rec is not None)
+        if linked is not None:
+            self.placeholder.show_placeholder("Select one recording of the set to see its action items.")
+        elif rec is not None and busy:
+            self.placeholder.show_placeholder("Summarizing… the action items come with the minutes.")
+        elif rec is not None and not on:
+            self.placeholder.show_placeholder("Action items come with the minutes: summarize this recording "
+                                              "in Minutes first.")
+        if not on:
+            self.count.setText("")
+            self.count.setStyleSheet("")
+            self.counted.emit(0)
+
+    def _count(self):
+        n = sum(1 for it in self.actions.items if not it.get("discarded"))
+        left = sum(1 for it in self.actions.items if not it.get("discarded") and not it.get("done"))
+        self.count.setText(("" if not n else f"{left} of {n} left" if left != n else str(n)))
+        t = theme.current()
+        self.count.setStyleSheet(f"color: {t.accent_deep}; background: {t.accent_soft}; border-radius: 9px; "
+                                 "padding: 1px 8px;" if n else "")
+        self.counted.emit(left)
+        self._send_bar()
+
+    def _send_bar(self):
+        rec = self.actions.rec
+        st = actions.status(actions.load(rec)) if rec is not None else None
+        if st is None:
+            return
+        t = theme.current()
+        live = st["proposed"] + st["ready"] + st["sent"] + st["failed"]
+        chosen = st["ready"] + st["sent"] + st["failed"]
+        if st["processed"]:
+            text = ("✓  Processed: what you switched on is in your tracker. You can archive the call."
+                    if st["sent"] else "✓  Processed: nothing to send. You can archive the call.")
+            bg, fg = theme.rgba("accent", 0.14), t.accent_deep
+        elif st["failed"]:
+            n = st["failed"]
+            text = (f"{n} could not be sent: fix {'it' if n == 1 else 'them'} and switch "
+                    f"{'it' if n == 1 else 'them'} on again." + (f" {st['ready']} waiting." if st["ready"] else "")
+                    + (f" {st['sent']} sent." if st["sent"] else ""))
+            bg, fg = theme.rgba("coral", 0.14), t.coral_deep
+        elif st["ready"]:
+            text = (f"{st['ready']} to send, waiting for your tracker" + (f" · {st['sent']} sent" if st["sent"] else "")
+                    + (" · reviewed" if st["ready_at"] else ""))
+            bg, fg = theme.rgba("amber", 0.16), t.ink
+        elif chosen:
+            text = f"{st['sent']} sent · none waiting."
+            bg, fg = t.raised, t.ink
+        else:
+            text = ("None switched on for your tracker." if live else "No action items.")
+            bg, fg = t.raised, t.muted
+        self.send_status.setText(text)
+        self.send_status.setStyleSheet(f"color: {fg}; background: transparent; font-weight: 600;")
+        self.send_bar.setStyleSheet(f"QFrame#sendBar {{ background: {bg}; border-radius: 12px; }}")
+        self.review_btn.setVisible(not st["ready_at"])
+        self.reopen_btn.setVisible(bool(st["ready_at"]))
+
+    def _review(self, on: bool):
+        rec = self.actions.rec
+        if rec is not None:
+            actions.mark_reviewed(rec, on)
+            self._seen()
+
+    def _actions_mtime(self):
+        rec = self.actions.rec
+        try:
+            return rec.path(actions.FILE).stat().st_mtime_ns if rec is not None else None
+        except OSError:
+            return None
+
+    def _seen(self):
+        self._mtime = self._actions_mtime()
+        self._send_bar()
+
+    def _poll(self):
+        if self.actions.rec is None or self.actions.editing is not None:
+            return
+        m = self._actions_mtime()
+        if m != self._mtime:
+            self._mtime = m
+            self.actions.set_recording(self.actions.rec)
+
+    def _on_changed(self, rid: str):
+        if self.rec is not None and self.rec.id == rid:
+            self.show_subject(self.rec, None)
+
+    def showEvent(self, e):
+        self.poll.start(2000)
+        super().showEvent(e)
+
+    def hideEvent(self, e):
+        self.poll.stop()
+        super().hideEvent(e)
 
 
 class FollowUpDialog(QDialog):
