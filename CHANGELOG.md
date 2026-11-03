@@ -12,13 +12,20 @@ tag.
 - The recording dock has Notes (N): the recording's notes in a field under the dock, saved as
   you type.
 - Settings → General: "Switch to the recording dock when a recording starts".
+- Ctrl+T in the dock's notes writes the recording's time (`[12:34]`); Echo Studio's minutes cover
+  what was said at that moment, as they do for a marker.
+- Echo Studio: an Action items page in the rail (Ctrl+4) with every meeting's open items, under a
+  heading per meeting, with a filter.
+- Echo Studio: Switch all on (or off) for a meeting's items, Undo (and Ctrl+Z) after checking an
+  item off, discarding it or switching them all, and keys for the item lists (↑↓ or J/K, Space,
+  T, E, Delete).
 
 ### Changed
 
 - Echo Studio: Record heads the rail, with the waveform and the elapsed time, so recording no
   longer starts from the list of past meetings. The Briefing's icon is a house.
 - Echo Studio: action items have their own view beside Minutes, with a done checkbox and a
-  To tracker switch per item. Sending is opt-in: nothing goes to the tracker until switched on.
+  To tracker switch per item; checked-off items move to the end, folded under "N done". Sending is opt-in: nothing goes to the tracker until switched on.
   Ready to send… is replaced by "Done with this meeting"; meetings marked ready in 1.5.0 keep
   their items. Scrolling the items, the Briefing and People no longer repaints every card.
 

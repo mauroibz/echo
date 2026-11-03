@@ -48,3 +48,16 @@ items' column beside the summary was also too narrow once the window was not max
   (the ✓ that marked them sent would now read as done).
 - The hero's Record this meeting shows only while the next meeting is under way and not recorded,
   and names the recording after it.
+- Checked-off items move to the end under "N done", folded, instead of staying in place struck
+  through: on a meeting with many items the open ones were lost among the done. Unchecking one
+  puts it back in the meeting's order.
+- Undo puts back exactly the fields a check mark, discard or switch changes (`done`, `discarded`,
+  `state`, `failure`), unless the item was sent in between. The bar stays 8 s; Ctrl+Z works while
+  the list has focus.
+- Switch all on leaves done items off: a checked-off item is rarely one to file now. It is one
+  click to switch one on.
+- The rail's Action items page comes after People with Ctrl+4, so Ctrl+1–3 keep their pages. It
+  shows only open items; done and discarded ones stay in each meeting's view, so the page does not
+  grow with every meeting ever held.
+- Ctrl+T writes the recorded audio's length (what `status()["elapsed"]` counts), which is the
+  time in the recording the note will play from.

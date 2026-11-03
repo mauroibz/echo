@@ -6,8 +6,17 @@ the width of the content; its tab SHALL show how many items are not done. Minute
 summary alone. Each item SHALL show a done checkbox, its title, owner, due date as "by <date>",
 description, context, the user's note and a button that plays where it came up.
 
+Done items SHALL move to the end of a list, folded under one line ("N done") that shows them.
+After an item is checked off or discarded, or a meeting's items are all switched, the list SHALL
+offer to undo it for a few seconds (also with Ctrl+Z). The lists SHALL work from the keyboard:
+↑/↓ (or J/K) to move, Space to check off, T to switch for the tracker, E or Enter to edit, Delete
+to discard or restore.
+
 A person's page SHALL list the items assigned to them across the library, newest first, and they
-SHALL be worked on there as in the Action items view. No screen SHALL mark items as late or
+SHALL be worked on there as in the Action items view. The rail's Action items page SHALL list
+every item not done nor discarded across the library, newest meeting first, under a heading per
+meeting that opens its Action items, with a filter on the item's words, owner and meeting title;
+an item checked off or discarded there SHALL leave the page. No screen SHALL mark items as late or
 pending, and Echo SHALL NOT remind about them.
 
 #### Scenario: A narrow window
@@ -16,7 +25,11 @@ pending, and Echo SHALL NOT remind about them.
 
 #### Scenario: Checked off
 - **WHEN** the user checks "Revisar el contrato marco"
-- **THEN** it shows struck through on one line, `actions.json` has it done, and the tab counts one fewer
+- **THEN** it moves under "1 done" at the end, `actions.json` has it done, the tab counts one fewer, and Undo takes it back
+
+#### Scenario: Last week's items
+- **WHEN** three meetings have open items and the user opens Action items in the rail and types "lucía"
+- **THEN** the page shows the open items Lucía owns, under the heading of each meeting they came from
 
 ### Requirement: Sending action items to a tracker
 Each item SHALL have a state (proposed, ready, sent or failed) and a uid that summarizing again
@@ -24,7 +37,8 @@ does not change.
 
 Each item SHALL have a To tracker switch, off by default. Switching it on SHALL make the item
 ready, switching it off SHALL make it proposed, and discarding it SHALL switch it off. Switching a
-failed item on SHALL make it ready again.
+failed item on SHALL make it ready again. Switch all on SHALL switch on every item of the meeting
+that is not done, discarded or sent (Switch all off, every one of those off).
 
 An item marked sent SHALL keep the tracker's reference, link and time, show them, and SHALL NOT
 be edited, discarded or switched in Echo afterwards; it SHALL still take the done mark. An item

@@ -2,7 +2,7 @@
 
 ### Requirement: Studio's window
 With a summaries server or a calendar set, the window SHALL show a rail with Record at the top,
-then Briefing, Recordings and People, opening on Briefing; Recordings SHALL be Echo's window
+then Briefing, Recordings, People and Action items, opening on Briefing; Recordings SHALL be Echo's window
 unchanged. Record SHALL start and stop a recording from any page and SHALL show the elapsed time
 while recording. Without a server or a calendar, the window SHALL be Echo's. Showing a recording
 from anywhere SHALL go to Recordings.

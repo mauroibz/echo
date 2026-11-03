@@ -70,7 +70,9 @@ their title from their first sentence.
 **Recording dock.** Ctrl+Shift+D (or View → Recording dock) swaps the window for a small dock
 that floats over other windows: Record, the time, a small wave that follows your voice, Marker
 (with a count), Notes, Pause, Stop and a button back to the window. Notes (or N) drops a field
-under the dock with the recording's notes, the same ones as in Details, saved as you type. While
+under the dock with the recording's notes, the same ones as in Details, saved as you type; Ctrl+T
+in it writes the recording's time, as in `[12:34] price`, and the minutes then cover what was said
+at that moment the way they cover a marker. While
 recording, with the pointer away for a few seconds and the notes closed, it shrinks to the time;
 point at it for the rest. Problems such as a silent
 microphone show in it in amber. After Stop it says the recording was saved and how the
@@ -346,7 +348,7 @@ turn automatic summaries off.
 
 **The window.** Once a server or a calendar is set, a rail at the left holds Record at the top
 (the coral waveform, Ctrl+R), then Briefing (Ctrl+1), Recordings (Ctrl+2: Echo's window as always)
-and People (Ctrl+3). Record works from any page and records from the input chosen under Record in
+People (Ctrl+3) and Action items (Ctrl+4). Record works from any page and records from the input chosen under Record in
 Recordings; while it records, the rail shows the time under it, and pressing it again stops.
 
 **Briefing.** At the top, the next meeting from your calendar: its time, title, invitation, who
@@ -375,6 +377,13 @@ per summary, for everyone named in it, and is kept in `parts.json` in the record
 meeting summarized before this version has the line without the points until you summarize it
 again. Stars are kept in `marks.json`.
 
+**Action items.** The rail's Action items page lists the items not yet checked off from every
+meeting, newest meeting first, under a heading per meeting (click it to open that meeting's Action
+items). It works like a meeting's view, so you can clear last week's items without opening each
+call: check them off, switch them on for the tracker, edit or discard them. Items you check off or
+discard leave the page; the meeting's own view still has them. The filter at the top matches an
+item's words, its owner and its meeting's title.
+
 **Minutes.** Over the transcript, a Transcript / Minutes / Action items switch. Minutes shows the
 selected recording's summary, with Summarize (Summarize again once there is one) and Copy. Its
 action items have a view of their own, so neither is squeezed when the window is narrow; the
@@ -398,12 +407,18 @@ checkbox, a title, a description
 (what exactly and why, with the details that were said, so it stands on its own in a tracker), its
 owner, the date it was promised for and a button that plays where it came up. They come from a
 request of their own over the summary and the transcript, so they can include commitments the
-summary's next steps leave out. Check an item off when it is done: it folds to its title, struck
-through, and stays in the list. The check mark is yours: Echo never marks items late and does not
+summary's next steps leave out. Check an item off when it is done: it moves to the end, under a
+"done" line where Show lists the checked-off ones. The check mark is yours: Echo never marks items late and does not
 remind you. The pencil corrects the title, description, owner and date, adds context for whoever
 picks the item up and a note only for you; the cross discards it (discarded items fold into one
 line, where Show lists them with Restore), and Add writes one by hand. A person's page in People
-lists the items assigned to them, to work on there too. The items are kept in `actions.json` in
+lists the items assigned to them, to work on there too. After checking an item off, discarding it
+or switching them all, a bar says what changed: **Undo** (or Ctrl+Z) takes it back for a few
+seconds.
+
+The lists work from the keyboard: click an item, or Tab into the list, then ↑ and ↓ (or J and K)
+move between items, Space checks the current one off, T switches it for the tracker, E or Enter
+edits it, Delete discards it (or restores a discarded one), and Ctrl+Z undoes. The items are kept in `actions.json` in
 the recording's folder; summarizing again keeps your edits, context, notes, check marks, discards
 and the items you added. Items from summaries made before
 this version have no description until you summarize again.
@@ -413,6 +428,8 @@ you use for that (an agent, a script, a scheduled sync) asks Echo for what you a
 it what happened. Not every item belongs in a tracker, so nothing goes until you choose it: each
 item has a **To tracker** switch, off to begin with. Switch on the ones that should go; until they
 are sent you can still edit them or switch them off again. Discarding an item switches it off.
+When most of a meeting's items should go, **Switch all on** in the bar above them switches every
+open one on (done and discarded ones are left as they are); then switch off the few that stay.
 
 When something sends them:
 - Each item shows **✓ Sent · REF**, a link to it in the tracker, and can no longer be edited in

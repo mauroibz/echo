@@ -30,6 +30,13 @@ Using Studio for a few days showed two things in the way:
 
 - **No instructions on screen.** The view has no paragraph explaining itself; each control's
   tooltip says what it does.
+- **Working through items.** Done items move to the end, folded under "N done". Undo (and
+  Ctrl+Z) takes back a check mark, a discard or a Switch all on. The lists work from the keyboard.
+  Switch all on chooses every open item of a meeting at once.
+- **Every meeting's items.** An Action items page in the rail (Ctrl+4) lists the open items of
+  all meetings under a heading per meeting, with a filter.
+- **Notes with a time.** A note line that starts with "[12:34]" (the dock's Ctrl+T writes it) is
+  sent with what was said then, as a marker is.
 - **Scrolling.** The Action items list, the Briefing and People paint an opaque background, so a
   scroll moves what is painted instead of repainting every card (it chugged on the user's screen).
 
@@ -40,11 +47,12 @@ Using Studio for a few days showed two things in the way:
 - `studio-actions` (from `add-studio-actions`, `change-studio-action-edits`,
   `refine-studio-after-first-use` and `add-studio-tracker-handoff`, not yet archived)
 - `studio-home` (from `add-studio-home` and `refine-studio-after-first-use`, not yet archived)
+- `studio-summaries` (from `add-studio-notes-first`, not yet archived)
 
 ## Impact
 
 - Code: `src/echo_studio/actions.py`, `actions_ui.py`, `ui.py`, `home.py`, `window.py`,
-  `widgets.py`, `data.py`, `cli.py`, `__init__.py`. Echo gains the `house` icon (Lucide).
+  `widgets.py`, `data.py`, `cli.py`, `summary.py`, `__init__.py`. Echo gains the `house` icon (Lucide).
 - Files: `actions.json` items gain `done`; `ready_at` now means "reviewed".
 - Command line: `done` in the item JSON and in `status`; help reworded. No command removed.
 - `agents/echo/SKILL.md`, `docs/guide.md`, `docs/studio-roadmap.md`, `CHANGELOG.md`.
