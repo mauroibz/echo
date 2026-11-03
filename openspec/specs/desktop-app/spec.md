@@ -290,7 +290,8 @@ Ctrl+Shift+D SHALL swap the window and the dock.
 
 Notes SHALL open a field under the dock with the recording's notes, saved as they are typed and
 when the field closes, the dock hides or the recording stops; the window SHALL show them when it
-comes back. With "Switch to the recording dock when a recording starts" on, the window SHALL give
+comes back. Ctrl+T in the field SHALL write the recording's time where the cursor is, as
+"[m:ss] ", on a line of its own. With "Switch to the recording dock when a recording starts" on, the window SHALL give
 way to the dock whenever a recording other than a quick note starts.
 
 #### Scenario: Record a call from the dock
@@ -300,6 +301,10 @@ way to the dock whenever a recording other than a quick note starts.
 #### Scenario: A note during the call
 - **WHEN** the user presses Notes in the dock while recording, types "Precio: revisar el plan anual" and goes back to the window
 - **THEN** the recording's notes have that line, and Details shows it
+
+#### Scenario: A note with its time
+- **WHEN** the recording is at 12:34 and the user presses Ctrl+T in the dock's notes and types "precio"
+- **THEN** the notes end with the line "[12:34] precio"
 
 #### Scenario: Always the dock
 - **WHEN** the setting is on and the user presses Record in the window

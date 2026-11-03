@@ -1,5 +1,6 @@
 """The recording dock: a small pill above other windows, for recording without the window, with
-the recording's notes in a card that drops down under it."""
+the recording's notes in a card that drops down under it. Ctrl+T in the notes writes the
+recording's time, so a note says when it was taken and the minutes can find what was said then."""
 
 from __future__ import annotations
 
@@ -11,7 +12,7 @@ from PySide6.QtGui import QColor, QFont, QKeySequence, QPainter, QPainterPath, Q
 from PySide6.QtWidgets import (QHBoxLayout, QLabel, QPlainTextEdit, QSizePolicy, QToolButton, QVBoxLayout,
                                QWidget)
 
-from .. import recorder
+from .. import export, recorder
 from ..library import Library
 from . import motion, theme
 from .common import dot_icon, fmt_duration, icon
@@ -225,7 +226,7 @@ class RecordDock(QWidget):
         nl.setContentsMargins(14, 10, 14, 12)
         self.notes = QPlainTextEdit()
         self.notes.setObjectName("docknotes")
-        self.notes.setPlaceholderText("Notes for this recording: saved as you type")
+        self.notes.setPlaceholderText("Notes for this recording: saved as you type. Ctrl+T writes the time")
         self.notes.setAccessibleName("Notes")
         self.notes.setTabChangesFocus(True)
         self.notes.setFixedHeight(self.notes.fontMetrics().lineSpacing() * 5 + 18)
@@ -234,6 +235,8 @@ class RecordDock(QWidget):
                                  f"color: {theme.current().on_deep}; }}")
         self.notes.textChanged.connect(lambda: self._notes_timer.start() if self._notes_rid else None)
         nl.addWidget(self.notes)
+        stamp = QShortcut(QKeySequence("Ctrl+T"), self.notes, activated=self._stamp_note)
+        stamp.setContext(Qt.ShortcutContext.WidgetShortcut)
         self.notes_card.hide()
         outer.addWidget(self.notes_card)
         QShortcut(QKeySequence("N"), self, activated=lambda: self.notes_btn.setChecked(not self.notes_btn.isChecked()))
@@ -357,6 +360,20 @@ class RecordDock(QWidget):
             if on:
                 self.notes_btn.setChecked(False)
         self.adjustSize()
+
+    def _stamp_note(self):
+        """"[12:34] " where the cursor is, on a line of its own: the recording's time now."""
+        sess = self.panel.session
+        if sess is None:
+            return
+        try:
+            at = float(sess.status().get("elapsed", 0))
+        except Exception:  # noqa: BLE001 - a status read racing the stop
+            return
+        cur = self.notes.textCursor()
+        line = cur.block().text()[:cur.positionInBlock()]
+        cur.insertText(("\n" if line.strip() else "") + f"[{export.stamp(at)}] ")
+        self.notes.setTextCursor(cur)
 
     def _save_notes(self):
         self._notes_timer.stop()

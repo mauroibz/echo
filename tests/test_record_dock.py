@@ -77,9 +77,19 @@ def test_notes_drop_down_from_the_dock(window, lib):
     dock.refresh()
     assert not dock.minimal  # stays open while the notes are
     dock.notes.setPlainText("Antes de empezar\nPrecio: revisar el plan anual\nLlamar a Ana")
+    # Ctrl+T writes the recording's time, on a line of its own.
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    panel.session.status = lambda: {"elapsed": 754.4}
+    dock.notes.moveCursor(dock.notes.textCursor().MoveOperation.End)
+    QTest.keyClick(dock.notes, Qt.Key.Key_T, Qt.KeyboardModifier.ControlModifier)
+    QTest.keyClicks(dock.notes, "precio")
+    assert dock.notes.toPlainText().endswith("Llamar a Ana\n[12:34] precio")
+    del panel.session.status
     window.toggle_dock()  # back to the window before the save ran: kept all the same
-    assert lib.get(rid).meta.notes.endswith("Llamar a Ana")
-    assert window.player.notes.toPlainText().endswith("Llamar a Ana")  # the window shows them, not its old copy
+    assert lib.get(rid).meta.notes.endswith("Llamar a Ana\n[12:34] precio")
+    assert window.player.notes.toPlainText().endswith("[12:34] precio")  # the window shows them, not its old copy
     window.toggle_dock()
     panel.stop()
     assert wait_until(lambda: (dock.refresh(), dock.state)[1] == "saved", 10)
