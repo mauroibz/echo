@@ -14,8 +14,8 @@ Using Studio for a few days showed two things in the way:
 
 - **Record everywhere.** Record heads the rail, above the pages, with the waveform icon and the
   elapsed time under it while recording; it starts and stops from any page. The Briefing's hero
-  has Record now, and Record this meeting while a meeting is under way and not recorded. The
-  Briefing's icon is a house.
+  keeps Record this meeting while a meeting is under way and not recorded, and nothing else to
+  record with: the rail's Record is the one way. The Briefing's icon is a house.
 - **An Action items view.** Beside Transcript and Minutes, the selected recording's items get a
   view of their own, the width of the content. The tab shows how many are left to do. Minutes
   shows the summary alone. A minutes card's items on the Briefing open that view.
@@ -23,10 +23,15 @@ Using Studio for a few days showed two things in the way:
   given in the command line's JSON (`done`) and text (`[x]`). No late dates, no reminders.
 - **BREAKING** (released in 1.5.0): **sending is opt-in per item.** Each item has a To tracker
   switch, off by default; on makes it `ready`, off makes it `proposed`. Ready to send…, its
-  confirmation and Back to review are gone. Mark reviewed (and Reopen) says the user is through
-  with a meeting, kept in `ready_at` as before. A meeting is processed when reviewed with no item
+  confirmation and Back to review are gone. "Done with this meeting" (and "Not done yet") says
+  nothing else from the meeting goes to the tracker, kept in `ready_at` as before. A meeting is processed when reviewed with no item
   ready or failed. Meetings marked ready under 1.5.0 keep their ready items, so nothing on its
   way changes.
+
+- **No instructions on screen.** The view has no paragraph explaining itself; each control's
+  tooltip says what it does.
+- **Scrolling.** The Action items list, the Briefing and People paint an opaque background, so a
+  scroll moves what is painted instead of repainting every card (it chugged on the user's screen).
 
 ## Capabilities
 

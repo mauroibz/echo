@@ -272,7 +272,9 @@ class ActionList(QWidget):
         if self.editable and not gone:
             check = QCheckBox()
             check.setChecked(done)
-            check.setToolTip("Done" if not done else "Not done yet")
+            check.setToolTip("Not done yet: uncheck" if done else
+                             "Check off when it is done. The mark is yours: Echo never dates items as late "
+                             "or reminds you")
             check.setAccessibleName(f"Done: {it['text']}")
             check.setCursor(Qt.CursorShape.PointingHandCursor)
             check.toggled.connect(lambda on, k=_key(it): self._done(k, on))
@@ -297,9 +299,14 @@ class ActionList(QWidget):
         elif self.editable and not gone:
             # Opt-in: an item goes to the tracker only once switched on here.
             send = Toggle(state == actions.READY, f"Send “{it['text']}” to your tracker", role="accent")
+            tip = ("Off: stays in Echo. On: whatever sends your items (an agent or a script) picks it "
+                   "up; once it is in your tracker it shows ✓ Sent with a link. Switch it off again "
+                   "before then to keep it here.")
+            send.setToolTip(tip)
             send.toggled.connect(lambda on, k=_key(it): self._send(k, on))
             lbl = _dim("To tracker")
             lbl.setWordWrap(False)
+            lbl.setToolTip(tip)
             box = QHBoxLayout()
             box.setSpacing(6)
             box.addWidget(lbl)
@@ -318,9 +325,12 @@ class ActionList(QWidget):
                 top.addWidget(restore, 0, Qt.AlignmentFlag.AlignTop)
             else:
                 edit = _small_button("pencil", "Edit")
+                edit.setToolTip("Edit: the title, description, owner and date, context for whoever picks it "
+                                "up, and a note only for you")
                 edit.clicked.connect(lambda _c=False, k=_key(it): self._edit(k))
                 top.addWidget(edit, 0, Qt.AlignmentFlag.AlignTop)
                 drop = _small_button("x", "Discard")
+                drop.setToolTip("Discard: out of the list and never sent; Show under the list restores it")
                 drop.clicked.connect(lambda _c=False, k=_key(it): self._discard(k, True))
                 top.addWidget(drop, 0, Qt.AlignmentFlag.AlignTop)
         col.addLayout(top)

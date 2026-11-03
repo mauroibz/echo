@@ -1,4 +1,4 @@
-"""Studio's Briefing: Record now, the next meeting from the calendar (or the one being recorded), the meetings
+"""Studio's Briefing: the next meeting from the calendar (or the one being recorded), the meetings
 coming up with a switch each for whether it is recorded, and the minutes of past meetings as a
 timeline of cards (the gist, the action items, your notes). It shows what the calendar and the
 recordings say, nothing more: no suggestions, no reminders."""
@@ -18,7 +18,7 @@ from echo_app.ui.common import fmt_duration
 
 from . import actions, calendar, data, marks, summary
 from .actions_ui import fmt_due
-from .widgets import Avatar, AvatarStack, Hero, StarButton, TimelineDot, Toggle, label, minutes_long
+from .widgets import Avatar, AvatarStack, Hero, StarButton, TimelineDot, Toggle, label, minutes_long, Opaque
 
 MINUTES_SHOWN = 12
 DESCRIPTION_LINES = 3
@@ -246,8 +246,8 @@ class ComingUp(QWidget):
 
 class HomeScreen(QWidget):
     """The next meeting in a hero band, then the minutes. `open_minutes(rid)` shows a recording on its
-    minutes, `open_actions(rid)` on its action items; `open_settings()` opens Settings. Unless a
-    recording is being made, the hero has Record now."""
+    minutes, `open_actions(rid)` on its action items; `open_settings()` opens Settings. Recording
+    starts from the rail's Record; the hero offers it only for a meeting under way and not recorded."""
 
     def __init__(self, window, meetings, open_minutes, open_settings, open_actions=None):
         super().__init__()
@@ -264,7 +264,7 @@ class HomeScreen(QWidget):
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         outer.addWidget(scroll)
-        body = QWidget()
+        body = Opaque("canvas")  # measured offscreen with 12 cards: 65 widget paints per scroll step became 6
         body.setObjectName("content")
         scroll.setWidget(body)
         self.body = QVBoxLayout(body)
@@ -467,10 +467,8 @@ class HomeScreen(QWidget):
         status.addStretch(1)
         side.addLayout(status)
         # Under way and not recording (started without Echo, or skipped): record it, named after it.
-        # Otherwise Record now is for something else, so it takes no name from the meeting.
-        under_way = ev.start <= datetime.now().astimezone() < ev.end and not self.meetings.was_started(ev)
-        side.addLayout(self._record_row(ev.title if under_way else None,
-                                        "Record this meeting" if under_way else "Record now"))
+        if ev.start <= datetime.now().astimezone() < ev.end and not self.meetings.was_started(ev):
+            side.addLayout(self._record_row(ev.title))
         self.hero_lay.addWidget(side_w, 2, Qt.AlignmentFlag.AlignBottom)
 
     def _empty(self):
@@ -481,23 +479,23 @@ class HomeScreen(QWidget):
         if calendar.enabled():
             col.addWidget(label("Nothing else in your calendar", 2.4, QFont.Weight.ExtraBold, wrap=True))
             col.addWidget(label("Your minutes are below. Record when you need to.", 1.1, dim=True))
-            col.addLayout(self._record_row())
         else:
             col.addWidget(label("Your meetings, before and after", 2.4, QFont.Weight.ExtraBold, wrap=True))
             col.addWidget(label("Add your calendar's private address and the next meeting shows here, records "
                                 "by itself and names its recording.", 1.1, dim=True, wrap=True))
-            row = self._record_row()
+            row = QHBoxLayout()
             b = QPushButton("Add your calendar")
             b.clicked.connect(self.open_settings)
-            row.insertWidget(1, b)
+            row.addWidget(b)
+            row.addStretch(1)
             col.addLayout(row)
         self.hero_lay.addLayout(col, 1)
 
-    def _record_row(self, title: str | None = None, text: str = "Record now") -> QHBoxLayout:
-        """Record now, as the rail's Record (Ctrl+R) does; with `title`, the recording is named."""
+    def _record_row(self, title: str) -> QHBoxLayout:
+        """Record this meeting, as the rail's Record (Ctrl+R) does, named after it."""
         row = QHBoxLayout()
         row.setSpacing(12)
-        b = QPushButton(text)
+        b = QPushButton("Record this meeting")
         b.setIcon(theme.tinted("audio-lines", "deep_top"))
         theme.set_role(b, record=True)
         b.setToolTip("Start recording (Ctrl+R)")

@@ -348,9 +348,8 @@ Recordings; while it records, the rail shows the time under it, and pressing it 
 
 **Briefing.** At the top, the next meeting from your calendar: its time, title, invitation, who
 is invited, Join the call, and whether it will record by itself (Don't record / Record it); while
-recording, the time, your notes and who was invited. **Record now** starts a recording right
-there; while a meeting is under way and not being recorded, it reads Record this meeting and names
-the recording after it. Below, at the left, the minutes of your last
+recording, the time, your notes and who was invited. While a meeting is under way and not being
+recorded, **Record this meeting** records it, named after it. Below, at the left, the minutes of your last
 meetings as cards: the gist, the first action items with their owners and dates, your notes, who
 was there, the tags and a star. Click a card to open it on its minutes, or its action items to
 open those. At the right, Coming up:
@@ -417,10 +416,11 @@ When something sends them:
   Echo: from then on the tracker has it. You can still check it off.
 - An item that could not be sent says why. Fix it and switch it on again.
 
-When you are through with a meeting's items, press **Mark reviewed** in the bar above them
-(**Reopen** takes it back). Once it is reviewed and every item you switched on is sent, the bar and
-the meeting's card on the Briefing say **✓ Processed**: you can archive the call. A meeting with
-nothing to send is processed as soon as you mark it reviewed. Summarizing again never changes items
+When nothing else from a meeting should go to your tracker, press **Done with this meeting** in
+the bar above its items (**Not done yet** takes it back). Once you have, and every item you
+switched on is sent, the bar and the meeting's card on the Briefing say **✓ Processed**: you can
+archive the call. A meeting with nothing to send is processed as soon as you press it. Each
+control in the view says what it does when you point at it. Summarizing again never changes items
 that are switched on or sent.
 
 Follow-up, beside Copy, drafts the email you would send after the meeting: what was agreed and

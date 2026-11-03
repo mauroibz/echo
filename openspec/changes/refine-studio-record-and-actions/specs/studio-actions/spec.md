@@ -42,11 +42,13 @@ longer lists them. Echo SHALL NOT contact any tracker.
 - **THEN** the first shows "✓ Sent · PROJ-7" with its link, and the second says "Could not be sent: no project for this client" with its switch off
 
 ### Requirement: Processed meetings
-The user SHALL be able to mark a meeting reviewed and take it back. A meeting SHALL be processed
-when it is reviewed and no item is ready or failed; a meeting with nothing switched on SHALL be
-processed once reviewed. The Action items view and the meeting's card on the Briefing SHALL say
+The user SHALL be able to say they are done with a meeting ("Done with this meeting") and take it
+back. Each control of the Action items view SHALL say what it does in its tooltip; the view SHALL
+NOT carry a paragraph of instructions. A meeting SHALL be processed
+when the user is done with it and no item is ready or failed; a meeting with nothing switched on SHALL be
+processed once the user is done with it. The Action items view and the meeting's card on the Briefing SHALL say
 so. The open Action items view SHALL follow changes written by others within a few seconds.
 
 #### Scenario: Ready to archive
-- **WHEN** the meeting is reviewed and its last ready item is marked sent while its Action items are open
+- **WHEN** the user is done with the meeting and its last ready item is marked sent while its Action items are open
 - **THEN** within seconds the view says "✓ Processed" and its Briefing card shows "✓ Processed"

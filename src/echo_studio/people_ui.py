@@ -21,7 +21,7 @@ from echo_app.ui.tags import TagEditor
 from . import actions, data, marks, parts, summary
 from .actions_ui import ActionList
 from .home import MinutesCard, _clear
-from .widgets import Avatar, Hero, label
+from .widgets import Avatar, Hero, Opaque, label
 
 ROLE_NAME = Qt.ItemDataRole.UserRole + 1
 MEETINGS_SHOWN = 8
@@ -83,7 +83,7 @@ class PersonPage(QWidget):
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         outer.addWidget(scroll)
-        body = QWidget()
+        body = Opaque("canvas")  # scrolling moves the page instead of repainting it (see widgets.Opaque)
         body.setObjectName("content")
         scroll.setWidget(body)
         self.lay = QVBoxLayout(body)

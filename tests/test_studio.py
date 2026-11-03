@@ -7,7 +7,7 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
-from PySide6.QtCore import QUrl
+from PySide6.QtCore import Qt, QUrl
 from PySide6.QtWidgets import QCheckBox, QToolButton
 
 from echo_app import cli, export, extensions
@@ -456,6 +456,7 @@ def test_polishing_items_in_their_view(window, lib, server, studio):
     assert [b.text() for b in window.views.buttons] == ["Transcript", "Minutes", "Action items"]
     window._select(rec.id)
     assert not view.body.isVisibleTo(view) and view.placeholder.isVisibleTo(view)  # no minutes yet
+    assert view.actions_scroll.widget().testAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent)  # opaque: scrolling moves, not repaints
     window.transcribed.emit(rec.id)
     assert wait_until(lambda: actions.load(lib.get(rec.id)) is not None)
     assert wait_until(lambda: view.body.isVisibleTo(view))
@@ -483,7 +484,7 @@ def test_polishing_items_in_their_view(window, lib, server, studio):
     window._seek_and_play = played.append
     next(b for b in view.actions.findChildren(QToolButton) if b.objectName() == "pill").click()
     assert played == [6.0]
-    edit = next(b for b in view.actions.findChildren(QToolButton) if b.toolTip() == "Edit")
+    edit = next(b for b in view.actions.findChildren(QToolButton) if b.accessibleName() == "Edit")
     edit.click()
     view.actions.findChildren(QLineEdit)[0].setText("Enviar la propuesta final")
     areas = {a.accessibleName(): a for a in view.actions.findChildren(QPlainTextEdit)}
@@ -495,7 +496,7 @@ def test_polishing_items_in_their_view(window, lib, server, studio):
     assert it["text"] == "Enviar la propuesta final" and it["edited"] and it["context"] == "pedirle el número a Tomás"
     assert it["note"] == "confirmar con Pedro antes"
     assert "Context: pedirle el número a Tomás" in texts() and "Your note: confirmar con Pedro antes" in texts()
-    next(b for b in view.actions.findChildren(QToolButton) if b.toolTip() == "Discard").click()
+    next(b for b in view.actions.findChildren(QToolButton) if b.accessibleName() == "Discard").click()
     assert actions.load(lib.get(rec.id))["items"][0]["discarded"] and "1 discarded" in texts()
     next(b for b in view.actions.findChildren(QPushButton) if b.text() == "Show").click()
     next(b for b in view.actions.findChildren(QToolButton) if b.toolTip() == "Restore").click()
@@ -510,11 +511,11 @@ def test_polishing_items_in_their_view(window, lib, server, studio):
     assert title == "Action items" and section.findChildren(QCheckBox) and section.findChildren(Toggle)
     assert "Enviar la propuesta final" in [lbl.text() for lbl in section.findChildren(QLabel)]
     # Polished there too: the edit goes to the item's own recording.
-    next(b for b in section.findChildren(QToolButton) if b.toolTip() == "Edit").click()
+    next(b for b in section.findChildren(QToolButton) if b.accessibleName() == "Edit").click()
     section.findChildren(QLineEdit)[0].setText("Enviar la propuesta, versión 2")
     next(b for b in section.findChildren(QPushButton) if b.text() == "Save").click()
     assert actions.load(lib.get(rec.id))["items"][0]["text"] == "Enviar la propuesta, versión 2"
-    next(b for b in section.findChildren(QToolButton) if b.toolTip() == "Discard").click()
+    next(b for b in section.findChildren(QToolButton) if b.accessibleName() == "Discard").click()
     assert actions.load(lib.get(rec.id))["items"][0]["discarded"]
     assert "1 discarded" in [lbl.text() for lbl in section.findChildren(QLabel)]
 
@@ -900,8 +901,9 @@ def test_sending_from_the_window(window, lib, server, studio):
     toggles()[0].click()
     toggles()[1].click()
     assert view.send_status.text() == "2 to send, waiting for your tracker"
+    assert view.review_btn.text() == "Done with this meeting" and view.review_btn.toolTip()
     view.review_btn.click()
-    assert view.reopen_btn.isVisible() and view.send_status.text().endswith("· reviewed")
+    assert view.reopen_btn.isVisible() and view.send_status.text().endswith("· done with the meeting")
     texts = lambda: [lbl.text() for lbl in view.actions.findChildren(QLabel)]  # noqa: E731
     # Something outside sends one and fails the other; the open view follows.
     uids = [i["uid"] for i in actions.load(lib.get(rec.id))["items"]]
@@ -910,7 +912,7 @@ def test_sending_from_the_window(window, lib, server, studio):
     assert wait_until(lambda: any("Sent · PROJ-7" in t for t in texts()), 5)
     assert any(t.startswith("Could not be sent: no project") for t in texts())
     assert "could not be sent" in view.send_status.text()
-    edits = [b for b in view.actions.findChildren(QToolButton) if b.toolTip() == "Edit"]
+    edits = [b for b in view.actions.findChildren(QToolButton) if b.accessibleName() == "Edit"]
     assert len(edits) == 2 and len(toggles()) == 2  # the sent one is the tracker's
     assert len(view.actions.findChildren(QCheckBox)) == 3  # all three can be checked off
     toggles()[0].click()  # fixed: on again, ready
