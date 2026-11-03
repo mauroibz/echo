@@ -746,7 +746,7 @@ def test_summary_view(window, lib, server, studio):
     assert names[0] == "General meeting" and "entrevista" in names
     view.use_template("entrevista")
     assert wait_until(lambda: (summary.load(lib.get(rec.id)) or {}).get("template") == "entrevista")
-    assert "entrevista" in view.status.text()
+    assert wait_until(lambda: "entrevista" in view.status.text())  # the view hears of it a moment later
     view.copy()
     from PySide6.QtWidgets import QApplication
 

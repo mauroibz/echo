@@ -31,6 +31,11 @@ tag.
   Ready to send… is replaced by "Done with this meeting"; meetings marked ready in 1.5.0 keep
   their items. Scrolling the items, the Briefing and People no longer repaints every card.
 
+### Fixed
+
+- `echo-app stop` (and Stop) returned a moment before a new recording could start, so `stop`
+  followed at once by `record` could say another recording was active.
+
 ## 1.5.0 - 2026-11-01
 
 ### Added

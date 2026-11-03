@@ -101,7 +101,7 @@ def test_empty_state_then_drop_import(window, lib, tmp_path):
                     Qt.KeyboardModifier.NoModifier)
     window.dropEvent(ev)
     assert wait_until(lambda: window.model.shown() == 2)
-    assert not window.empty.isVisible()
+    assert wait_until(lambda: not window.empty.isVisible())  # the empty state goes once the list has them
     assert window.current() is not None
     titles = {r.meta.title for r in (window.model.recording(i) for i in range(window.model.rowCount())) if r}
     assert "nota" in titles and any(t.startswith("WhatsApp voice note") for t in titles)
