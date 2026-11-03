@@ -43,6 +43,28 @@ class SpeakersMixin:
             self.message.emit(msg[0].upper() + msg[1:])
         return rec
 
+    def group_again(self):
+        """Group the speakers again on request: voices learned since the recording was first
+        grouped can join speakers now (the automatic pass runs once). Speakers the user named
+        apart stay apart; a join the user had separated may come back, which is what was asked."""
+        rec = self.rec
+        if rec is None or self.linked is not None:
+            return
+        try:
+            joined, named = speaker_groups.apply(rec)
+        except Exception:  # noqa: BLE001 - a broken voices file: say so, change nothing
+            log.exception("%s: speakers not grouped", rec.id)
+            self.message.emit("Could not group the speakers: the reason is in the log (~/.local/state/echo).")
+            return
+        self.rec = rec.reload()
+        bits = ([f"joined {joined} speaker{'s' if joined != 1 else ''}"] if joined else []) + \
+               ([f"named {', '.join(named)} by voice"] if named else [])
+        self.message.emit(("Speakers: " + " and ".join(bits) + ".") if bits else
+                          "Speakers: nothing to join; each one sounds like someone else.")
+        self._shown_signature = None
+        self.refresh()
+        self.changed.emit(rec.id)
+
     @staticmethod
     def _suggestions(rec: Recording) -> dict[str, str]:
         """Who each unnamed speaker sounds like: from the voices as they are now (they get better as
@@ -275,6 +297,8 @@ class SpeakersMixin:
             m.addAction(icon("unlink"), "Separate again", lambda: self.separate_speaker(n))
         if relabel.relabeled(rec):
             m.addAction(icon("revert"), "Back to the speakers Echo found", self.restore_speakers)
+        again = m.addAction(icon("link"), "Group speakers again", self.group_again)
+        again.setToolTip("Join the speakers that are one person, with the voices Echo knows now")
         m.addSeparator()
         m.addAction(icon("users"), "No speaker labels for this recording", lambda: self.set_speakers_off(True))
         m.exec(pos)

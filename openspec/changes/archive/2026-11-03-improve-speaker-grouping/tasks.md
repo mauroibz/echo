@@ -10,6 +10,8 @@
 - [x] 2.1 Named by voice when certain, marked and not learned from; test
 - [x] 2.2 Same name twice joins the speakers; dropdown of invitees, closest voices, everyone; test
 
+- [x] 2.3 "Group speakers again" on a speaker's menu, with the voices learned since; test
+
 ## 3. Documents
 
 - [x] 3.1 Guide, design, changelog; measured on the user's calls (numbers only)
