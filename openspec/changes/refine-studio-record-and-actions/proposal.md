@@ -52,7 +52,8 @@ Using Studio for a few days showed two things in the way:
 ## Impact
 
 - Code: `src/echo_studio/actions.py`, `actions_ui.py`, `ui.py`, `home.py`, `window.py`,
-  `widgets.py`, `data.py`, `cli.py`, `summary.py`, `__init__.py`. Echo gains the `house` icon (Lucide).
+  `widgets.py`, `data.py`, `cli.py`, `summary.py`, `__init__.py`. Echo gains the `house`, `calendar`, `sticky-note`, `arrow-right` and
+  `message-square-text` icons (Lucide).
 - Files: `actions.json` items gain `done`; `ready_at` now means "reviewed".
 - Command line: `done` in the item JSON and in `status`; help reworded. No command removed.
 - `agents/echo/SKILL.md`, `docs/guide.md`, `docs/studio-roadmap.md`, `CHANGELOG.md`.

@@ -14,8 +14,10 @@ tag.
 - Settings → General: "Switch to the recording dock when a recording starts".
 - Ctrl+T in the dock's notes writes the recording's time (`[12:34]`); Echo Studio's minutes cover
   what was said at that moment, as they do for a marker.
-- Echo Studio: an Action items page in the rail (Ctrl+4) with every meeting's open items, under a
-  heading per meeting, with a filter.
+- Echo Studio: an Action items page in the rail (Ctrl+4) with every meeting's open items, a card
+  per meeting (date, people, tags, progress), each item with chips for owner, date, moment and
+  tracker state; counts in the band that filter (open, to send, in tracker, no owner), owner
+  chips and a search.
 - Echo Studio: Switch all on (or off) for a meeting's items, Undo (and Ctrl+Z) after checking an
   item off, discarding it or switching them all, and keys for the item lists (↑↓ or J/K, Space,
   T, E, Delete).

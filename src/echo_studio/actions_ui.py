@@ -11,10 +11,10 @@ from __future__ import annotations
 import html
 from datetime import date
 
-from PySide6.QtCore import QEvent, Qt, QTimer, Signal
-from PySide6.QtGui import QFont, QKeySequence, QShortcut
+from PySide6.QtCore import QEvent, QRectF, QSize, Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QKeySequence, QPainter, QShortcut
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QFrame, QHBoxLayout, QLabel, QLineEdit, QPlainTextEdit,
-                               QPushButton, QScrollArea, QToolButton, QVBoxLayout, QWidget)
+                               QPushButton, QScrollArea, QSizePolicy, QToolButton, QVBoxLayout, QWidget)
 
 from echo_app import export
 from echo_app.library import fold_tag
@@ -22,7 +22,7 @@ from echo_app.ui import theme
 from echo_app.ui.common import fmt_date, icon
 
 from . import actions
-from .widgets import Toggle
+from .widgets import AVATAR_ROLES, Avatar, AvatarStack, Hero, Opaque, Toggle, avatar_color
 
 
 def fmt_due(day: str) -> str:
@@ -210,12 +210,42 @@ class UndoBar(QFrame):
         self.hide()
 
 
+class ClickFrame(QFrame):
+    """A frame that is a button: a meeting card's head."""
+
+    clicked = Signal()
+
+    def __init__(self):
+        super().__init__()
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    def mouseReleaseEvent(self, e):
+        if e.button() == Qt.MouseButton.LeftButton and self.rect().contains(e.position().toPoint()):
+            self.clicked.emit()
+        super().mouseReleaseEvent(e)
+
+
 class _Row(QFrame):
-    """An item's card; a click makes it the list's current item."""
+    """An item's card; a click makes it the list's current item. `acts`, when set, are the
+    row's tools shown only while the pointer is over it or it is current."""
 
     def __init__(self, on_press):
         super().__init__()
         self.on_press = on_press
+        self.acts: QWidget | None = None
+        self.current = False
+
+    def enterEvent(self, e):
+        if self.acts is not None:
+            self.acts.show()
+        super().enterEvent(e)
+
+    def leaveEvent(self, e):
+        if self.acts is not None and not self.current:
+            self.acts.hide()
+        super().leaveEvent(e)
 
     def mousePressEvent(self, e):
         self.on_press()
@@ -277,9 +307,15 @@ class ActionList(QWidget):
             QFrame#actionItem[discarded="true"] {{ background: transparent; }}
             QFrame#actionItem[done="true"] {{ background: transparent; }}
             QFrame#actionItem[current="true"] {{ border: 2px solid {t.accent}; }}
-            QPushButton#meetingHeading {{ border: none; background: transparent; color: {t.ink};
-                text-align: left; padding: 10px 2px 2px 2px; }}
-            QPushButton#meetingHeading:hover {{ color: {t.accent_deep}; }}
+            QFrame#meetingCard {{ background: {t.surface}; border: 1px solid {t.line}; border-radius: 16px; }}
+            QFrame#meetingHead {{ background: transparent; border: none; border-top-left-radius: 16px;
+                border-top-right-radius: 16px; }}
+            QFrame#meetingHead:hover {{ background: {t.raised}; }}
+            QFrame#denseItem {{ background: transparent; border: none; border-top: 1px solid {t.line};
+                border-radius: 0; }}
+            QFrame#denseItem[first="true"] {{ border-top: 1px solid {t.line}; }}
+            QFrame#denseItem:hover {{ background: {t.raised}; border-radius: 10px; }}
+            QFrame#denseItem[current="true"] {{ background: {t.accent_soft}; border-radius: 10px; }}
             QFrame#actionItem QCheckBox {{ spacing: 0; padding-top: 2px; }}
             QWidget#actionEditor {{ background: {t.surface}; border: 1px solid {t.accent}; border-radius: 12px; }}
             QLabel#actionNote {{ background: {theme.rgba('amber', 0.16)}; border-radius: 8px; padding: 4px 8px; }}
@@ -324,12 +360,18 @@ class ActionList(QWidget):
             self.lay.addWidget(self._editor(None))
         if not kept and self.editing != ("", -1):
             self.lay.addWidget(_dim(self.empty))
-        last = None
-        for it in todo:
-            if self.grouped and it["id"] != last:
-                last = it["id"]
-                self.lay.addWidget(self._heading(it))
-            self._add(it)
+        if self.grouped:
+            groups: dict[str, list[dict]] = {}
+            for it in todo:
+                groups.setdefault(it["id"], []).append(it)
+            for its in groups.values():
+                card, body = self._group(its)
+                self.lay.addWidget(card)
+                for k, it in enumerate(its):
+                    self._add(it, body, first=k == 0)
+        else:
+            for it in todo:
+                self._add(it)
         if done:
             self.lay.addWidget(self._fold(f"{len(done)} done", self.show_done, self._toggle_done))
             if self.show_done:
@@ -345,14 +387,16 @@ class ActionList(QWidget):
         self._mark_current()
         self.relaid.emit()
 
-    def _add(self, it: dict) -> None:
+    def _add(self, it: dict, into: QVBoxLayout | None = None, first: bool = True) -> None:
+        into = into if into is not None else self.lay
         if self.editing == _key(it):
-            self.lay.addWidget(self._editor(it))
+            into.addWidget(self._editor(it))
             return
         k = len(self.nav)
-        row = self._row(it, lambda k=k: self._set_current(k))
+        press = lambda k=k: self._set_current(k)  # noqa: E731
+        row = self._dense_row(it, press, first) if self.grouped else self._row(it, press)
         self.nav.append((_key(it), row))
-        self.lay.addWidget(row)
+        into.addWidget(row)
 
     def _fold(self, text: str, shown: bool, toggled) -> QWidget:
         line = QHBoxLayout()
@@ -368,17 +412,167 @@ class ActionList(QWidget):
         holder.setLayout(line)
         return holder
 
-    def _heading(self, it: dict) -> QWidget:
-        """A grouped list's meeting: its title and date, a click away from its Action items."""
-        b = QPushButton(f"{it['title']}  ·  {fmt_date(it['created'])}")
-        b.setObjectName("meetingHeading")
-        b.setFlat(True)
-        b.setFont(theme.display_font(1.05, QFont.Weight.ExtraBold))
-        b.setToolTip("Open this meeting's action items")
-        b.setCursor(Qt.CursorShape.PointingHandCursor)
-        b.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        b.clicked.connect(lambda _c=False, rid=it["id"]: self.open_recording.emit(rid))
-        return b
+    def _group(self, its: list[dict]) -> tuple[QWidget, QVBoxLayout]:
+        """A grouped list's meeting as a card: a date tile in the meeting's color, its title, who was
+        there and how far its items are, a click away from its Action items; its rows go under."""
+        it = its[0]
+        rec = self._rec_of(it["id"])
+        role = meeting_role(it["id"])
+        t = theme.current()
+        card = QFrame()
+        card.setObjectName("meetingCard")
+        card.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        lay = QVBoxLayout(card)
+        lay.setContentsMargins(0, 0, 0, 6)
+        lay.setSpacing(0)
+        head = ClickFrame()
+        head.setObjectName("meetingHead")
+        head.setToolTip("Open this meeting's action items")
+        head.setAccessibleName(f"Open {it['title']}")
+        head.clicked.connect(lambda rid=it["id"]: self.open_recording.emit(rid))
+        hl = QHBoxLayout(head)
+        hl.setContentsMargins(16, 14, 18, 12)
+        hl.setSpacing(14)
+        hl.addWidget(DateTile(it["created"], role))
+        col = QVBoxLayout()
+        col.setSpacing(4)
+        title = QLabel(it["title"])
+        title.setFont(theme.display_font(1.15, QFont.Weight.ExtraBold))
+        title.setStyleSheet(f"color: {t.ink}; background: transparent;")
+        col.addWidget(title)
+        sub = QHBoxLayout()
+        sub.setSpacing(10)
+        names = [n for n in dict.fromkeys(rec.meta.speakers.values()) if n] if rec is not None else []
+        if names:
+            sub.addWidget(AvatarStack(names, 20, ring="surface", limit=4))
+        saved = actions.load(rec) if rec is not None else None
+        live = [i for i in (saved or {}).get("items", []) if not i["discarded"]]
+        done = sum(1 for i in live if i["done"])
+        bits = [fmt_date(it["created"]), f"{len(live) - done} open"]  # the meeting's, whatever is filtered
+        if done:
+            bits.append(f"{done} done")
+        when = _dim("  ·  ".join(bits))
+        when.setWordWrap(False)
+        sub.addWidget(when, 0, Qt.AlignmentFlag.AlignVCenter)
+        tags = [tg for tg in (rec.meta.tags if rec is not None else []) if not tg.lower().startswith("template:")]
+        for tg in tags[:2]:
+            sub.addWidget(_chip(f"#{tg}", "accent"), 0, Qt.AlignmentFlag.AlignVCenter)
+        sub.addStretch(1)
+        col.addLayout(sub)
+        hl.addLayout(col, 1)
+        if live:
+            bar = Progress(done / len(live), role)
+            bar.setToolTip(f"{done} of {len(live)} done")
+            hl.addWidget(bar, 0, Qt.AlignmentFlag.AlignVCenter)
+        go = QLabel()
+        go.setPixmap(icon("arrow-right", "muted").pixmap(18, 18))
+        go.setStyleSheet("background: transparent;")
+        hl.addWidget(go, 0, Qt.AlignmentFlag.AlignVCenter)
+        # The switches' column, named once per meeting instead of on every row.
+        cap = QLabel("TO TRACKER")
+        cap.setFont(theme.display_font(0.68, QFont.Weight.ExtraBold))
+        cap.setStyleSheet(f"color: {t.muted}; background: transparent; letter-spacing: 1px;")
+        cap.setFixedWidth(TOOLS_W)
+        cap.setToolTip("Switch an item on to send it to your tracker; off, it stays in Echo")
+        hl.addWidget(cap, 0, Qt.AlignmentFlag.AlignBottom)
+        lay.addWidget(head)
+        body = QVBoxLayout()
+        body.setContentsMargins(8, 0, 8, 0)
+        body.setSpacing(0)
+        lay.addLayout(body)
+        return card, body
+
+    def _dense_row(self, it: dict, on_press, first: bool) -> QWidget:
+        """An item on one or two lines: the check, the title, then chips for owner, date, the moment
+        and the way to the tracker, and the description cut to one line (all of it in the tooltip)."""
+        row = _Row(on_press)
+        row.setObjectName("denseItem")
+        row.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        row.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
+        theme.set_role(row, first=first)
+        state = it.get("state", actions.PROPOSED)
+        outer = QHBoxLayout(row)
+        outer.setContentsMargins(12, 10, 10, 10)
+        outer.setSpacing(12)
+        check = QCheckBox()
+        check.setChecked(bool(it.get("done")))
+        check.setToolTip("Check off when it is done: it leaves this page (Undo brings it back)")
+        check.setAccessibleName(f"Done: {it['text']}")
+        check.setCursor(Qt.CursorShape.PointingHandCursor)
+        check.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        check.toggled.connect(lambda on, k=_key(it): self._done(k, on))
+        outer.addWidget(check, 0, Qt.AlignmentFlag.AlignTop)
+        col = QVBoxLayout()
+        col.setSpacing(6)
+        text = QLabel(it["text"])
+        text.setWordWrap(True)
+        text.setFont(theme.display_font(1.0, QFont.Weight.Bold))
+        text.setStyleSheet("background: transparent;")
+        col.addWidget(text)
+        chips = QHBoxLayout()
+        chips.setSpacing(6)
+        owner = it.get("owner") or ""
+        chips.addWidget(OwnerChip(owner) if owner else _meta_chip("users", "No owner", "muted"))
+        if it.get("due"):
+            chips.addWidget(_meta_chip("calendar", fmt_due(it["due"])[3:], "ink", "Due " + it["due"]))
+        if it.get("at") is not None:
+            b = _time_pill(float(it["at"]))
+            b.clicked.connect(lambda _c=False, rid=it["id"], at=float(it["at"]): self.play.emit(rid, at))
+            chips.addWidget(b)
+        if it.get("note"):
+            chips.addWidget(_meta_chip("sticky-note", "Note", "amber", f"Your note: {it['note']}"))
+        if it.get("context"):
+            chips.addWidget(_meta_chip("message-square-text", "Context", "muted", f"Context: {it['context']}"))
+        if state == actions.READY:
+            chips.addWidget(_chip("To send", "amber", "Switched on: waiting for whatever sends your items"))
+        elif state == actions.SENT:
+            chips.addWidget(_sent_chip(it.get("tracker") or {}))
+        elif state == actions.FAILED:
+            chips.addWidget(_chip("Not sent", "coral", f"Could not be sent: {it.get('failure', '')}. "
+                                                       "Switch it on to send it again."))
+        if it.get("origin") == "user":
+            chips.addWidget(_meta_chip("pencil", "Added by you", "muted"))
+        chips.addStretch(1)
+        col.addLayout(chips)
+        if it.get("description"):
+            desc = Elided(it["description"])
+            desc.setToolTip(it["description"])
+            theme.set_role(desc, dim=True)
+            col.addWidget(desc)
+        outer.addLayout(col, 1)
+        tools = QWidget()
+        tools.setObjectName("rowTools")
+        tools.setFixedWidth(TOOLS_W)
+        tl = QHBoxLayout(tools)
+        tl.setContentsMargins(0, 0, 0, 0)
+        tl.setSpacing(2)
+        if state != actions.SENT:
+            send = Toggle(state == actions.READY, f"Send “{it['text']}” to your tracker", role="accent")
+            send.setToolTip("To tracker. Off: stays in Echo. On: whatever sends your items picks it up (T)")
+            send.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            send.toggled.connect(lambda on, k=_key(it): self._send(k, on))
+            tl.addWidget(send)
+            tl.addStretch(1)
+            acts = QWidget()  # edit and discard: shown on the item under the pointer or the keyboard
+            al = QHBoxLayout(acts)
+            al.setContentsMargins(0, 0, 0, 0)
+            al.setSpacing(0)
+            sp = acts.sizePolicy()
+            sp.setRetainSizeWhenHidden(True)
+            acts.setSizePolicy(sp)
+            acts.hide()
+            row.acts = acts
+            edit = _small_button("pencil", "Edit")
+            edit.setToolTip("Edit the title, description, owner, date, context and your note (E)")
+            edit.clicked.connect(lambda _c=False, k=_key(it): self._edit(k))
+            al.addWidget(edit)
+            drop = _small_button("x", "Discard")
+            drop.setToolTip("Discard: never sent; the meeting's own view can restore it (Delete)")
+            drop.clicked.connect(lambda _c=False, k=_key(it): self._discard(k, True))
+            al.addWidget(drop)
+            tl.addWidget(acts)
+        outer.addWidget(tools, 0, Qt.AlignmentFlag.AlignTop)
+        return row
 
     # ---- the keyboard ----
 
@@ -397,6 +591,10 @@ class ActionList(QWidget):
             on = show and k == self.cur
             if (row.property("current") == "true") != on:
                 theme.set_role(row, current=on)
+            if isinstance(row, _Row):
+                row.current = on
+                if row.acts is not None:
+                    row.acts.setVisible(on or row.underMouse())
         if show and self.cur is not None:
             row = self.nav[self.cur][1]
             w = self.parentWidget()
@@ -716,78 +914,396 @@ def person_section(library, name: str, show_recording) -> QWidget:
     return lst
 
 
+# ---- the Action items page ----
+
+def meeting_role(rid: str) -> str:
+    """A meeting's color, the same wherever it shows (its date tile, its progress)."""
+    import hashlib
+
+    return AVATAR_ROLES[int(hashlib.sha1(rid.encode()).hexdigest()[:4], 16) % len(AVATAR_ROLES)]
+
+
+class DateTile(QWidget):
+    """A meeting's day as a small calendar leaf in its color: the month above, the day under."""
+
+    def __init__(self, iso: str, role: str):
+        super().__init__()
+        from datetime import datetime
+
+        self.role = role
+        try:
+            d = datetime.fromisoformat(iso)
+            self.month, self.day = f"{d:%b}".upper(), str(d.day)
+        except (TypeError, ValueError):
+            self.month, self.day = "", "?"
+        self.setFixedSize(46, 50)
+
+    def paintEvent(self, _):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        r = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+        c = theme.color(self.role)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor(c.red(), c.green(), c.blue(), 34))
+        p.drawRoundedRect(r, 12, 12)
+        top = QRectF(r.left(), r.top(), r.width(), 17)
+        p.setBrush(c)
+        p.drawRoundedRect(top, 12, 12)
+        p.drawRect(QRectF(top.left(), top.top() + 9, top.width(), top.height() - 9))
+        f = theme.display_font(0.68, QFont.Weight.ExtraBold)
+        p.setFont(f)
+        p.setPen(QColor("#ffffff"))
+        p.drawText(top, Qt.AlignmentFlag.AlignCenter, self.month)
+        f = theme.display_font(1.35, QFont.Weight.ExtraBold, tabular=True)
+        p.setFont(f)
+        p.setPen(theme.color("ink"))
+        p.drawText(QRectF(r.left(), top.bottom(), r.width(), r.bottom() - top.bottom()), Qt.AlignmentFlag.AlignCenter,
+                   self.day)
+        p.end()
+
+
+class Progress(QWidget):
+    """How many of a meeting's items are done, as a thin bar in its color."""
+
+    def __init__(self, frac: float, role: str, width: int = 84):
+        super().__init__()
+        self.frac, self.role = max(0.0, min(1.0, frac)), role
+        self.setFixedSize(width, 6)
+
+    def paintEvent(self, _):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        r = QRectF(self.rect())
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(theme.color("ink", 0.10))
+        p.drawRoundedRect(r, 3, 3)
+        if self.frac > 0:
+            p.setBrush(theme.color(self.role))
+            p.drawRoundedRect(QRectF(r.left(), r.top(), max(6.0, r.width() * self.frac), r.height()), 3, 3)
+        p.end()
+
+
+class Elided(QLabel):
+    """One line of text, cut with "…" to the width it gets."""
+
+    def __init__(self, text: str):
+        super().__init__()
+        self.full = " ".join(text.split())
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.setText(self.full)
+
+    def resizeEvent(self, e):
+        self.setText(QFontMetrics(self.font()).elidedText(self.full, Qt.TextElideMode.ElideRight, self.width()))
+        super().resizeEvent(e)
+
+    def minimumSizeHint(self) -> QSize:
+        return QSize(40, super().minimumSizeHint().height())
+
+
+def _meta_chip(ic: str, text: str, role: str, tip: str = "") -> QWidget:
+    """A small chip with an icon: a date, a note, who added it."""
+    w = QFrame()
+    w.setObjectName("metaChip")
+    w.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+    fg = theme.current().muted if role == "muted" else theme.current().ink
+    bg = theme.rgba("ink", 0.06) if role in ("muted", "ink") else theme.rgba(role, 0.16)
+    w.setStyleSheet(f"QFrame#metaChip {{ background: {bg}; border-radius: 9px; }} "
+                    f"QFrame#metaChip QLabel {{ color: {fg}; background: transparent; }}")
+    lay = QHBoxLayout(w)
+    lay.setContentsMargins(7, 2, 8, 2)
+    lay.setSpacing(5)
+    i = QLabel()
+    i.setPixmap(icon(ic, "amber" if role == "amber" else "muted").pixmap(13, 13))
+    lay.addWidget(i)
+    lbl = QLabel(text)
+    lbl.setFont(theme.display_font(0.82, QFont.Weight.Bold))
+    lay.addWidget(lbl)
+    if tip:
+        w.setToolTip(tip)
+    return w
+
+
+class OwnerChip(QFrame):
+    """Who does it: their avatar and name, tinted in their color."""
+
+    def __init__(self, name: str):
+        super().__init__()
+        self.setObjectName("ownerChip")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        c = avatar_color(name)
+        self.setStyleSheet(f"QFrame#ownerChip {{ background: rgba({c.red()}, {c.green()}, {c.blue()}, 0.13); "
+                           f"border-radius: 10px; }} QFrame#ownerChip QLabel {{ background: transparent; "
+                           f"color: {theme.current().ink}; }}")
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(2, 2, 9, 2)
+        lay.setSpacing(5)
+        lay.addWidget(Avatar(name, 18))
+        lbl = QLabel(name)
+        lbl.setFont(theme.display_font(0.82, QFont.Weight.Bold))
+        lay.addWidget(lbl)
+        self.setToolTip(f"Owner: {name}")
+
+
+class StatTile(QPushButton):
+    """A count in the page's band that is also its filter: Open, To send, Sent, No owner."""
+
+    def __init__(self, key: str, caption: str, role: str):
+        super().__init__()
+        self.key, self.role = key, role
+        self.setObjectName("statTile")
+        self.setCheckable(True)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.setMinimumSize(124, 84)
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(16, 10, 16, 12)
+        lay.setSpacing(2)
+        self.number = QLabel("0")
+        self.number.setFont(theme.display_font(1.9, QFont.Weight.ExtraBold, tabular=True))
+        lay.addWidget(self.number)
+        cap = QLabel(caption.upper())
+        cap.setFont(theme.display_font(0.72, QFont.Weight.ExtraBold))
+        theme.set_role(cap, eyebrow=True)
+        lay.addWidget(cap)
+        self.setAccessibleName(caption)
+
+    def set_count(self, n: int) -> None:
+        self.number.setText(str(n))
+
+
+VIEWS = {  # a stat tile's filter
+    "open": lambda it: True,
+    "ready": lambda it: it.get("state") in (actions.READY, actions.FAILED),
+    "sent": lambda it: it.get("state") == actions.SENT,
+    "unowned": lambda it: not (it.get("owner") or "").strip(),
+}
+
+
 class ActionsScreen(QWidget):
     """The rail's Action items: every meeting's items not yet checked off, newest meeting first,
-    under a heading per meeting, to work through without opening each call. Checked-off and
-    discarded items leave the page (the bar offers to take that back); a meeting's own view still
-    has them. The filter matches an item's words, its owner and its meeting's title."""
+    one card per meeting, to work through without opening each call. The band counts them and its
+    tiles filter (open, to send, sent, without an owner); the owners' chips and the search narrow
+    further. Checked-off and discarded items leave the page (the bar at the bottom offers to take
+    that back); a meeting's own view still has them."""
 
     def __init__(self, library, show_recording, open_actions, jobs=None):
         super().__init__()
         self.library = library
+        self.view = "open"
+        self.owner: str | None = None
         self.setObjectName("content")
-        lay = QVBoxLayout(self)
-        lay.setContentsMargins(28, 22, 20, 12)
-        lay.setSpacing(10)
-        head = QHBoxLayout()
-        head.setSpacing(12)
-        title = QLabel("Action items")
-        title.setFont(theme.display_font(1.9, QFont.Weight.ExtraBold))
-        head.addWidget(title)
-        self.count = _dim()
-        self.count.setWordWrap(False)
-        head.addWidget(self.count, 0, Qt.AlignmentFlag.AlignBottom)
-        head.addStretch(1)
-        self.filter = QLineEdit()
-        self.filter.setPlaceholderText("Filter by words, owner or meeting")
-        self.filter.setClearButtonEnabled(True)
-        self.filter.setAccessibleName("Filter action items")
-        self.filter.setMaximumWidth(320)
-        self.filter.textChanged.connect(lambda _t: self.reload())
-        head.addWidget(self.filter, 1)
-        lay.addLayout(head)
-        self.list = ActionList(editable=True, library=library, grouped=True,
-                               empty="Nothing left to do. Items from your meetings show here until you check "
-                                     "them off.")
-        self.list.play.connect(show_recording)
-        self.list.open_recording.connect(open_actions)
-        self.list.relaid.connect(self._count)
-        lay.addWidget(self.list.undo_bar)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        from .widgets import Opaque  # opaque, as in a meeting's view: smooth scrolling
-
-        inner = Opaque("canvas")
-        il = QVBoxLayout(inner)
-        il.setContentsMargins(0, 0, 8, 0)
-        il.addWidget(self.list)
-        il.addStretch(1)
-        scroll.setWidget(inner)
+        body = Opaque("canvas")  # opaque, as in a meeting's view: smooth scrolling
+        body.setObjectName("content")
+        bl = QVBoxLayout(body)
+        bl.setContentsMargins(0, 0, 0, 0)
+        bl.setSpacing(0)
+        scroll.setWidget(body)
         self.scroll = scroll
-        lay.addWidget(scroll, 1)
+        outer.addWidget(scroll, 1)
+
+        # The band: what there is to do, in numbers that filter.
+        self.hero = Hero()
+        hl = QHBoxLayout(self.hero)
+        hl.setContentsMargins(44, 28, 44, Hero.WAVE_H + 22)
+        hl.setSpacing(24)
+        words = QVBoxLayout()
+        words.setSpacing(4)
+        self.eyebrow = QLabel()
+        self.eyebrow.setFont(theme.display_font(0.82, QFont.Weight.ExtraBold))
+        theme.set_role(self.eyebrow, eyebrow=True)
+        words.addWidget(self.eyebrow)
+        title = QLabel("Action items")
+        title.setFont(theme.display_font(2.3, QFont.Weight.ExtraBold))
+        words.addWidget(title)
+        words.addStretch(1)
+        hl.addLayout(words, 1)
+        self.tiles: dict[str, StatTile] = {}
+        for key, caption, role in (("open", "Open", "on_deep"), ("ready", "To send", "amber"),
+                                   ("sent", "In tracker", "foam"), ("unowned", "No owner", "coral")):
+            tile = StatTile(key, caption, role)
+            tile.clicked.connect(lambda _c=False, k=key: self._set_view(k))
+            self.tiles[key] = tile
+            hl.addWidget(tile, 0, Qt.AlignmentFlag.AlignTop)
+        self._style_tiles()
+        bl.addWidget(self.hero)
+
+        # Under it: who, and a search.
+        page = QHBoxLayout()
+        page.setContentsMargins(36, 0, 36, 32)
+        page.addStretch(1)
+        column = QWidget()
+        column.setMaximumWidth(MAX_PAGE_W)
+        cl = QVBoxLayout(column)
+        cl.setContentsMargins(0, 0, 0, 0)
+        cl.setSpacing(14)
+        bar = QHBoxLayout()
+        bar.setSpacing(6)
+        self.owners_row = QHBoxLayout()
+        self.owners_row.setSpacing(6)
+        bar.addLayout(self.owners_row)
+        bar.addStretch(1)
+        self.filter = QLineEdit()
+        self.filter.setPlaceholderText("Search items, owners, meetings")
+        self.filter.setClearButtonEnabled(True)
+        self.filter.setAccessibleName("Filter action items")
+        self.filter.addAction(icon("search", "muted"), QLineEdit.ActionPosition.LeadingPosition)
+        self.filter.setMinimumWidth(240)
+        self.filter.setMaximumWidth(320)
+        self.filter.textChanged.connect(lambda _t: self.reload())
+        bar.addWidget(self.filter)
+        cl.addLayout(bar)
+        self.list = ActionList(editable=True, library=library, grouped=True, empty="")
+        self.list.lay.setSpacing(14)
+        self.list.play.connect(show_recording)
+        self.list.open_recording.connect(open_actions)
+        self.list.relaid.connect(self._count)
+        cl.addWidget(self.list)
+        self.empty = QWidget()
+        el = QVBoxLayout(self.empty)
+        el.setContentsMargins(0, 40, 0, 40)
+        el.setSpacing(6)
+        art = QLabel()
+        art.setPixmap(icon("circle-check", "accent").pixmap(44, 44))
+        el.addWidget(art, 0, Qt.AlignmentFlag.AlignHCenter)
+        self.empty_title = QLabel("All clear")
+        self.empty_title.setFont(theme.display_font(1.4, QFont.Weight.ExtraBold))
+        el.addWidget(self.empty_title, 0, Qt.AlignmentFlag.AlignHCenter)
+        self.empty_text = _dim("Items from your meetings show here until you check them off.")
+        self.empty_text.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        el.addWidget(self.empty_text)
+        cl.addWidget(self.empty)
+        page.addWidget(column, 100)
+        page.addStretch(1)
+        bl.addLayout(page)
+        bl.addStretch(1)
+
+        # The undo bar floats at the bottom, in sight wherever the page is scrolled.
+        foot = QHBoxLayout()
+        foot.setContentsMargins(36, 0, 36, 14)
+        foot.addStretch(1)
+        self.list.undo_bar.setMaximumWidth(MAX_PAGE_W)
+        foot.addWidget(self.list.undo_bar, 100)
+        foot.addStretch(1)
+        outer.addLayout(foot)
         if jobs is not None:
             jobs.changed.connect(lambda _rid: self.reload() if self.isVisible() else None)
+        self.all: list[dict] = []
         self.list.set_source(self._items)
 
+    def _style_tiles(self):
+        t = self._tokens = theme.current()
+        for tile in self.tiles.values():
+            c = getattr(t, tile.role)
+            tile.setStyleSheet(f"""
+                QPushButton#statTile {{ background: {theme.rgba('deep_top', 0.62)};
+                    border: 1px solid {theme.rgba('on_deep', 0.16)}; border-radius: 16px; text-align: left; }}
+                QPushButton#statTile:hover {{ background: {theme.rgba('deep_top', 0.8)}; }}
+                QPushButton#statTile:checked {{ background: {theme.rgba('deep_top', 0.85)}; border: 2px solid {c}; }}
+                QPushButton#statTile QLabel {{ background: transparent; color: {t.on_deep}; }}
+                QPushButton#statTile QLabel[eyebrow="true"] {{ color: {c}; letter-spacing: 1.2px; }}
+            """)
+
+    def changeEvent(self, e):
+        if e.type() == QEvent.Type.PaletteChange and getattr(self, "_tokens", None) is not theme.current():
+            self._style_tiles()
+            self.reload()
+        super().changeEvent(e)
+
     def _items(self) -> list[dict]:
+        self.all = actions.open_items(self.library)
         q = fold_tag(self.filter.text().strip())
-        items = actions.open_items(self.library)
-        if not q:
-            return items
-        return [it for it in items if q in fold_tag(" ".join((it["text"], it.get("owner", ""), it["title"])))]
+        keep = VIEWS[self.view]
+        own = fold_tag(self.owner) if self.owner else None
+        return [it for it in self.all if keep(it)
+                and (own is None or fold_tag(it.get("owner") or "") == own)
+                and (not q or q in fold_tag(" ".join((it["text"], it.get("owner", ""), it["title"],
+                                                      it.get("description", ""))))) ]
+
+    def _set_view(self, key: str) -> None:
+        self.view = key if key != self.view else "open"
+        self.reload()
+
+    def _set_owner(self, name: str | None) -> None:
+        self.owner = None if name is None or (self.owner and fold_tag(self.owner) == fold_tag(name)) else name
+        self.reload()
 
     def reload(self) -> None:
         if self.list.editing is None:  # never under the user's editor
             self.list.set_items(self.list.source())
 
     def _count(self):
-        items = [it for it in self.list.items if not it.get("discarded") and not it.get("done")]
-        meetings = len({it["id"] for it in items})
-        self.count.setText("" if not items else
-                           f"{len(items)} open in {meetings} meeting{'s' if meetings != 1 else ''}")
+        every = self.all
+        meetings = len({it["id"] for it in every})
+        self.eyebrow.setText(f"ACROSS {meetings} MEETING{'S' if meetings != 1 else ''}" if every else "NOTHING OPEN")
+        for key, tile in self.tiles.items():
+            tile.set_count(sum(1 for it in every if VIEWS[key](it)))
+            tile.setChecked(key == self.view)
+        self._owners(every)
+        shown = bool(self.list.items)
+        self.list.setVisible(shown)
+        self.empty.setVisible(not shown)
+        filtered = self.view != "open" or self.owner or self.filter.text().strip()
+        self.empty_title.setText("Nothing matches" if every and filtered else "All clear")
+        self.empty_text.setText("Try another filter, or clear the search." if every and filtered else
+                                "Items from your meetings show here until you check them off.")
+
+    def _owners(self, every: list[dict]) -> None:
+        """A chip per owner, most items first, to show only theirs."""
+        while self.owners_row.count():
+            w = self.owners_row.takeAt(0).widget()
+            if w is not None:
+                w.setParent(None)
+                w.deleteLater()
+        counts: dict[str, tuple[str, int]] = {}
+        for it in every:
+            o = (it.get("owner") or "").strip()
+            if o:
+                name, n = counts.get(fold_tag(o), (o, 0))
+                counts[fold_tag(o)] = (name, n + 1)
+        for name, n in sorted(counts.values(), key=lambda v: (-v[1], v[0].lower()))[:OWNER_CHIPS]:
+            b = QPushButton(f"{name.split()[0]}  {n}")
+            b.setObjectName("ownerFilter")
+            b.setIcon(_avatar_icon(name))
+            b.setIconSize(QSize(22, 22))
+            b.setCheckable(True)
+            b.setChecked(bool(self.owner) and fold_tag(self.owner) == fold_tag(name))
+            b.setCursor(Qt.CursorShape.PointingHandCursor)
+            b.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            b.setToolTip(f"Only {name}'s items")
+            t = theme.current()
+            b.setStyleSheet(f"""
+                QPushButton#ownerFilter {{ background: {t.surface}; color: {t.ink}; border: 1px solid {t.line};
+                    border-radius: 15px; padding: 4px 11px 4px 5px; font-weight: 700; }}
+                QPushButton#ownerFilter:hover {{ background: {t.raised}; }}
+                QPushButton#ownerFilter:checked {{ background: {t.accent_soft}; border: 1px solid {t.accent}; }}
+            """)
+            b.clicked.connect(lambda _c=False, nm=name: self._set_owner(nm))
+            self.owners_row.addWidget(b)
 
     def showEvent(self, e):
         self.reload()
         super().showEvent(e)
+
+
+TOOLS_W = 112  # a dense row's switch, edit and discard; the card's head names the column
+MAX_PAGE_W = 980  # the page's column: lines short enough to read across a wide window
+OWNER_CHIPS = 6
+
+
+def _avatar_icon(name: str):
+    from PySide6.QtGui import QIcon, QPixmap
+
+    pm = QPixmap(44, 44)
+    pm.fill(Qt.GlobalColor.transparent)
+    from PySide6.QtCore import QPoint
+    from PySide6.QtGui import QRegion
+
+    Avatar(name, 44).render(pm, QPoint(0, 0), QRegion(), QWidget.RenderFlag.DrawChildren)  # no background
+    return QIcon(pm)
