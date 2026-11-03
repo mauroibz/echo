@@ -269,7 +269,9 @@ After a few days of use: Record heads the rail (waveform, clock), so recording n
 list of past meetings. Action items get their own view beside Minutes,
 each with a done checkbox (the user's mark; still no late dates or reminders) and a To tracker
 switch, off by default: sending is opt-in per item, and "Done with this meeting" replaces Ready
-to send.
+to send. Then, to work through them: done items fold to the end, Undo, keys, Switch all on, and an
+Action items page in the rail with every meeting's open items. A note line that starts with a
+time (the dock's Ctrl+T) is summarized like a marker.
 
 ### S15 Data out (`add-studio-cli-data`)
 
@@ -283,8 +285,9 @@ that tells an agent how to read them.
 
 - **Proactive briefs and catch-up suggestions,** and anything that needs knowledge beyond the
   calendar and the recordings.
-- **Reminders, late dates and a pending list.** The tracker the team uses does that; done is only
-  the user's own check mark (S18).
+- **Reminders and late dates.** The tracker the team uses does that; done is only the user's own
+  check mark (S18). The Action items page lists what is not checked off, and says nothing of
+  dates passed.
 - **Connectors that push** (Plane, Trello, Jira, Slack, Notion, SMTP). The CLI and the ready /
   sent hand-off (S17) are the way out; the team's own agent or script does the sending.
 - **An MCP server.** The CLI and an agent skill cover it.

@@ -18,6 +18,16 @@
   "Done with this meeting"
 - [x] 2.5 Screenshots at 1400 and 900 px wide (offscreen, invented data)
 
+- [x] 2.8 Done items folded at the end of a list; Undo bar and Ctrl+Z after check off, discard
+  and switch all (`snapshot`/`restore`); tests
+- [x] 2.9 Switch all on / off in the send bar (`set_send_all`: open items only); test
+- [x] 2.10 Keys in the item lists (↑↓ J/K, Home/End, Space, T, E/Enter, Delete, Ctrl+Z), the
+  current item outlined; test
+- [x] 2.11 The rail's Action items page (Ctrl+4): `open_items` across the library, a heading per
+  meeting, a filter; tests
+- [x] 2.12 A note line starting with a time gets the passage around it in the summary request; test
+
 ## 3. Documents
 
-- [x] 3.1 Guide, Studio roadmap, changelog
+- [x] 3.1 Guide, Studio roadmap, changelog, README
+- [x] 3.2 `docs/studio.png` taken again with the 1.6.0 rail (offscreen, invented data)

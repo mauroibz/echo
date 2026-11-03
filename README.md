@@ -52,7 +52,7 @@ and organizes your meetings around your calendar. Install it with `./install.sh 
 | **What you get** | Audio, transcripts, speakers, search, exports | Minutes, action items, people, and a hand-off to the tools your team already uses |
 
 <p align="center">
-  <img src="docs/studio.png" alt="Echo Studio's Briefing: the next meeting in a deep teal band, the minutes of the last meetings with their action items, and the week's meetings with a record switch each" width="900">
+  <img src="docs/studio.png" alt="Echo Studio's Briefing: Record at the top of the rail, the next meeting in a deep teal band, the minutes of the last meetings with their action items, and the week's meetings with a record switch each" width="900">
 </p>
 
 - **Briefing.** The next meeting from your calendar (a private ICS address from Google Calendar
@@ -60,7 +60,8 @@ and organizes your meetings around your calendar. Install it with `./install.sh 
 - **Records by itself** when a meeting with a video link starts, and names it after the event.
 - **Minutes** written from the transcript and your notes, with a template per kind of meeting.
 - **Action items** in a view of their own, with owner, date, a description and the moment they
-  were said. Check them off, correct, discard or add them.
+  were said, and on a page with every meeting's open ones. Check them off, correct, discard or add
+  them, from the mouse or the keyboard.
 - **People** by email: the meetings with each one, their part in them and their action items.
   Star and tag meetings to find them again.
 - **Ready for your tracker.** Switch on the items that should go, and any script or agent picks
