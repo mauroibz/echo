@@ -796,6 +796,7 @@ SHORTCUTS = [
     ("Pause / resume recording", "Ctrl+Shift+R"),
     ("Add a marker while recording", "M (or the tray menu)"),
     ("Notes in the recording dock", "N"),
+    ("Write the recording's time in the dock's notes", "Ctrl+T"),
     ("Marker at the playhead", "Ctrl+M"),
     ("Next / previous marker", "Alt+→ / Alt+←"),
     ("Move or remove a marker", "Drag it; right-click it (waveform)"),
