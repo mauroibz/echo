@@ -59,12 +59,12 @@ and organizes your meetings around your calendar. Install it with `./install.sh 
   or Outlook), the week ahead with a switch to record each one or not, and your last minutes.
 - **Records by itself** when a meeting with a video link starts, and names it after the event.
 - **Minutes** written from the transcript and your notes, with a template per kind of meeting.
-- **Action items** with owner, date, a description and the moment they were said. You edit,
-  discard or add them before they go anywhere.
+- **Action items** in a view of their own, with owner, date, a description and the moment they
+  were said. Check them off, correct, discard or add them.
 - **People** by email: the meetings with each one, their part in them and their action items.
   Star and tag meetings to find them again.
-- **Ready for your tracker.** Mark a meeting ready and any script or agent picks its items up
-  with `echo-app actions --ready --json` and reports back; the call then shows as processed.
+- **Ready for your tracker.** Switch on the items that should go, and any script or agent picks
+  them up with `echo-app actions --ready --json` and reports back; the call then shows as processed.
   Echo connects to no tracker itself, so Plane, Jira, Trello or anything else works the same.
 
 When the language-model server is not on your computer, the transcripts you summarize are sent

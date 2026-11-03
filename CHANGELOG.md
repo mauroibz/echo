@@ -5,6 +5,8 @@ tag.
 
 ## Unreleased
 
+## 1.6.0 - 2026-11-03
+
 ### Added
 
 - The recording dock has Notes (N): the recording's notes in a field under the dock, saved as
