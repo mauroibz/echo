@@ -83,12 +83,15 @@ def test_capture_death_restarts_and_notes_gap(lib, monkeypatch, tmp_path):
     monkeypatch.setenv("FAKE_MODE", "die:1")
     monkeypatch.setenv("FAKE_MODE_ONCE", str(tmp_path / "died-once"))
     s = recorder.start(lib, rate=RATE)
+    began = time.monotonic()
     time.sleep(3.5)
+    asked = time.monotonic() - began  # the audio can be no longer than the time until the stop
     assert s.stop(wait=20) == "ready"
     m = s.rec.reload().meta
     causes = [g["cause"] for g in m.gaps]
     assert any("stopped unexpectedly" in c for c in causes), causes
-    assert 2.5 < m.duration < 3.6
+    # Bounded by the time it ran, not a constant: on a slow CI runner the stop alone took 0.15 s.
+    assert 2.5 < m.duration < asked + 0.3, (m.duration, asked)
 
 
 def test_capture_stall_restarts(lib, monkeypatch, tmp_path):
