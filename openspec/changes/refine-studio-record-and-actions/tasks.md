@@ -11,8 +11,11 @@
   reviewed / Reopen, and polling for the sender's writes; Minutes shows the summary alone; tests
 - [x] 2.2 Item rows: done checkbox, To tracker switch (accent), failure line; person page too; tests
 - [x] 2.3 Rail: Record at the top with the waveform and the clock; Briefing's house icon; tests
-- [x] 2.4 Briefing: Record now / Record this meeting in the hero; cards with done and to-send
-  counts, their items open the Action items view; tests
+- [x] 2.4 Briefing: Record this meeting in the hero only for a meeting under way (no Record now);
+  cards with done and to-send counts, their items open the Action items view; tests
+- [x] 2.6 Opaque scroll contents in Action items, Briefing and People; paint counts measured; a test
+- [x] 2.7 No instruction paragraph: tooltips on the checkbox, switch, edit, discard, Add, count and
+  "Done with this meeting"
 - [x] 2.5 Screenshots at 1400 and 900 px wide (offscreen, invented data)
 
 ## 3. Documents

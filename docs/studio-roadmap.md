@@ -265,10 +265,11 @@ it is sent, so the call can be archived. Echo talks to no tracker.
 
 ### S18 Record everywhere, items in a view (`refine-studio-record-and-actions`)
 
-After a few days of use: Record heads the rail (waveform, clock) and the Briefing's hero, so
-recording never needs the list of past meetings. Action items get their own view beside Minutes,
+After a few days of use: Record heads the rail (waveform, clock), so recording never needs the
+list of past meetings. Action items get their own view beside Minutes,
 each with a done checkbox (the user's mark; still no late dates or reminders) and a To tracker
-switch, off by default: sending is opt-in per item, and Mark reviewed replaces Ready to send.
+switch, off by default: sending is opt-in per item, and "Done with this meeting" replaces Ready
+to send.
 
 ### S15 Data out (`add-studio-cli-data`)
 

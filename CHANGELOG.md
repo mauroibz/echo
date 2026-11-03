@@ -7,12 +7,12 @@ tag.
 
 ### Changed
 
-- Echo Studio: Record heads the rail, with the waveform and the elapsed time, and the Briefing
-  has Record now, so recording no longer starts from the list of past meetings. The Briefing's
-  icon is a house.
+- Echo Studio: Record heads the rail, with the waveform and the elapsed time, so recording no
+  longer starts from the list of past meetings. The Briefing's icon is a house.
 - Echo Studio: action items have their own view beside Minutes, with a done checkbox and a
   To tracker switch per item. Sending is opt-in: nothing goes to the tracker until switched on.
-  Ready to send… is replaced by Mark reviewed; meetings marked ready in 1.5.0 keep their items.
+  Ready to send… is replaced by "Done with this meeting"; meetings marked ready in 1.5.0 keep
+  their items. Scrolling the items, the Briefing and People no longer repaints every card.
 
 ## 1.5.0 - 2026-11-01
 

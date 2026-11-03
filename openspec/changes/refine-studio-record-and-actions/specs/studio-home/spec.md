@@ -13,11 +13,11 @@ from anywhere SHALL go to Recordings.
 
 ## ADDED Requirements
 
-### Requirement: Record now on the Briefing
-While nothing is being recorded, the Briefing's hero SHALL have Record now. While the next
-meeting is under way and not being recorded, the button SHALL read Record this meeting and name
-the recording after it.
+### Requirement: Recording a meeting under way
+While the next meeting is under way and not being recorded, the Briefing's hero SHALL offer
+Record this meeting, naming the recording after it. The hero SHALL NOT offer another way to start
+a recording: the rail's Record does that.
 
-#### Scenario: No calendar
-- **WHEN** no calendar is set and the user opens Studio
-- **THEN** the hero shows Record now beside Add your calendar
+#### Scenario: Joined late
+- **WHEN** "Sync de producto" started five minutes ago, was skipped, and the user opens the Briefing
+- **THEN** the hero shows Record this meeting, and the recording it starts is titled "Sync de producto"

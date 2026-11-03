@@ -154,6 +154,24 @@ class Hero(QWidget):
         p.end()
 
 
+class Opaque(QWidget):
+    """A scroll area's content that paints its whole rect in a theme color and says so: Qt then
+    scrolls it by moving what is painted instead of repainting every child over what is behind.
+    A style-sheet background is not enough (Qt does not count it as opaque), and autofill is reset
+    when the style sheet is polished at show time. The color is read at paint time, so a theme
+    change needs nothing more."""
+
+    def __init__(self, role: str = "canvas"):
+        super().__init__()
+        self.role = role
+        self.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, True)
+
+    def paintEvent(self, _):
+        p = QPainter(self)
+        p.fillRect(self.rect(), theme.color(self.role))
+        p.end()
+
+
 def label(text: str = "", scale: float = 1.0, weight: QFont.Weight = QFont.Weight.Normal, display: bool = True,
           dim: bool = False, eyebrow: bool = False, wrap: bool = False, tabular: bool = False) -> QLabel:
     lbl = QLabel(text)

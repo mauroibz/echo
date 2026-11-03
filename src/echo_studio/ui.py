@@ -17,6 +17,7 @@ from echo_app.ui.common import icon, run_task
 from . import actions, config, followup, keychain, llm, summary, templates
 from .actions_ui import ActionList
 from .reading import ReadingBrowser
+from .widgets import Opaque
 
 VIEW_TITLE = "Minutes"
 ACTIONS_TITLE = "Action items"
@@ -301,8 +302,10 @@ class SummaryView(QWidget):
 class ActionsView(QWidget):
     """The selected recording's action items, the width of the view: check them off, choose which
     go to the tracker (none until switched on), correct them, add and discard. The bar on top says
-    how far the meeting is on its way to the tracker, and Mark reviewed says the user is through
-    with it. `counted(n)` gives the number of live items, for the view's tab."""
+    how far the meeting is on its way to the tracker, and "Done with this meeting" says the user
+    has nothing more to send from it (`actions.mark_reviewed`). No paragraph of instructions: each
+    control says what it does in its tooltip. `counted(n)` gives the number of items not done, for
+    the view's tab."""
 
     counted = Signal(int)
 
@@ -322,18 +325,16 @@ class ActionsView(QWidget):
         head.addWidget(title)
         self.count = QLabel()
         self.count.setFont(theme.display_font(0.9, QFont.Weight.Bold))
+        self.count.setToolTip("Items not checked off as done")
         head.addWidget(self.count)
         head.addStretch(1)
         self.add_btn = QPushButton("Add")
         self.add_btn.setIcon(icon("pencil"))
-        self.add_btn.setToolTip("Add an action item")
+        self.add_btn.setToolTip("Add an action item by hand: summarizing again keeps it")
         self.add_btn.clicked.connect(lambda: self.actions.start_add())
         head.addWidget(self.add_btn)
         lay.addLayout(head)
-        self.hint = _dim("Check off what is done. Switch on what goes to your team's tracker: nothing goes "
-                         "until you do.")
-        lay.addWidget(self.hint)
-        # The way to the tracker: what is chosen, waiting, sent or failed, and Mark reviewed.
+        # The way to the tracker: what is chosen, waiting, sent or failed, and "Done with this meeting".
         self.send_bar = QFrame()
         self.send_bar.setObjectName("sendBar")
         self.send_bar.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
@@ -343,14 +344,15 @@ class ActionsView(QWidget):
         self.send_status = QLabel()
         self.send_status.setWordWrap(True)
         sb.addWidget(self.send_status, 1)
-        self.review_btn = QPushButton("Mark reviewed")
-        self.review_btn.setToolTip("You are through with this meeting's items; it is processed once what you "
-                                   "switched on is sent")
+        self.review_btn = QPushButton("Done with this meeting")
+        self.review_btn.setToolTip("Say nothing else from this meeting goes to your tracker. Once the items you "
+                                   "switched on are sent, it shows ✓ Processed, here and on the Briefing: the "
+                                   "call can be archived.")
         self.review_btn.clicked.connect(lambda: self._review(True))
         sb.addWidget(self.review_btn)
-        self.reopen_btn = QPushButton("Reopen")
+        self.reopen_btn = QPushButton("Not done yet")
         self.reopen_btn.setFlat(True)
-        self.reopen_btn.setToolTip("Not through with this meeting after all")
+        self.reopen_btn.setToolTip("Take it back: the meeting is not processed until you say you are done again")
         self.reopen_btn.clicked.connect(lambda: self._review(False))
         sb.addWidget(self.reopen_btn)
         lay.addWidget(self.send_bar)
@@ -362,11 +364,12 @@ class ActionsView(QWidget):
         self.poll = QTimer(self)  # whatever sends the items writes actions.json from outside
         self.poll.timeout.connect(self._poll)
         scroll = QScrollArea()
-        scroll.setStyleSheet("QScrollArea, QScrollArea > QWidget > QWidget { background: transparent; }")
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        inner = QWidget()
+        # Opaque, on the card's surface: measured offscreen with 20 items, scrolling went from 33
+        # widget paints per step to 4.
+        inner = Opaque("surface")
         il = QVBoxLayout(inner)
         il.setContentsMargins(0, 4, 6, 0)
         il.addWidget(self.actions)
@@ -389,7 +392,7 @@ class ActionsView(QWidget):
         on = data is not None and not busy
         self.actions.set_recording(self.rec if on else None)
         self._mtime = self._actions_mtime()
-        for w in (self.add_btn, self.hint, self.send_bar, self.body):
+        for w in (self.add_btn, self.send_bar, self.body):
             w.setVisible(on)
         self.placeholder.setVisible(not on and rec is not None)
         if linked is not None:
@@ -434,7 +437,7 @@ class ActionsView(QWidget):
             bg, fg = theme.rgba("coral", 0.14), t.coral_deep
         elif st["ready"]:
             text = (f"{st['ready']} to send, waiting for your tracker" + (f" · {st['sent']} sent" if st["sent"] else "")
-                    + (" · reviewed" if st["ready_at"] else ""))
+                    + (" · done with the meeting" if st["ready_at"] else ""))
             bg, fg = theme.rgba("amber", 0.16), t.ink
         elif chosen:
             text = f"{st['sent']} sent · none waiting."

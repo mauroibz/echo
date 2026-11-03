@@ -106,7 +106,7 @@ def test_home_shows_the_next_meeting(swindow, lib, feed, monkeypatch):
     buttons["Don't record"].click()
     assert wait_until(lambda: "Not recording this one" in _texts(home))
     assert echo_studio._meetings.is_skipped(echo_studio._meetings.next_event())
-    assert "Record now" in [b.text() for b in home.findChildren(QPushButton)]  # something else, now
+    assert "Record now" not in [b.text() for b in home.findChildren(QPushButton)]  # the rail's Record does that
     {b.text(): b for b in home.findChildren(QPushButton)}["Record it"].click()
     assert wait_until(lambda: any(t.startswith("●  Records by itself") for t in _texts(home)))
     # Coming up: the same meeting with its switch, and one without a link, off until turned on.
@@ -120,14 +120,13 @@ def test_home_shows_the_next_meeting(swindow, lib, feed, monkeypatch):
     assert "Not recording this one" in _texts(home)
 
 
-def test_record_heads_the_rail_and_the_briefing(swindow, lib, server):
+def test_record_heads_the_rail(swindow, lib, server):
     _attach(swindow)
     lay = swindow.rail.lay
     assert lay.itemAt(0).widget() is swindow.rail_record  # above Briefing, Recordings and People
     assert swindow.rail.top.itemAt(0).widget().toolTip().startswith("Briefing")
     assert swindow.page() == "home" and not swindow.rail.clock.isVisible()
-    home = swindow.pages.currentWidget()
-    next(b for b in home.findChildren(QPushButton) if b.text() == "Record now").click()
+    swindow.rail_record.click()
     assert wait_until(lambda: swindow.recording_id() is not None)
     assert swindow.page() == "home"  # recorded from where the user is
     assert wait_until(lambda: swindow.rail.clock.isVisible() and swindow.rail.clock.text() == "0:01", 5)
@@ -203,7 +202,7 @@ def test_people_by_email(swindow, lib, server):
     # Their items are polished here too.
     from PySide6.QtWidgets import QToolButton
 
-    next(b for b in page.findChildren(QToolButton) if b.toolTip() == "Discard").click()
+    next(b for b in page.findChildren(QToolButton) if b.accessibleName() == "Discard").click()
     assert sum(i["discarded"] for i in actions.load(lib.get(rec.id))["items"]) == 1
     assert page.stats["ACTION ITEMS"].text() == "1"
     page.email.setText("pedro@acme.example")
