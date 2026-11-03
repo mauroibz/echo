@@ -36,6 +36,7 @@ class Settings:
     global_shortcuts: bool = True  # Ctrl+Alt+R and Ctrl+Alt+N from any application (desktop portal)
     reduce_motion: bool = False  # no animations (also when the desktop has them off)
     background: bool = False  # keep running in the tray when the window closes, and start at login
+    dock_when_recording: bool = False  # swap the window for the recording dock when a recording starts
 
     @property
     def data_path(self) -> Path:
@@ -63,6 +64,7 @@ _COMMENTS = {
     "export_timestamps": "Start exported paragraphs with their time",
     "export_audio": "Audio in exported notes: link (to Echo's file), copy, or none",
     "global_shortcuts": "Record and take quick notes with keys that work in any application",
+    "dock_when_recording": "Swap the window for the small recording dock whenever a recording starts",
 }
 
 

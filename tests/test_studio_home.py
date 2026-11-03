@@ -137,6 +137,20 @@ def test_record_heads_the_rail(swindow, lib, server):
     assert not swindow.rail.clock.isVisible() and swindow.rail_record.accessibleName() == "Record"
 
 
+def test_briefing_keeps_notes_written_in_the_dock(swindow, lib, server):
+    _attach(swindow)
+    home = swindow.pages.currentWidget()
+    swindow.rail_record.click()
+    assert wait_until(lambda: swindow.recording_id() is not None)
+    assert wait_until(lambda: hasattr(home, "notes"), 5)
+    rid = swindow.recording_id()
+    lib.get(rid).update(notes="Escrito en el dock")  # as the dock saves them
+    home.refresh()  # the Briefing's field was never typed in: it does not undo that
+    assert lib.get(rid).meta.notes == "Escrito en el dock" and home.notes.toPlainText() == "Escrito en el dock"
+    swindow.rail_record.click()
+    assert wait_until(lambda: swindow.recording_id() is None)
+
+
 def test_home_while_recording(swindow, lib, feed):
     now = datetime.now().astimezone().replace(microsecond=0)
     feed.text = _now_feed(now + timedelta(hours=3))

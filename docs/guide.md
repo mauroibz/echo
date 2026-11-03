@@ -69,11 +69,14 @@ their title from their first sentence.
 
 **Recording dock.** Ctrl+Shift+D (or View → Recording dock) swaps the window for a small dock
 that floats over other windows: Record, the time, a small wave that follows your voice, Marker
-(with a count), Pause, Stop and a button back to the window. While recording, with the pointer
-away for a few seconds it shrinks to the time; point at it for the rest. Problems such as a silent
+(with a count), Notes, Pause, Stop and a button back to the window. Notes (or N) drops a field
+under the dock with the recording's notes, the same ones as in Details, saved as you type. While
+recording, with the pointer away for a few seconds and the notes closed, it shrinks to the time;
+point at it for the rest. Problems such as a silent
 microphone show in it in amber. After Stop it says the recording was saved and how the
 transcription goes; Open shows it in the window. Closing the window while recording also shows
-the dock. Drag it anywhere. Under Wayland, GNOME and KDE Plasma do not let applications stay
+the dock. To get it every time, turn on "Switch to the recording dock when a recording starts" in
+Settings → General (quick notes leave the window as it is). Drag it anywhere. Under Wayland, GNOME and KDE Plasma do not let applications stay
 above other windows, so there the dock is a small normal window; Ctrl+Shift+D and the tray bring
 it back. On KDE Plasma you can keep it above yourself: click the dock, press Alt+F3 and choose
 More Actions → Keep Above Others, or add a window rule for the title "Echo recording".

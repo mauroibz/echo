@@ -627,6 +627,12 @@ class SettingsDialog(QDialog):
                                    "At login it starts without its window, so what runs in the background "
                                    "(an extension recording the meetings in your calendar) keeps working.")
         form.addRow("", self.background)
+        self.dock_when_recording = QCheckBox("Switch to the recording dock when a recording starts")
+        self.dock_when_recording.setChecked(self.cfg.dock_when_recording)
+        self.dock_when_recording.setToolTip("The window gives way to the small dock (Ctrl+Shift+D) as soon as "
+                                            "you record, from the window, a shortcut or a calendar. Quick notes "
+                                            "leave the window as it is.")
+        form.addRow("", self.dock_when_recording)
         self.shortcuts_note = _dim("")
         form.addRow("", self.shortcuts_note)
         self._explain_shortcuts()
@@ -708,6 +714,7 @@ class SettingsDialog(QDialog):
         self.cfg.theme = self.theme.currentData()
         self.cfg.reduce_motion = self.reduce_motion.isChecked()
         self.cfg.background = self.background.isChecked()
+        self.cfg.dock_when_recording = self.dock_when_recording.isChecked()
         settings.save(self.cfg)
         try:
             from .. import autostart
@@ -788,6 +795,7 @@ SHORTCUTS = [
     ("Record / stop", "Ctrl+R"),
     ("Pause / resume recording", "Ctrl+Shift+R"),
     ("Add a marker while recording", "M (or the tray menu)"),
+    ("Notes in the recording dock", "N"),
     ("Marker at the playhead", "Ctrl+M"),
     ("Next / previous marker", "Alt+→ / Alt+←"),
     ("Move or remove a marker", "Drag it; right-click it (waveform)"),
