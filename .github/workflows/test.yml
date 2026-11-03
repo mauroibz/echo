@@ -4,7 +4,12 @@ name: test
 
 on:
   push:
+    branches: [main]  # a pull request's branch is tested once, as the pull request
   pull_request:
+
+concurrency:  # a new push replaces the run still going for the same branch
+  group: test-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   ubuntu:
@@ -30,9 +35,7 @@ jobs:
             uv sync --locked --no-install-project --extra "$profile" --dry-run
           done
       - name: Tests
-        run: uv run --no-sync pytest -q -o faulthandler_timeout=300
-        env:
-          QT_QPA_PLATFORM: offscreen
+        run: .github/run-tests.sh
 
   fedora:
     runs-on: ubuntu-latest
@@ -57,7 +60,5 @@ jobs:
             uv sync --locked --no-install-project --extra "$profile" --dry-run
           done
       - name: Tests
-        run: uv run --no-sync pytest -q -o faulthandler_timeout=300
-        env:
-          QT_QPA_PLATFORM: offscreen
+        run: .github/run-tests.sh
 
