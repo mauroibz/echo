@@ -5,6 +5,12 @@ tag.
 
 ## Unreleased
 
+### Added
+
+- The recording dock has Notes (N): the recording's notes in a field under the dock, saved as
+  you type.
+- Settings → General: "Switch to the recording dock when a recording starts".
+
 ### Changed
 
 - Echo Studio: Record heads the rail, with the waveform and the elapsed time, so recording no

@@ -881,6 +881,11 @@ class MainWindow(LibraryActionsMixin, SearchImportMixin, CaptureMixin, QMainWind
             self.model.refresh()
         self._select(rid)
         self._update_title()
+        rec = self.library.get(rid)
+        if settings.load()[0].dock_when_recording and rec is not None and not rec.meta.quick_note:
+            if not self.dock.isVisible():
+                self.show_dock()
+            self.hide()  # the dock instead of the window, as Ctrl+Shift+D does
 
     def _recording_stopped(self, rid: str):
         self._update_title()

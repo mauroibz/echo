@@ -157,6 +157,7 @@ class CaptureMixin:
         self.state.set("dock_pos", [p.x(), p.y()])
         self.dock.hide()
         self.show_window()
+        self._refresh()  # what the dock changed meanwhile (its notes), not the window's old copy
         if rid:
             self._select(rid)
 

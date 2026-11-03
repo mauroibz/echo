@@ -352,6 +352,7 @@ class HomeScreen(QWidget):
         self.notes.setAccessibleName("Notes")
         self.notes.setFixedHeight(self.notes.fontMetrics().lineSpacing() * 4 + 20)
         self._notes_rid = rid
+        self._notes_loaded = (rec.meta.notes if rec else "").strip()
         col.addWidget(self.notes)
         stop = QPushButton("Stop recording")
         theme.set_role(stop, stop=True)
@@ -387,7 +388,9 @@ class HomeScreen(QWidget):
             text = self.notes.toPlainText().strip()
         except RuntimeError:
             return  # the field went with the hero
-        if rec is not None and text != (rec.meta.notes or "").strip():
+        # Only what was typed here: the notes may have changed elsewhere meanwhile (the recording
+        # dock), and this field's copy would undo that.
+        if rec is not None and text != self._notes_loaded and text != (rec.meta.notes or "").strip():
             rec.update(notes=text)
 
     def _invited(self, ev) -> QVBoxLayout:

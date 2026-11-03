@@ -55,3 +55,54 @@ def test_closing_while_recording_shows_the_dock(window):
     assert window.isVisible() and not window.dock.isVisible()
     panel.stop()
     assert wait_until(lambda: panel.session is None)
+
+
+def test_notes_drop_down_from_the_dock(window, lib):
+    panel = window.recorder_panel
+    window.toggle_dock()
+    dock = window.dock
+    dock.refresh()
+    assert not dock.notes_btn.isVisible()  # only while recording
+    dock.record.click()
+    assert wait_until(lambda: panel.session is not None)
+    rid = panel.session.rec.id
+    lib.get(rid).update(notes="Antes de empezar")
+    dock.refresh()
+    assert dock.notes_btn.isVisible() and not dock.notes_card.isVisible()
+    dock.notes_btn.click()
+    assert dock.notes_card.isVisible() and dock.notes.toPlainText() == "Antes de empezar"
+    dock.notes.setPlainText("Antes de empezar\nPrecio: revisar el plan anual")
+    assert wait_until(lambda: lib.get(rid).meta.notes.endswith("plan anual"), 3)  # saved as typed
+    dock._hovered, dock._hover_left = False, 0.0
+    dock.refresh()
+    assert not dock.minimal  # stays open while the notes are
+    dock.notes.setPlainText("Antes de empezar\nPrecio: revisar el plan anual\nLlamar a Ana")
+    window.toggle_dock()  # back to the window before the save ran: kept all the same
+    assert lib.get(rid).meta.notes.endswith("Llamar a Ana")
+    assert window.player.notes.toPlainText().endswith("Llamar a Ana")  # the window shows them, not its old copy
+    window.toggle_dock()
+    panel.stop()
+    assert wait_until(lambda: (dock.refresh(), dock.state)[1] == "saved", 10)
+    assert not dock.notes_btn.isChecked() and not dock.notes_card.isVisible()
+
+
+def test_switch_to_the_dock_when_recording(window, lib):
+    from echo_app import settings
+
+    s = settings.load()[0]
+    s.dock_when_recording = True
+    settings.save(s)
+    panel = window.recorder_panel
+    panel.start()
+    assert wait_until(lambda: panel.session is not None)
+    assert wait_until(lambda: window.dock.isVisible() and not window.isVisible(), 3)
+    panel.stop()
+    assert wait_until(lambda: panel.session is None)
+    window.toggle_dock()
+    assert window.isVisible()
+    panel.start(quick_note=True)  # a quick note leaves the window as it is
+    assert wait_until(lambda: panel.session is not None)
+    pump(300)
+    assert window.isVisible() and not window.dock.isVisible()
+    panel.stop()
+    assert wait_until(lambda: panel.session is None)

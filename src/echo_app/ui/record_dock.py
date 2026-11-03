@@ -1,4 +1,5 @@
-"""The recording dock: a small pill above other windows, for recording without the window."""
+"""The recording dock: a small pill above other windows, for recording without the window, with
+the recording's notes in a card that drops down under it."""
 
 from __future__ import annotations
 
@@ -7,7 +8,8 @@ import time
 
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QKeySequence, QPainter, QPainterPath, QPen, QShortcut
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QSizePolicy, QToolButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (QHBoxLayout, QLabel, QPlainTextEdit, QSizePolicy, QToolButton, QVBoxLayout,
+                               QWidget)
 
 from .. import recorder
 from ..library import Library
@@ -18,6 +20,27 @@ from .library_view import status_of
 
 MINIMAL_AFTER_S = 5.0  # while recording, without the pointer over it, the dock shrinks to the time
 SAVED_FOR_S = 10.0  # "Saved" stays this long unless Open or Done is pressed
+NOTES_SAVE_MS = 800  # notes typed in the dock are saved this long after the last key
+
+
+class _Deep(QWidget):
+    """The dock's deep gradient, as a pill (`radius` None: half the height) or a rounded card."""
+
+    def __init__(self, radius: float | None = None):
+        super().__init__()
+        self.radius = radius
+
+    def paintEvent(self, _):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        r = QRectF(self.rect()).adjusted(1, 1, -1, -1)
+        p.setPen(QPen(theme.color("on_deep", 0.14), 1))
+        g = theme.deep_gradient(r)
+        g.setFinalStop(r.topRight())  # across the pill, not down it
+        p.setBrush(g)
+        rad = r.height() / 2 if self.radius is None else self.radius
+        p.drawRoundedRect(r, rad, rad)
+        p.end()
 
 
 class LevelWave(QWidget):
@@ -99,6 +122,8 @@ class RecordDock(QWidget):
         self._hover_left = time.monotonic()
         self._hovered = False
         self._last_session = None
+        self._notes_rid: str | None = None  # the recording whose notes the card shows
+        self._notes_timer = QTimer(self, singleShot=True, interval=NOTES_SAVE_MS, timeout=self._save_notes)
         self._build()
         self._timer = QTimer(self, interval=200, timeout=self.refresh)
         # The window's shortcuts do not reach a hidden window: the dock has its own.
@@ -119,7 +144,12 @@ class RecordDock(QWidget):
         return b
 
     def _build(self):
-        lay = QHBoxLayout(self)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(6)
+        self.pill = _Deep()
+        outer.addWidget(self.pill)
+        lay = QHBoxLayout(self.pill)
         lay.setContentsMargins(20, 10, 10, 10)
         lay.setSpacing(12)
         self.word = QLabel("echo")
@@ -163,6 +193,10 @@ class RecordDock(QWidget):
         self.mark.clicked.connect(self._mark)
         self._ripple = motion.Ripple(self.mark, "coral")
         lay.addWidget(self.mark)
+        self.notes_btn = self._button("pencil", "Notes for this recording (N)")
+        self.notes_btn.setCheckable(True)
+        self.notes_btn.toggled.connect(self._toggle_notes)
+        lay.addWidget(self.notes_btn)
         self.pause = self._button("pause", "Pause (Ctrl+Shift+R)")
         self.pause.clicked.connect(self.panel.toggle_pause)
         lay.addWidget(self.pause)
@@ -185,6 +219,25 @@ class RecordDock(QWidget):
         self.window_btn.clicked.connect(lambda: self.open_window.emit(""))
         lay.addWidget(self.window_btn)
 
+        # The recording's notes, the same ones as in the window's Details, saved as they are typed.
+        self.notes_card = _Deep(18)
+        nl = QVBoxLayout(self.notes_card)
+        nl.setContentsMargins(14, 10, 14, 12)
+        self.notes = QPlainTextEdit()
+        self.notes.setObjectName("docknotes")
+        self.notes.setPlaceholderText("Notes for this recording: saved as you type")
+        self.notes.setAccessibleName("Notes")
+        self.notes.setTabChangesFocus(True)
+        self.notes.setFixedHeight(self.notes.fontMetrics().lineSpacing() * 5 + 18)
+        self.notes.setMinimumWidth(320)
+        self.notes.setStyleSheet(f"QPlainTextEdit#docknotes {{ background: transparent; border: none; "
+                                 f"color: {theme.current().on_deep}; }}")
+        self.notes.textChanged.connect(lambda: self._notes_timer.start() if self._notes_rid else None)
+        nl.addWidget(self.notes)
+        self.notes_card.hide()
+        outer.addWidget(self.notes_card)
+        QShortcut(QKeySequence("N"), self, activated=lambda: self.notes_btn.setChecked(not self.notes_btn.isChecked()))
+
     # ---- state ----
     def showEvent(self, e):
         self._timer.start()
@@ -194,6 +247,7 @@ class RecordDock(QWidget):
 
     def hideEvent(self, e):
         self._timer.stop()
+        self._save_notes()  # typed just before Back to the window
         super().hideEvent(e)
         self.visibility_changed.emit(False)
 
@@ -212,7 +266,9 @@ class RecordDock(QWidget):
         if problem and "seconds" in problem:
             problem = self.panel.meter._note or problem  # the short form: "No sound for 12 s"
         away = not self._hovered and time.monotonic() - self._hover_left > MINIMAL_AFTER_S
-        self.minimal = self.state == "recording" and away and not problem
+        self.minimal = self.state == "recording" and away and not problem and not self.notes_btn.isChecked()
+        if self.state != "recording" and self.notes_btn.isChecked():
+            self.notes_btn.setChecked(False)  # stopped: the notes are saved and the card folds
         self._show(paused, problem)
         if sess is not None:
             self.time.setText(fmt_duration(status.get("elapsed", 0)))
@@ -240,7 +296,7 @@ class RecordDock(QWidget):
         self.mic.setVisible(full)
         if not rec:
             self.computer.setVisible(False)
-        for w in (self.mark, self.pause):
+        for w in (self.mark, self.notes_btn, self.pause):
             w.setVisible(full)
         self.record.setVisible(rest or full)
         self.record.setIcon(icon("stop", "deep_top") if rec else dot_icon(QColor("#ffffff"), 32))
@@ -282,6 +338,33 @@ class RecordDock(QWidget):
         self._hover_left = time.monotonic()
         QTimer.singleShot(300, self.refresh)
 
+    def _toggle_notes(self, on: bool):
+        """Open the notes card on the recording being made (its notes as saved now), or save and fold it."""
+        sess = self.panel.session
+        if on and sess is not None:
+            self._notes_rid = None  # loading the text is not typing
+            rec = self.library.get(sess.rec.id)
+            self.notes.setPlainText(rec.meta.notes if rec is not None else "")
+            self._notes_rid = sess.rec.id
+            self.notes_card.show()
+            self.activateWindow()
+            self.notes.setFocus()
+            self.notes.moveCursor(self.notes.textCursor().MoveOperation.End)
+        else:
+            self._save_notes()
+            self._notes_rid = None
+            self.notes_card.hide()
+            if on:
+                self.notes_btn.setChecked(False)
+        self.adjustSize()
+
+    def _save_notes(self):
+        self._notes_timer.stop()
+        rec = self.library.get(self._notes_rid) if self._notes_rid else None
+        text = self.notes.toPlainText().strip()
+        if rec is not None and text != (rec.meta.notes or "").strip():
+            rec.update(notes=text)
+
     def _mark(self):
         if self.panel.mark_quietly():
             self._ripple.play()
@@ -310,13 +393,3 @@ class RecordDock(QWidget):
             return
         super().mousePressEvent(e)
 
-    def paintEvent(self, _):
-        p = QPainter(self)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        r = QRectF(self.rect()).adjusted(1, 1, -1, -1)
-        p.setPen(QPen(theme.color("on_deep", 0.14), 1))
-        g = theme.deep_gradient(r)
-        g.setFinalStop(r.topRight())  # across the pill, not down it
-        p.setBrush(g)
-        p.drawRoundedRect(r, r.height() / 2, r.height() / 2)
-        p.end()
