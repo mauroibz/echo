@@ -47,8 +47,8 @@ GUIDE = """
 
 The person who recorded this wrote notes and marked moments while it happened; they are what
 mattered to them. Build the summary around them: cover each one, expanded from what was said
-about it (for a marked moment, around the passage given with it), and fill in the rest of the
-transcript around them. Do not quote the notes as notes or mention that they exist."""
+about it (for a marked moment or a note with a time, around the passage given with it), and fill
+in the rest of the transcript around them. Do not quote the notes as notes or mention that they exist."""
 
 PART_NOTE = ("\n\nThis is part {n} of {m} of one long transcript. Summarize only this part; "
              "the parts are merged afterwards.")
@@ -92,20 +92,38 @@ MARK_BEFORE_S, MARK_AFTER_S = 30.0, 15.0  # the passage sent with a marker: what
 MARK_PASSAGE_MAX = 600  # characters of it
 
 
+NOTE_STAMP = re.compile(r"^\s*\[(?:(\d+):)?(\d{1,2}):(\d{2})\]\s*")  # "[12:34] ", as the dock's Ctrl+T writes
+
+
+def _near(segs: list[dict], at: float) -> str:
+    """What was said around `at`: what led to it, and a little after."""
+    near = " ".join((sg.get("text") or "").strip() for sg in segs
+                    if at - MARK_BEFORE_S <= float(sg.get("start", 0)) <= at + MARK_AFTER_S).strip()
+    return "…" + near[-MARK_PASSAGE_MAX:] if len(near) > MARK_PASSAGE_MAX else near
+
+
+def _with_passage(line: str, segs: list[dict]) -> str:
+    """A note line that starts with the recording's time, with what was said then under it, as a
+    marked moment has."""
+    m = NOTE_STAMP.match(line)
+    if not m or not segs:
+        return line
+    at = int(m.group(1) or 0) * 3600 + int(m.group(2)) * 60 + int(m.group(3))
+    near = _near(segs, at)
+    return line + (f"\n  Said around it: {near}" if near else "")
+
+
 def guide(rec: Recording) -> str:
     """The user's notes and markers, as sent ahead of the transcript; "" when there are none."""
     lines = []
     notes = (rec.meta.notes or "").strip()
-    if notes:
-        lines += ["Notes:", notes]
     segs = (rec.transcript() or {}).get("segments") or []
+    if notes:
+        lines += ["Notes:"] + [_with_passage(ln, segs) for ln in notes.splitlines()]
     marks = []
     for m in rec.meta.markers or []:
         at = float(m.get("at", 0))
-        near = " ".join((sg.get("text") or "").strip() for sg in segs
-                        if at - MARK_BEFORE_S <= float(sg.get("start", 0)) <= at + MARK_AFTER_S).strip()
-        if len(near) > MARK_PASSAGE_MAX:
-            near = "…" + near[-MARK_PASSAGE_MAX:]
+        near = _near(segs, at)
         note = (m.get("note") or "").strip() or "(no note)"
         marks.append(f"- at {export.stamp(at)}: {note}" + (f"\n  Said around it: {near}" if near else ""))
     if marks:

@@ -3,7 +3,7 @@
 from datetime import datetime, timedelta
 
 import pytest
-from PySide6.QtWidgets import QLabel, QPushButton
+from PySide6.QtWidgets import QCheckBox, QLabel, QPushButton
 
 from echo_app import people
 from echo_studio import calendar, summary
@@ -235,3 +235,39 @@ def test_people_by_email(swindow, lib, server):
     screen.reload()
     screen.filter.setText("acme")  # by email too
     assert screen.list.count() == 2
+
+
+def test_action_items_page_across_meetings(swindow, lib, server):
+    from echo_studio import actions
+    from echo_studio.actions_ui import ActionsScreen
+
+    old, new = _rec(lib, "Planificación"), _rec(lib, "Revisión semanal")
+    new.update(created="2026-10-30T10:00:00-03:00")
+    actions.add(new, "Reservar sala", owner="Lucía")
+    actions.add(new, "Pedir presupuesto")
+    actions.add(old, "Revisar contrato")
+    swindow.model.refresh()
+    _attach(swindow)
+    assert swindow.rail.top.itemAt(3).widget().toolTip() == "Action items (Ctrl+4)"
+    swindow.show_page("actions")
+    page = swindow.pages.currentWidget()
+    assert isinstance(page, ActionsScreen)
+    heads = [b.text() for b in page.list.findChildren(QPushButton) if b.objectName() == "meetingHeading"]
+    assert [h.split("  ·  ")[0] for h in heads] == ["Revisión semanal", "Planificación"]
+    assert page.count.text() == "3 open in 2 meetings"
+    page.list.findChildren(QCheckBox)[0].click()  # checked off: off the page, with Undo
+    assert actions.load(lib.get(new.id))["items"][0]["done"] and page.count.text() == "2 open in 2 meetings"
+    assert page.list.undo_bar.isVisibleTo(page)
+    page.list.undo_bar.undo()
+    assert page.count.text() == "3 open in 2 meetings"
+    page.filter.setText("lucia")  # an owner, accents aside
+    assert [it["text"] for it in page.list.items] == ["Reservar sala"]
+    page.filter.setText("planificación")  # a meeting
+    assert [it["text"] for it in page.list.items] == ["Revisar contrato"]
+    page.filter.clear()
+    actions.add(lib.get(old.id), "Mandar la minuta")  # written elsewhere: there when the page shows again
+    swindow.show_page("home")
+    swindow.show_page("actions")
+    assert page.count.text() == "4 open in 2 meetings"
+    next(b for b in page.list.findChildren(QPushButton) if b.objectName() == "meetingHeading").click()
+    assert swindow.page() == "recordings" and swindow.current().id == new.id

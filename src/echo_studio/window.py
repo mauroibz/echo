@@ -1,4 +1,5 @@
-"""Studio's window: Echo's window with a rail at the left (Record, then Briefing, Recordings, People).
+"""Studio's window: Echo's window with a rail at the left (Record, then Briefing, Recordings, People,
+Action items).
 
 Recordings is Echo's window exactly as it is, so turning Studio off or on never moves the user's
 recordings. Record heads the rail, with the waveform Echo's Record wears, so a recording starts

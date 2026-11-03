@@ -303,6 +303,14 @@ def test_notes_and_markers_lead_the_summary(tmp_path, server):
     assert not summary.stale(rec)
 
 
+def test_notes_with_the_time_carry_what_was_said(tmp_path):
+    rec = _rec(Library(tmp_path / "data"))
+    rec.update(notes="Antes de empezar\n[1:06] el cierre, revisar\n[0:00:07] precio")
+    g = summary.guide(rec)
+    assert g == ("Notes:\nAntes de empezar\n[1:06] el cierre, revisar\n  Said around it: Y ahora el cierre.\n"
+                 "[0:00:07] precio\n  Said around it: Hola, soy Lucía. Hablemos del precio.")
+
+
 def test_templates_by_tag(tmp_path, server):
     rec = _rec(Library(tmp_path / "data"))
     summary.write(rec)
@@ -465,13 +473,18 @@ def test_polishing_items_in_their_view(window, lib, server, studio):
     assert "Enviar la propuesta" in texts() and "La versión con el precio nuevo, para Acme." in texts()
     assert any(t.startswith("lucia") and "by " in t for t in texts())
     assert view.count.text() == "1" and window.views.buttons[2].text() == "Action items  1"
-    # Done: the user's check mark; the item keeps to its line and the tab counts what is left.
+    # Done: the user's check mark; the item folds to the end and the tab counts what is left.
     view.actions.findChildren(QCheckBox)[0].click()
     assert actions.load(lib.get(rec.id))["items"][0]["done"]
     assert view.count.text() == "0 of 1 left" and window.views.buttons[2].text() == "Action items"
-    assert "La versión con el precio nuevo, para Acme." not in texts()
-    view.actions.findChildren(QCheckBox)[0].click()
-    assert not actions.load(lib.get(rec.id))["items"][0]["done"]
+    assert "1 done" in texts() and "Enviar la propuesta" not in texts()
+    bar = view.actions.undo_bar
+    assert bar.isVisibleTo(view) and bar.text.text() == "Checked off “Enviar la propuesta”"
+    next(b for b in view.actions.findChildren(QPushButton) if b.text() == "Show").click()
+    assert "Enviar la propuesta" in texts() and "La versión con el precio nuevo, para Acme." not in texts()
+    bar.undo_btn.click()  # taken back: open again, where it was
+    assert not actions.load(lib.get(rec.id))["items"][0]["done"] and not bar.isVisibleTo(view)
+    assert "1 done" not in texts() and view.count.text() == "1"
     # The tracker: off until switched on.
     [send] = view.actions.findChildren(Toggle)
     assert not send.isChecked() and view.send_status.text() == "None switched on for your tracker."
@@ -921,3 +934,103 @@ def test_sending_from_the_window(window, lib, server, studio):
     assert not view.review_btn.isVisible()  # "Mandar la grabación" was never switched on
     card = MinutesCard(lib.get(rec.id), lib)
     assert card.processed and "✓ Processed" in [lbl.text() for lbl in card.findChildren(QLabel)]
+
+
+def test_open_items_switch_all_and_undo(tmp_path):
+    lib_ = Library(tmp_path / "data")
+    old, new = _rec(lib_, "Planificación"), _rec(lib_, "Revisión semanal")
+    new.update(created="2026-10-30T10:00:00-03:00")
+    for t in ("Reservar sala", "Mandar la minuta", "Llamar a Tomás", "Pedir presupuesto"):
+        actions.add(new, t)
+    actions.add(old, "Revisar contrato", owner="Ana")
+    actions.set_done(new, 1, True)
+    actions.discard(new, 2, True)
+    # Every meeting's open items, newest meeting first, in its order.
+    assert [(it["title"], it["text"]) for it in actions.open_items(lib_)] == [
+        ("Revisión semanal", "Reservar sala"), ("Revisión semanal", "Pedir presupuesto"),
+        ("Planificación", "Revisar contrato")]
+    # All on: the open ones; done and discarded stay as they are, and a sent one is the tracker's.
+    actions.set_send(new, 3, True)
+    actions.mark_sent(new, "3", "PROJ-1")
+    assert actions.set_send_all(new, True) == 1
+    assert [it["state"] for it in actions.load(new)["items"]] == ["ready", "proposed", "proposed", "sent"]
+    assert actions.set_send_all(new, True) == 0  # nothing more to switch
+    # Undo puts back what a check mark, a discard or a switch changed, unless it was sent since.
+    snap = actions.snapshot(new, 0)
+    actions.discard(new, 0, True)
+    assert actions.load(new)["items"][0]["state"] == "proposed"
+    actions.restore(new, 0, snap)
+    it = actions.load(new)["items"][0]
+    assert not it["discarded"] and it["state"] == "ready"
+    snap = actions.snapshot(new, 3)
+    actions.restore(new, 3, {**snap, "state": "proposed"})
+    assert actions.load(new)["items"][3]["state"] == "sent"
+
+
+def test_action_list_from_the_keyboard(qapp, tmp_path):
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QLineEdit
+
+    from echo_studio.actions_ui import ActionList
+
+    lib_ = Library(tmp_path / "data")
+    rec = _rec(lib_)
+    for t in ("Reservar sala", "Mandar la minuta", "Llamar a Tomás"):
+        actions.add(rec, t)
+    lst = ActionList(editable=True)
+    lst.set_recording(rec)
+    lst.resize(600, 500)
+    lst.show()
+    lst.activateWindow()
+    lst.setFocus()
+    pump()
+    item = lambda k: actions.load(rec)["items"][k]  # noqa: E731
+    assert lst.current()["text"] == "Reservar sala"
+    assert lst.nav[0][1].property("current") == "true"
+    QTest.keyClick(lst, Qt.Key.Key_Down)
+    assert lst.current()["text"] == "Mandar la minuta"
+    QTest.keyClick(lst, Qt.Key.Key_Space)  # done: it folds to the end, the next one is current
+    assert item(1)["done"] and lst.current()["text"] == "Llamar a Tomás"
+    assert lst.undo_bar.isVisible()
+    QTest.keyClick(lst, Qt.Key.Key_Z, Qt.KeyboardModifier.ControlModifier)
+    assert not item(1)["done"] and not lst.undo_bar.isVisible()
+    QTest.keyClick(lst, Qt.Key.Key_Home)
+    QTest.keyClick(lst, Qt.Key.Key_T)
+    assert item(0)["state"] == "ready"
+    QTest.keyClick(lst, Qt.Key.Key_T)
+    assert item(0)["state"] == "proposed"
+    QTest.keyClick(lst, Qt.Key.Key_Delete)
+    assert item(0)["discarded"] and lst.undo_bar.text.text() == "Discarded “Reservar sala”"
+    lst.undo_bar.undo()
+    assert not item(0)["discarded"]
+    QTest.keyClick(lst, Qt.Key.Key_End)
+    QTest.keyClick(lst, Qt.Key.Key_E)
+    ed = lst.findChildren(QLineEdit)[0]
+    assert ed.text() == "Llamar a Tomás"
+    ed.setText("Llamar a Tomás el lunes")
+    QTest.keyClick(ed, Qt.Key.Key_Return)
+    assert item(2)["text"] == "Llamar a Tomás el lunes" and lst.hasFocus()
+    lst.close()
+
+
+def test_switch_all_from_the_view(window, lib, server, studio):
+    from echo_studio.ui import ActionsView
+
+    rec = _rec(lib)
+    window.model.refresh()
+    _attach(window)
+    view = window.views.views()[1]
+    assert isinstance(view, ActionsView)
+    window._select(rec.id)
+    window.transcribed.emit(rec.id)
+    assert wait_until(lambda: view.body.isVisibleTo(view))
+    actions.add(lib.get(rec.id), "Reservar sala")
+    view.show_subject(lib.get(rec.id), None)
+    assert view.all_btn.text() == "Switch all on" and view.all_btn.isVisibleTo(view)
+    view.all_btn.click()
+    assert [it["state"] for it in actions.load(lib.get(rec.id))["items"]] == ["ready", "ready"]
+    assert view.all_btn.text() == "Switch all off" and view.send_status.text().startswith("2 to send")
+    assert view.actions.undo_bar.text.text() == "Switched 2 items on for your tracker"
+    view.actions.undo_bar.undo()
+    assert [it["state"] for it in actions.load(lib.get(rec.id))["items"]] == ["proposed", "proposed"]
+    assert view.all_btn.text() == "Switch all on"

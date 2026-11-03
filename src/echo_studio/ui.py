@@ -344,6 +344,10 @@ class ActionsView(QWidget):
         self.send_status = QLabel()
         self.send_status.setWordWrap(True)
         sb.addWidget(self.send_status, 1)
+        self.all_btn = QPushButton()
+        self.all_btn.setFlat(True)
+        self.all_btn.clicked.connect(self._send_all)
+        sb.addWidget(self.all_btn)
         self.review_btn = QPushButton("Done with this meeting")
         self.review_btn.setToolTip("Say nothing else from this meeting goes to your tracker. Once the items you "
                                    "switched on are sent, it shows ✓ Processed, here and on the Briefing: the "
@@ -357,6 +361,7 @@ class ActionsView(QWidget):
         sb.addWidget(self.reopen_btn)
         lay.addWidget(self.send_bar)
         self.actions = ActionList(editable=True)
+        lay.addWidget(self.actions.undo_bar)  # above the scroll, in sight wherever the list is
         self.actions.play.connect(lambda rid, at: self.show_recording(rid, at))
         self.actions.relaid.connect(self._count)
         self.actions.changed.connect(self._seen)
@@ -448,8 +453,22 @@ class ActionsView(QWidget):
         self.send_status.setText(text)
         self.send_status.setStyleSheet(f"color: {fg}; background: transparent; font-weight: 600;")
         self.send_bar.setStyleSheet(f"QFrame#sendBar {{ background: {bg}; border-radius: 12px; }}")
+        # Every open item on (or off) at once, for a meeting where most of them should go.
+        openish = [it for it in self.actions.items if not it.get("discarded") and not it.get("done")
+                   and it.get("state") != actions.SENT]
+        all_on = bool(openish) and all(it.get("state") == actions.READY for it in openish)
+        self.all_btn.setVisible(bool(openish))
+        self.all_btn.setText("Switch all off" if all_on else "Switch all on")
+        self.all_btn.setToolTip("Keep every open item in Echo" if all_on else
+                                "Switch every open item on for your tracker; then switch off the ones that "
+                                "should stay. Done and discarded items are left as they are.")
         self.review_btn.setVisible(not st["ready_at"])
         self.reopen_btn.setVisible(bool(st["ready_at"]))
+
+    def _send_all(self):
+        on = self.all_btn.text() == "Switch all on"
+        self.actions.send_all(on)
+        self._seen()
 
     def _review(self, on: bool):
         rec = self.actions.rec

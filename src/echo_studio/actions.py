@@ -253,6 +253,44 @@ def set_send(rec: Recording, index: int, on: bool = True) -> None:
     _save(rec, d)
 
 
+def set_send_all(rec: Recording, on: bool = True) -> int:
+    """Switch every open item (not done, discarded or sent) on for the tracker, or off; returns how
+    many changed. The user then switches off the few that should stay."""
+    d = load(rec)
+    if d is None:
+        return 0
+    n = 0
+    for it in d["items"]:
+        if it["state"] == SENT or it["discarded"] or it["done"]:
+            continue
+        want = READY if on else PROPOSED
+        if it["state"] != want:
+            it["state"], it["failure"], n = want, "", n + 1
+    if n:
+        _save(rec, d)
+    return n
+
+
+UNDO_FIELDS = ("done", "discarded", "state", "failure")
+
+
+def snapshot(rec: Recording, index: int) -> dict | None:
+    """What a check mark, a switch or a discard changes on an item, to put back with `restore`."""
+    d = load(rec)
+    if d is None or not 0 <= index < len(d["items"]):
+        return None
+    return {f: d["items"][index][f] for f in UNDO_FIELDS}
+
+
+def restore(rec: Recording, index: int, snap: dict) -> None:
+    """Undo: the item as `snapshot` saw it, unless it was sent since (then it is the tracker's)."""
+    d = load(rec)
+    if d is None or not 0 <= index < len(d["items"]) or d["items"][index]["state"] == SENT:
+        return
+    d["items"][index].update({f: snap[f] for f in UNDO_FIELDS if f in snap})
+    _save(rec, d)
+
+
 def add(rec: Recording, text: str, owner: str = "", due: str = "", context: str = "", description: str = "",
         note: str = "") -> None:
     """An item the user adds by hand; summarizing again keeps it."""
@@ -277,6 +315,17 @@ def assigned_to(library, person: str, discarded: bool = False) -> list[dict]:
     for rec in sorted(library.all(), key=lambda r: r.meta.created, reverse=True):
         for k, it in enumerate((load(rec) or {}).get("items", [])):
             if (discarded or not it["discarded"]) and want and fold_tag(it["owner"]) == want:
+                out.append({**it, "id": rec.id, "title": rec.meta.title, "created": rec.meta.created, "index": k})
+    return out
+
+
+def open_items(library) -> list[dict]:
+    """Every item not checked off as done (nor discarded) across the library, newest recording
+    first and in the meeting's order within it; each with its recording's id, title, date and index."""
+    out = []
+    for rec in sorted(library.all(), key=lambda r: r.meta.created, reverse=True):
+        for k, it in enumerate((load(rec) or {}).get("items", [])):
+            if not it["discarded"] and not it["done"]:
                 out.append({**it, "id": rec.id, "title": rec.meta.title, "created": rec.meta.created, "index": k})
     return out
 
