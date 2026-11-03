@@ -13,7 +13,7 @@ from datetime import date
 
 from PySide6.QtCore import QEvent, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QKeySequence, QPainter, QShortcut
-from PySide6.QtWidgets import (QCheckBox, QComboBox, QFrame, QHBoxLayout, QLabel, QLineEdit, QPlainTextEdit,
+from PySide6.QtWidgets import (QAbstractButton, QCheckBox, QComboBox, QFrame, QHBoxLayout, QLabel, QLineEdit, QPlainTextEdit,
                                QPushButton, QScrollArea, QSizePolicy, QToolButton, QVBoxLayout, QWidget)
 
 from echo_app import export
@@ -210,6 +210,59 @@ class UndoBar(QFrame):
         self.hide()
 
 
+class RoundButton(QAbstractButton):
+    """A round icon button: muted at rest, filled in `on_role` with a white icon when checked (the
+    envelope lights up amber for the tracker, the check fills for done); `hover_role` tints it under
+    the pointer (coral for discard)."""
+
+    SIZE = 32
+
+    def __init__(self, ic: str, tip: str, on_role: str = "accent", hover_role: str = "ink",
+                 checkable: bool = True):
+        super().__init__()
+        self.ic, self.on_role, self.hover_role = ic, on_role, hover_role
+        self.setCheckable(checkable)
+        self.setToolTip(tip)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
+        self.setFixedSize(self.SIZE, self.SIZE)
+        self.lit = False  # shown on without being a switch (a sent item's envelope)
+
+    def sizeHint(self) -> QSize:
+        return QSize(self.SIZE, self.SIZE)
+
+    def paintEvent(self, _):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        r = QRectF(self.rect()).adjusted(1.5, 1.5, -1.5, -1.5)
+        on, hover, live = self.isChecked() or self.lit, self.underMouse(), self.isEnabled()
+        if on:
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(theme.color(self.on_role, 1.0 if live else 0.55))
+            if live and self.on_role == "amber":  # lit: a soft halo
+                p.setBrush(theme.color("amber", 0.25))
+                p.drawEllipse(QRectF(self.rect()))
+                p.setBrush(theme.color("amber"))
+            p.drawEllipse(r)
+            role = "on_accent" if self.on_role == "accent" else "ink"
+            ico = theme.tinted(self.ic, role)
+        else:
+            if hover and live:
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(theme.color(self.hover_role, 0.16 if self.hover_role != "ink" else 0.07))
+                p.drawEllipse(r)
+            else:
+                p.setPen(theme.color("ink", 0.16 if live else 0.07))
+                p.setBrush(Qt.BrushStyle.NoBrush)
+                p.drawEllipse(r)
+            role = (self.hover_role if hover and self.hover_role != "ink" else "ink") if live else "line"
+            ico = theme.tinted(self.ic, role if hover or not live else "muted")
+        x = (self.width() - 16) // 2
+        ico.paint(p, x, x, 16, 16)  # sharp at any scale, unlike a 16 px pixmap
+        p.end()
+
+
 class ClickFrame(QFrame):
     """A frame that is a button: a meeting card's head."""
 
@@ -228,24 +281,13 @@ class ClickFrame(QFrame):
 
 
 class _Row(QFrame):
-    """An item's card; a click makes it the list's current item. `acts`, when set, are the
-    row's tools shown only while the pointer is over it or it is current."""
+    """An item's card; a click makes it the list's current item. Nothing in it shows or hides on
+    hover: a row passing under a still pointer while scrolling then cost 3.5 ms of layout (a
+    scroll step costs 0.3), and that was the stutter."""
 
     def __init__(self, on_press):
         super().__init__()
         self.on_press = on_press
-        self.acts: QWidget | None = None
-        self.current = False
-
-    def enterEvent(self, e):
-        if self.acts is not None:
-            self.acts.show()
-        super().enterEvent(e)
-
-    def leaveEvent(self, e):
-        if self.acts is not None and not self.current:
-            self.acts.hide()
-        super().leaveEvent(e)
 
     def mousePressEvent(self, e):
         self.on_press()
@@ -460,21 +502,10 @@ class ActionList(QWidget):
         sub.addStretch(1)
         col.addLayout(sub)
         hl.addLayout(col, 1)
-        if live:
-            bar = Progress(done / len(live), role)
-            bar.setToolTip(f"{done} of {len(live)} done")
-            hl.addWidget(bar, 0, Qt.AlignmentFlag.AlignVCenter)
         go = QLabel()
         go.setPixmap(icon("arrow-right", "muted").pixmap(18, 18))
         go.setStyleSheet("background: transparent;")
         hl.addWidget(go, 0, Qt.AlignmentFlag.AlignVCenter)
-        # The switches' column, named once per meeting instead of on every row.
-        cap = QLabel("TO TRACKER")
-        cap.setFont(theme.display_font(0.68, QFont.Weight.ExtraBold))
-        cap.setStyleSheet(f"color: {t.muted}; background: transparent; letter-spacing: 1px;")
-        cap.setFixedWidth(TOOLS_W)
-        cap.setToolTip("Switch an item on to send it to your tracker; off, it stays in Echo")
-        hl.addWidget(cap, 0, Qt.AlignmentFlag.AlignBottom)
         lay.addWidget(head)
         body = QVBoxLayout()
         body.setContentsMargins(8, 0, 8, 0)
@@ -492,16 +523,8 @@ class ActionList(QWidget):
         theme.set_role(row, first=first)
         state = it.get("state", actions.PROPOSED)
         outer = QHBoxLayout(row)
-        outer.setContentsMargins(12, 10, 10, 10)
+        outer.setContentsMargins(16, 10, 10, 10)
         outer.setSpacing(12)
-        check = QCheckBox()
-        check.setChecked(bool(it.get("done")))
-        check.setToolTip("Check off when it is done: it leaves this page (Undo brings it back)")
-        check.setAccessibleName(f"Done: {it['text']}")
-        check.setCursor(Qt.CursorShape.PointingHandCursor)
-        check.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        check.toggled.connect(lambda on, k=_key(it): self._done(k, on))
-        outer.addWidget(check, 0, Qt.AlignmentFlag.AlignTop)
         col = QVBoxLayout()
         col.setSpacing(6)
         text = QLabel(it["text"])
@@ -540,38 +563,41 @@ class ActionList(QWidget):
             theme.set_role(desc, dim=True)
             col.addWidget(desc)
         outer.addLayout(col, 1)
-        tools = QWidget()
-        tools.setObjectName("rowTools")
-        tools.setFixedWidth(TOOLS_W)
-        tl = QHBoxLayout(tools)
-        tl.setContentsMargins(0, 0, 0, 0)
-        tl.setSpacing(2)
-        if state != actions.SENT:
-            send = Toggle(state == actions.READY, f"Send “{it['text']}” to your tracker", role="accent")
-            send.setToolTip("To tracker. Off: stays in Echo. On: whatever sends your items picks it up (T)")
-            send.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        # On the right, always in sight: edit, the tracker's envelope, done and discard.
+        tools = QHBoxLayout()
+        tools.setSpacing(4)
+        sent = state == actions.SENT
+        edit = RoundButton("pencil", "Edit the title, description, owner, date, context and your note (E)")
+        edit.setAccessibleName("Edit")
+        edit.setEnabled(not sent)
+        edit.clicked.connect(lambda _c=False, k=_key(it): self._edit(k))
+        tools.addWidget(edit)
+        if sent:
+            ref = (it.get("tracker") or {}).get("ref") or "your tracker"
+            send = RoundButton("mail", f"Sent: in your tracker as {ref}", on_role="accent", checkable=False)
+            send.lit = True  # stays lit, and still says where it went
+            send.setCursor(Qt.CursorShape.ArrowCursor)
+        else:
+            send = RoundButton("mail", "Send to your tracker (T). Lit: whatever sends your items picks it up; "
+                                       "off: it stays in Echo", on_role="amber", hover_role="amber")
+            send.setChecked(state == actions.READY)
             send.toggled.connect(lambda on, k=_key(it): self._send(k, on))
-            tl.addWidget(send)
-            tl.addStretch(1)
-            acts = QWidget()  # edit and discard: shown on the item under the pointer or the keyboard
-            al = QHBoxLayout(acts)
-            al.setContentsMargins(0, 0, 0, 0)
-            al.setSpacing(0)
-            sp = acts.sizePolicy()
-            sp.setRetainSizeWhenHidden(True)
-            acts.setSizePolicy(sp)
-            acts.hide()
-            row.acts = acts
-            edit = _small_button("pencil", "Edit")
-            edit.setToolTip("Edit the title, description, owner, date, context and your note (E)")
-            edit.clicked.connect(lambda _c=False, k=_key(it): self._edit(k))
-            al.addWidget(edit)
-            drop = _small_button("x", "Discard")
-            drop.setToolTip("Discard: never sent; the meeting's own view can restore it (Delete)")
-            drop.clicked.connect(lambda _c=False, k=_key(it): self._discard(k, True))
-            al.addWidget(drop)
-            tl.addWidget(acts)
-        outer.addWidget(tools, 0, Qt.AlignmentFlag.AlignTop)
+        send.setAccessibleName(f"Send to tracker: {it['text']}")
+        tools.addWidget(send)
+        done = RoundButton("check", "Done (Space): it leaves this page; Undo brings it back", on_role="accent",
+                           hover_role="accent")
+        done.setChecked(bool(it.get("done")))
+        done.setAccessibleName(f"Done: {it['text']}")
+        done.toggled.connect(lambda on, k=_key(it): self._done(k, on))
+        tools.addWidget(done)
+        drop = RoundButton("x", "Discard (Delete): never sent; the meeting's own view can restore it",
+                           hover_role="coral", checkable=False)
+        drop.setAccessibleName("Discard")
+        drop.setEnabled(not sent)
+        drop.clicked.connect(lambda _c=False, k=_key(it): self._discard(k, True))
+        tools.addWidget(drop)
+        outer.addLayout(tools)
+        outer.setAlignment(tools, Qt.AlignmentFlag.AlignTop)
         return row
 
     # ---- the keyboard ----
@@ -591,10 +617,6 @@ class ActionList(QWidget):
             on = show and k == self.cur
             if (row.property("current") == "true") != on:
                 theme.set_role(row, current=on)
-            if isinstance(row, _Row):
-                row.current = on
-                if row.acts is not None:
-                    row.acts.setVisible(on or row.underMouse())
         if show and self.cur is not None:
             row = self.nav[self.cur][1]
             w = self.parentWidget()
@@ -962,27 +984,6 @@ class DateTile(QWidget):
         p.end()
 
 
-class Progress(QWidget):
-    """How many of a meeting's items are done, as a thin bar in its color."""
-
-    def __init__(self, frac: float, role: str, width: int = 84):
-        super().__init__()
-        self.frac, self.role = max(0.0, min(1.0, frac)), role
-        self.setFixedSize(width, 6)
-
-    def paintEvent(self, _):
-        p = QPainter(self)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        r = QRectF(self.rect())
-        p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(theme.color("ink", 0.10))
-        p.drawRoundedRect(r, 3, 3)
-        if self.frac > 0:
-            p.setBrush(theme.color(self.role))
-            p.drawRoundedRect(QRectF(r.left(), r.top(), max(6.0, r.width() * self.frac), r.height()), 3, 3)
-        p.end()
-
-
 class Elided(QLabel):
     """One line of text, cut with "…" to the width it gets."""
 
@@ -1292,7 +1293,6 @@ class ActionsScreen(QWidget):
         super().showEvent(e)
 
 
-TOOLS_W = 112  # a dense row's switch, edit and discard; the card's head names the column
 MAX_PAGE_W = 980  # the page's column: lines short enough to read across a wide window
 OWNER_CHIPS = 6
 

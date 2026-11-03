@@ -260,7 +260,12 @@ def test_action_items_page_across_meetings(swindow, lib, server):
     heads = [h.accessibleName() for h in page.list.findChildren(ClickFrame)]
     assert heads == ["Open Revisión semanal", "Open Planificación"]  # a card per meeting, newest first
     assert page.eyebrow.text() == "ACROSS 2 MEETINGS" and tile("open") == 3 and tile("unowned") == 2
-    page.list.findChildren(QCheckBox)[0].click()  # checked off: off the page, with Undo
+    from echo_studio.actions_ui import RoundButton
+
+    buttons = lambda name: [b for b in page.list.findChildren(RoundButton)  # noqa: E731
+                            if b.accessibleName().startswith(name)]
+    assert len(buttons("Done")) == 3 and not any(b.isChecked() for b in buttons("Send to tracker"))
+    buttons("Done")[0].click()  # checked off: off the page, with Undo
     assert actions.load(lib.get(new.id))["items"][0]["done"] and tile("open") == 2
     assert page.list.undo_bar.isVisibleTo(page)
     page.list.undo_bar.undo()
@@ -277,9 +282,9 @@ def test_action_items_page_across_meetings(swindow, lib, server):
     assert [it["text"] for it in page.list.items] == ["Pedir presupuesto", "Revisar contrato"]
     page.tiles["unowned"].click()  # again: back to all
     assert len(page.list.items) == 3 and page.tiles["open"].isChecked()
-    actions.set_send(lib.get(new.id), 1, True)
-    page.reload()
-    assert tile("ready") == 1
+    buttons("Send to tracker")[1].click()  # the envelope lights up: switched on for the tracker
+    assert actions.load(lib.get(new.id))["items"][1]["state"] == "ready" and tile("ready") == 1
+    assert buttons("Send to tracker")[1].isChecked()
     chip = next(b for b in page.findChildren(QPushButton) if b.objectName() == "ownerFilter")
     assert chip.text() == "Lucía  1"
     chip.click()
@@ -287,7 +292,10 @@ def test_action_items_page_across_meetings(swindow, lib, server):
     next(b for b in page.findChildren(QPushButton) if b.objectName() == "ownerFilter").click()
     assert len(page.list.items) == 3
     rows = [r for r in page.list.findChildren(QFrame) if r.objectName() == "denseItem"]
-    assert len(rows) == 3 and not rows[0].acts.isVisible()  # edit and discard wait for the pointer
+    assert len(rows) == 3 and not page.list.findChildren(QCheckBox)  # done is the round check on the right
+    buttons("Discard")[0].click()
+    assert actions.load(lib.get(new.id))["items"][0]["discarded"] and tile("open") == 2
+    page.list.undo_bar.undo()
     actions.add(lib.get(old.id), "Mandar la minuta")  # written elsewhere: there when the page shows again
     swindow.show_page("home")
     swindow.show_page("actions")
