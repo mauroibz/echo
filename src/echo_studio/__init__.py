@@ -134,6 +134,7 @@ def _build_pages(window) -> None:
 
     if not isinstance(window, StudioWindow):
         return
+    from .actions_ui import ActionsScreen
     from .home import HomeScreen
     from .people_ui import PeopleScreen
 
@@ -144,6 +145,8 @@ def _build_pages(window) -> None:
     window.add_page("recordings", "Recordings", "layers", window.recordings_page, "Ctrl+2")
     window.add_page("people", "People", "users", PeopleScreen(window.library, open_minutes,
                                                               window.open_profile_dialog), "Ctrl+3")
+    window.add_page("actions", "Action items", "list-checks",
+                    ActionsScreen(window.library, window.show_recording, open_actions, _jobs), "Ctrl+4")
     window.set_rail(active())
 
 
