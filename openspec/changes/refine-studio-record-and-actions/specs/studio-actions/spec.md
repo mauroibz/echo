@@ -14,8 +14,11 @@ to discard or restore.
 
 A person's page SHALL list the items assigned to them across the library, newest first, and they
 SHALL be worked on there as in the Action items view. The rail's Action items page SHALL list
-every item not done nor discarded across the library, newest meeting first, under a heading per
-meeting that opens its Action items, with a filter on the item's words, owner and meeting title;
+every item not done nor discarded across the library, newest meeting first, in a card per meeting
+that shows its date, people and how many items are done and opens its Action items; each item
+SHALL show its owner, due date, moment and tracker state at a glance. The page SHALL count open
+items, items to send, items in the tracker and items without an owner, each count filtering the
+list, and SHALL filter by owner and by the item's words, owner, description and meeting title;
 an item checked off or discarded there SHALL leave the page. No screen SHALL mark items as late or
 pending, and Echo SHALL NOT remind about them.
 

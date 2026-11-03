@@ -378,11 +378,17 @@ meeting summarized before this version has the line without the points until you
 again. Stars are kept in `marks.json`.
 
 **Action items.** The rail's Action items page lists the items not yet checked off from every
-meeting, newest meeting first, under a heading per meeting (click it to open that meeting's Action
-items). It works like a meeting's view, so you can clear last week's items without opening each
-call: check them off, switch them on for the tracker, edit or discard them. Items you check off or
-discard leave the page; the meeting's own view still has them. The filter at the top matches an
-item's words, its owner and its meeting's title.
+meeting, newest meeting first, one card per meeting: its date in the meeting's color, who was
+there, its tags, how many are open and a bar for how many are done (click the card's head to
+open that meeting's Action items). Each item shows its owner, the date it was promised for, the
+moment it came up (click to play), whether it is waiting to be sent, sent or could not be sent,
+and its description on one line (point at it for all of it). At the top, the counts of open
+items, items to send, items in your tracker and items with no owner are also filters: click one
+to see only those, again to see all. The chips under them show one owner's items, and the search
+matches an item's words, owner, description and meeting. It works like a meeting's view, so you
+can clear last week's items without opening each call: check them off, switch them on for the
+tracker, and edit or discard them with the buttons that show when you point at an item (or E and
+Delete). Items you check off or discard leave the page; the meeting's own view still has them.
 
 **Minutes.** Over the transcript, a Transcript / Minutes / Action items switch. Minutes shows the
 selected recording's summary, with Summarize (Summarize again once there is one) and Copy. Its

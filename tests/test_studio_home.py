@@ -252,22 +252,45 @@ def test_action_items_page_across_meetings(swindow, lib, server):
     swindow.show_page("actions")
     page = swindow.pages.currentWidget()
     assert isinstance(page, ActionsScreen)
-    heads = [b.text() for b in page.list.findChildren(QPushButton) if b.objectName() == "meetingHeading"]
-    assert [h.split("  ·  ")[0] for h in heads] == ["Revisión semanal", "Planificación"]
-    assert page.count.text() == "3 open in 2 meetings"
+    from PySide6.QtWidgets import QFrame
+
+    from echo_studio.actions_ui import ClickFrame
+
+    tile = lambda k: int(page.tiles[k].number.text())  # noqa: E731
+    heads = [h.accessibleName() for h in page.list.findChildren(ClickFrame)]
+    assert heads == ["Open Revisión semanal", "Open Planificación"]  # a card per meeting, newest first
+    assert page.eyebrow.text() == "ACROSS 2 MEETINGS" and tile("open") == 3 and tile("unowned") == 2
     page.list.findChildren(QCheckBox)[0].click()  # checked off: off the page, with Undo
-    assert actions.load(lib.get(new.id))["items"][0]["done"] and page.count.text() == "2 open in 2 meetings"
+    assert actions.load(lib.get(new.id))["items"][0]["done"] and tile("open") == 2
     assert page.list.undo_bar.isVisibleTo(page)
     page.list.undo_bar.undo()
-    assert page.count.text() == "3 open in 2 meetings"
+    assert tile("open") == 3
     page.filter.setText("lucia")  # an owner, accents aside
     assert [it["text"] for it in page.list.items] == ["Reservar sala"]
     page.filter.setText("planificación")  # a meeting
     assert [it["text"] for it in page.list.items] == ["Revisar contrato"]
+    page.filter.setText("nada de esto")
+    assert not page.list.isVisibleTo(page) and page.empty_title.text() == "Nothing matches"
     page.filter.clear()
+    # The band's tiles filter, and an owner's chip.
+    page.tiles["unowned"].click()
+    assert [it["text"] for it in page.list.items] == ["Pedir presupuesto", "Revisar contrato"]
+    page.tiles["unowned"].click()  # again: back to all
+    assert len(page.list.items) == 3 and page.tiles["open"].isChecked()
+    actions.set_send(lib.get(new.id), 1, True)
+    page.reload()
+    assert tile("ready") == 1
+    chip = next(b for b in page.findChildren(QPushButton) if b.objectName() == "ownerFilter")
+    assert chip.text() == "Lucía  1"
+    chip.click()
+    assert [it["text"] for it in page.list.items] == ["Reservar sala"]
+    next(b for b in page.findChildren(QPushButton) if b.objectName() == "ownerFilter").click()
+    assert len(page.list.items) == 3
+    rows = [r for r in page.list.findChildren(QFrame) if r.objectName() == "denseItem"]
+    assert len(rows) == 3 and not rows[0].acts.isVisible()  # edit and discard wait for the pointer
     actions.add(lib.get(old.id), "Mandar la minuta")  # written elsewhere: there when the page shows again
     swindow.show_page("home")
     swindow.show_page("actions")
-    assert page.count.text() == "4 open in 2 meetings"
-    next(b for b in page.list.findChildren(QPushButton) if b.objectName() == "meetingHeading").click()
+    assert tile("open") == 4
+    page.list.findChildren(ClickFrame)[0].clicked.emit()
     assert swindow.page() == "recordings" and swindow.current().id == new.id
