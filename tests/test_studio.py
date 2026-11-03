@@ -359,7 +359,7 @@ def test_title_from_the_summary_only_when_automatic(window, lib, server, studio)
 
 def _model_item(text, owner="", due="", at=None):
     return {"text": text, "description": "", "owner": owner, "due": due, "at": at, "context": "", "note": "",
-            "discarded": False, "edited": False, "origin": "model", "key": actions.fold_tag(text),
+            "discarded": False, "edited": False, "done": False, "origin": "model", "key": actions.fold_tag(text),
             "state": "proposed", "tracker": None, "failure": ""}
 
 
@@ -394,6 +394,7 @@ def test_action_items_keep_the_users_work(tmp_path, server):
                                  {"text": "Mandar la grabación"}])
     summary.finish(rec, data)
     actions.discard(rec, 2, True)
+    actions.set_done(rec, 0, True)
     server.actions = json.dumps([{"text": "Enviar la propuesta", "at": "0:09"}, {"text": "Mandar la grabación"}])
     summary.finish(rec, data)
     items = actions.load(rec)["items"]
@@ -403,7 +404,7 @@ def test_action_items_keep_the_users_work(tmp_path, server):
         ("Reservar sala", False, "user")]  # added by hand: kept; "Llamar a Ana" is gone with the model
     assert items[0]["edited"] and items[0]["context"] == "la versión con descuento" and items[0]["at"] == 6.0
     assert items[0]["note"] == "Para mí: revisar el descuento"
-    assert "done" not in items[0]
+    assert items[0]["done"] and not items[2]["done"]  # checked off: kept like the rest of the user's work
     assert [i["text"] for i in actions.assigned_to(lib, "ANA")] == ["Reservar sala"]
     assert actions.assigned_to(lib, "nadie") == []
     actions.discard(rec, 2, True)
@@ -436,30 +437,48 @@ def test_version_1_actions_are_read(tmp_path):
     rec = _rec(lib)
     rec.path(actions.FILE).write_text(json.dumps({"version": 1, "items": [
         {"text": "Llamar a Ana", "owner": "Lucía", "due": "", "at": 3.0, "done": True}]}))
-    assert _no_uid(actions.load(rec)["items"]) == [_model_item("Llamar a Ana", "Lucía", "", 3.0)]
+    # Version 1's done flag was the user's check mark, as done is again.
+    assert _no_uid(actions.load(rec)["items"]) == [{**_model_item("Llamar a Ana", "Lucía", "", 3.0), "done": True}]
     assert actions.load(rec)["items"][0]["uid"] == actions.load(rec)["items"][0]["uid"]  # stable before saving
 
 
-def test_polishing_items_in_the_summary_view(window, lib, server, studio):
+def test_polishing_items_in_their_view(window, lib, server, studio):
     from PySide6.QtWidgets import QLabel, QLineEdit, QPlainTextEdit, QPushButton
 
-    from echo_studio.ui import SummaryView
+    from echo_studio.ui import ActionsView, SummaryView
+    from echo_studio.widgets import Toggle
 
     rec = _rec(lib)
     window.model.refresh()
     _attach(window)
-    assert not any(type(w).__name__ == "PendingScreen" for w in window._screen_buttons)
-    view = window.views.views()[0]
-    assert isinstance(view, SummaryView)
+    summary_view, view = window.views.views()
+    assert isinstance(summary_view, SummaryView) and isinstance(view, ActionsView)
+    assert [b.text() for b in window.views.buttons] == ["Transcript", "Minutes", "Action items"]
     window._select(rec.id)
+    assert not view.body.isVisibleTo(view) and view.placeholder.isVisibleTo(view)  # no minutes yet
     window.transcribed.emit(rec.id)
     assert wait_until(lambda: actions.load(lib.get(rec.id)) is not None)
-    view.show_subject(lib.get(rec.id), None)
-    assert view.actions_box.isVisibleTo(view) and not view.actions.findChildren(QCheckBox)
+    assert wait_until(lambda: view.body.isVisibleTo(view))
+    assert not summary_view.findChildren(type(view.actions))  # the minutes are the summary alone
     texts = lambda: [lbl.text() for lbl in view.actions.findChildren(QLabel)]  # noqa: E731
     assert "Enviar la propuesta" in texts() and "La versión con el precio nuevo, para Acme." in texts()
     assert any(t.startswith("lucia") and "by " in t for t in texts())
-    assert view.count.text() == "1"
+    assert view.count.text() == "1" and window.views.buttons[2].text() == "Action items  1"
+    # Done: the user's check mark; the item keeps to its line and the tab counts what is left.
+    view.actions.findChildren(QCheckBox)[0].click()
+    assert actions.load(lib.get(rec.id))["items"][0]["done"]
+    assert view.count.text() == "0 of 1 left" and window.views.buttons[2].text() == "Action items"
+    assert "La versión con el precio nuevo, para Acme." not in texts()
+    view.actions.findChildren(QCheckBox)[0].click()
+    assert not actions.load(lib.get(rec.id))["items"][0]["done"]
+    # The tracker: off until switched on.
+    [send] = view.actions.findChildren(Toggle)
+    assert not send.isChecked() and view.send_status.text() == "None switched on for your tracker."
+    send.click()
+    assert actions.load(lib.get(rec.id))["items"][0]["state"] == "ready"
+    assert view.send_status.text().startswith("1 to send")
+    view.actions.findChildren(Toggle)[0].click()
+    assert actions.load(lib.get(rec.id))["items"][0]["state"] == "proposed"
     played = []
     window._seek_and_play = played.append
     next(b for b in view.actions.findChildren(QToolButton) if b.objectName() == "pill").click()
@@ -488,7 +507,7 @@ def test_polishing_items_in_the_summary_view(window, lib, server, studio):
     import echo_studio
 
     [(title, section)] = echo_studio.person_sections("Lucia")  # People: the items assigned to them
-    assert title == "Action items" and not section.findChildren(QCheckBox)
+    assert title == "Action items" and section.findChildren(QCheckBox) and section.findChildren(Toggle)
     assert "Enviar la propuesta final" in [lbl.text() for lbl in section.findChildren(QLabel)]
     # Polished there too: the edit goes to the item's own recording.
     next(b for b in section.findChildren(QToolButton) if b.toolTip() == "Edit").click()
@@ -698,13 +717,16 @@ def test_summary_view(window, lib, server, studio):
     from echo_studio import actions
 
     assert wait_until(lambda: actions.load(lib.get(rec.id)) is not None)
+    items_view = window.views.views()[1]
+    window.views.buttons[2].click()
     pump(300)
-    assert view.actions_scroll.height() > 30  # the item shows, not an empty strip
-    view.summarize_btn.click()  # again, with the list on screen: it was left sized to nothing
+    assert items_view.actions_scroll.height() > 30  # the item shows, not an empty strip
+    view.summarize()  # again, with the list on screen: it was left sized to nothing
     pump(50)
     assert wait_until(lambda: view.jobs.state(rec.id) is None)
     pump(300)
-    assert view.actions.items and view.actions_scroll.height() > 30
+    assert items_view.actions.items and items_view.actions_scroll.height() > 30
+    window.views.buttons[1].click()
     view._fill_templates()
     names = [a.text() for a in view.template_menu.actions() if a.isCheckable()]
     assert names[0] == "General meeting" and "entrevista" in names
@@ -781,8 +803,8 @@ def test_settings_page_turns_summaries_on(window, lib, qapp, studio):
 
 
 def test_the_way_to_a_tracker(tmp_path, server, capsys, studio):
-    """Ready by the user, sent or failed by whatever sends them, never changed in Echo once sent;
-    processed when marked ready and nothing is left but sent items."""
+    """Switched on item by item by the user, sent or failed by whatever sends them, never changed
+    in Echo once sent (but for the done mark); processed when reviewed with nothing on its way."""
     from echo_app import settings
 
     s = settings.load()[0]
@@ -802,8 +824,10 @@ def test_the_way_to_a_tracker(tmp_path, server, capsys, studio):
     capsys.readouterr()
     assert cli.main(["actions", "--ready", "--json"]) == 0 and json.loads(capsys.readouterr().out) == []
     assert cli.main(["item", rec.id, uids[0], "--sent", "X-1"]) == 1  # not approved yet
-    made = actions.mark_ready(rec)
-    assert [i["uid"] for i in made] == uids[:2]  # the discarded one stays out
+    actions.set_send(rec, 2, True)  # discarded: not going anywhere
+    actions.set_send(rec, 0, True)
+    actions.set_send(rec, 1, True)
+    assert [i["state"] for i in actions.load(rec)["items"]] == ["ready", "ready", "proposed"]
     assert cli.main(["actions", "--ready", "--json"]) == 0
     ready = json.loads(capsys.readouterr().out)
     assert [(i["uid"], i["state"]) for i in ready] == [(uids[0], "ready"), (uids[1], "ready")]
@@ -824,13 +848,18 @@ def test_the_way_to_a_tracker(tmp_path, server, capsys, studio):
     k = items.index(sent)
     actions.update(rec, k, text="otra cosa")
     actions.discard(rec, k, True)
-    assert actions.load(rec)["items"][k]["text"] == "Enviar la propuesta"  # the tracker's now
+    actions.set_send(rec, k, False)
+    actions.set_done(rec, k, True)  # the user's own mark: a sent item takes it
+    it = actions.load(rec)["items"][k]
+    assert (it["text"], it["state"], it["done"]) == ("Enviar la propuesta", "sent", True)  # the tracker's now
     st = actions.status(actions.load(rec))
-    assert (st["sent"], st["failed"], st["proposed"], st["processed"]) == (1, 1, 1, False)
-    actions.discard(rec, 1, True)  # "Algo nuevo" does not apply
-    actions.mark_ready(rec)  # the failed one, fixed, goes again
+    assert (st["sent"], st["failed"], st["proposed"], st["done"], st["processed"]) == (1, 1, 1, 1, False)
+    actions.mark_reviewed(rec)
+    assert not actions.status(actions.load(rec))["processed"]  # the failed one is still on its way
+    actions.set_send(rec, 0, True)  # the failed one, fixed, goes again
+    assert actions.load(rec)["items"][0]["failure"] == ""
     assert cli.main(["item", rec.id, uids[1], "--sent", "PROJ-8"]) == 0
-    assert actions.status(actions.load(rec))["processed"]
+    assert actions.status(actions.load(rec))["processed"]  # "Algo nuevo" was never switched on
     capsys.readouterr()
     assert cli.main(["meetings", "--unprocessed"]) == 0 and rec.id not in capsys.readouterr().out
     assert cli.main(["minutes", rec.id, "--json"]) == 0
@@ -841,53 +870,52 @@ def test_the_way_to_a_tracker(tmp_path, server, capsys, studio):
     server.actions = "[]"
     summary.finish(bare, summary.write(bare))
     assert not actions.status(actions.load(bare))["processed"]
-    actions.mark_ready(bare)
+    actions.mark_reviewed(bare)
     assert actions.status(actions.load(bare))["processed"]
-    actions.unmark_ready(bare)
+    actions.mark_reviewed(bare, False)
     assert not actions.status(actions.load(bare))["processed"]
 
 
-def test_ready_to_send_in_the_window(window, lib, server, studio, monkeypatch):
+def test_sending_from_the_window(window, lib, server, studio):
     from PySide6.QtWidgets import QLabel
 
-    from echo_studio import ui
     from echo_studio.home import MinutesCard
-    from echo_studio.ui import SummaryView
+    from echo_studio.ui import ActionsView
+    from echo_studio.widgets import Toggle
 
-    server.actions = json.dumps([{"text": "Enviar la propuesta", "owner": "Lucía"}, {"text": "Llamar a Ana"}])
+    server.actions = json.dumps([{"text": "Enviar la propuesta", "owner": "Lucía"}, {"text": "Llamar a Ana"},
+                                 {"text": "Mandar la grabación"}])
     rec = _rec(lib)
     summary.finish(rec, summary.write(rec))
     window.model.refresh()
     _attach(window)
-    view = window.views.views()[0]
-    assert isinstance(view, SummaryView)
+    view = window.views.views()[1]
+    assert isinstance(view, ActionsView)
     window._select(rec.id)
-    window.views.buttons[1].click()
-    view.show_subject(lib.get(rec.id), None)
-    assert view.ready_btn.isVisible() and view.ready_btn.text() == "Ready to send…"
-    assert view.send_status.text() == "Not sent yet."
-    shown = []
-    monkeypatch.setattr(ui, "confirm_ready", lambda _p, items: shown.append([i["text"] for i in items]) or False)
-    view.ready_btn.click()  # cancelled: nothing changes
-    assert shown == [["Enviar la propuesta", "Llamar a Ana"]]
-    assert actions.status(actions.load(lib.get(rec.id)))["ready"] == 0
-    monkeypatch.setattr(ui, "confirm_ready", lambda _p, items: True)
-    view.ready_btn.click()
-    assert view.send_status.text() == "2 ready, waiting to be sent" and view.unready_btn.isVisible()
+    window.views.buttons[2].click()
+    assert view.review_btn.isVisible() and not view.reopen_btn.isVisible()
+    assert view.send_status.text() == "None switched on for your tracker."
+    toggles = lambda: view.actions.findChildren(Toggle)  # noqa: E731
+    assert len(toggles()) == 3 and not any(t.isChecked() for t in toggles())  # opt-in
+    toggles()[0].click()
+    toggles()[1].click()
+    assert view.send_status.text() == "2 to send, waiting for your tracker"
+    view.review_btn.click()
+    assert view.reopen_btn.isVisible() and view.send_status.text().endswith("· reviewed")
     texts = lambda: [lbl.text() for lbl in view.actions.findChildren(QLabel)]  # noqa: E731
-    assert texts().count("Ready") == 2
     # Something outside sends one and fails the other; the open view follows.
     uids = [i["uid"] for i in actions.load(lib.get(rec.id))["items"]]
     actions.mark_sent(lib.get(rec.id), uids[0], "PROJ-7", "https://tracker.example/7")
     actions.mark_failed(lib.get(rec.id), uids[1], "no project")
     assert wait_until(lambda: any("Sent · PROJ-7" in t for t in texts()), 5)
-    assert "Could not be sent: no project" in texts()
+    assert any(t.startswith("Could not be sent: no project") for t in texts())
     assert "could not be sent" in view.send_status.text()
     edits = [b for b in view.actions.findChildren(QToolButton) if b.toolTip() == "Edit"]
-    assert len(edits) == 1  # the sent one cannot be edited
-    view.ready_btn.click()  # fixed: ready again
+    assert len(edits) == 2 and len(toggles()) == 2  # the sent one is the tracker's
+    assert len(view.actions.findChildren(QCheckBox)) == 3  # all three can be checked off
+    toggles()[0].click()  # fixed: on again, ready
     actions.mark_sent(lib.get(rec.id), uids[1], "PROJ-8")
     assert wait_until(lambda: view.send_status.text().startswith("✓  Processed"), 5)
-    assert not view.ready_btn.isVisible()
+    assert not view.review_btn.isVisible()  # "Mandar la grabación" was never switched on
     card = MinutesCard(lib.get(rec.id), lib)
     assert card.processed and "✓ Processed" in [lbl.text() for lbl in card.findChildren(QLabel)]

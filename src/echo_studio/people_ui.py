@@ -1,6 +1,7 @@
 """Studio's People: everyone Echo knows, and a page per person with their meetings (their part in
 each, to star, tag and filter), the action items assigned to them (to polish like a meeting's) and
-the notes, keyed by their email. Nothing here is a task to keep up: no done flags, no alerts."""
+the notes, keyed by their email. Nothing here is a task to keep up: done is only a check mark,
+and there are no alerts."""
 
 from __future__ import annotations
 

@@ -107,6 +107,8 @@ class Hero(QWidget):
                 font-weight: 700; }}
             QWidget#hero QPushButton[quiet="true"]:hover {{ background: {theme.rgba('on_deep', 0.18)}; }}
             QWidget#hero QPushButton[stop="true"] {{ background: {t.coral_deep}; color: #ffffff; }}
+            QWidget#hero QPushButton[record="true"] {{ background: {t.coral}; color: {t.deep_top}; }}
+            QWidget#hero QPushButton[record="true"]:hover {{ background: #ff8a8a; }}
             QWidget#hero QPlainTextEdit {{ background: {theme.rgba('on_deep', 0.08)}; color: {t.on_deep};
                 border: 1px solid {theme.rgba('on_deep', 0.22)}; border-radius: 12px; padding: 8px; }}
         """)
@@ -198,10 +200,12 @@ class TimelineDot(QWidget):
 
 
 class Toggle(QAbstractButton):
-    """An on/off switch: a pill with a knob, coral when on (it means "this will be recorded")."""
+    """An on/off switch: a pill with a knob, coral when on by default (it means "this will be
+    recorded"); another theme role for another meaning (accent: "this goes to the tracker")."""
 
-    def __init__(self, on: bool = False, tip: str = "", parent=None):
+    def __init__(self, on: bool = False, tip: str = "", parent=None, role: str = "coral"):
         super().__init__(parent)
+        self.role = role
         self.setCheckable(True)
         self.setChecked(on)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -219,7 +223,7 @@ class Toggle(QAbstractButton):
         r = QRectF(self.rect()).adjusted(1, 1, -1, -1)
         on = self.isChecked()
         p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(theme.color("coral") if on else theme.color("ink", 0.18))
+        p.setBrush(theme.color(self.role) if on else theme.color("ink", 0.18))
         p.drawRoundedRect(r, r.height() / 2, r.height() / 2)
         d = r.height() - 6
         x = r.right() - 3 - d if on else r.left() + 3

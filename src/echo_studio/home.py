@@ -1,4 +1,4 @@
-"""Studio's Briefing: the next meeting from the calendar (or the one being recorded), the meetings
+"""Studio's Briefing: Record now, the next meeting from the calendar (or the one being recorded), the meetings
 coming up with a switch each for whether it is recorded, and the minutes of past meetings as a
 timeline of cards (the gist, the action items, your notes). It shows what the calendar and the
 recordings say, nothing more: no suggestions, no reminders."""
@@ -64,9 +64,11 @@ def when_label(ev, now: datetime) -> str:
 
 class MinutesCard(QFrame):
     """A meeting's minutes at a glance: the gist, the first action items with their owners, your
-    notes, who was there, its tags and a star. Clicking it opens the minutes."""
+    notes, who was there, its tags and a star. Clicking it opens the minutes; clicking its action
+    items opens them."""
 
     clicked = Signal(str)
+    items_clicked = Signal(str)
 
     def __init__(self, rec, lib, footer: bool = True):
         super().__init__()
@@ -92,7 +94,7 @@ class MinutesCard(QFrame):
         self.processed = bool(d) and st["processed"]
         if self.processed:
             chip = label("✓ Processed", 0.82, QFont.Weight.ExtraBold)
-            chip.setToolTip("Marked ready and every item is in your tracker: you can archive the call")
+            chip.setToolTip("Reviewed, and what you switched on is in your tracker: you can archive the call")
             chip.setStyleSheet(f"color: {t.accent_deep}; background: {t.accent_soft}; border-radius: 9px;"
                                " padding: 1px 8px;")
             top.addWidget(chip, 0, Qt.AlignmentFlag.AlignTop)
@@ -104,18 +106,22 @@ class MinutesCard(QFrame):
         if text:
             lay.addWidget(label(text, 1.0, display=False, wrap=True))
         items = [it for it in (saved or {}).get("items", []) if not it["discarded"]]
+        self.box = None
         if items:
-            box = QFrame()
+            box = self.box = QFrame()
+            box.setToolTip("Open the action items")
             box.setStyleSheet(f"QFrame {{ background: {t.raised}; border-radius: 12px; }} "
                               "QLabel { background: transparent; }")
             bl = QVBoxLayout(box)
             bl.setContentsMargins(14, 10, 14, 10)
             bl.setSpacing(5)
             head = f"ACTION ITEMS · {len(items)}"
+            if st["done"]:
+                head += f" · {st['done']} DONE"
             if st["sent"] and not self.processed:
                 head += f" · {st['sent']} SENT"
             if st["ready"]:
-                head += f" · {st['ready']} READY"
+                head += f" · {st['ready']} TO SEND"
             if st["failed"]:
                 head += f" · {st['failed']} FAILED"
             bl.addWidget(label(head, 0.8, QFont.Weight.ExtraBold, eyebrow=True))
@@ -124,8 +130,12 @@ class MinutesCard(QFrame):
                 row.setSpacing(8)
                 if it["owner"]:
                     row.addWidget(Avatar(it["owner"], 20), 0, Qt.AlignmentFlag.AlignTop)
-                sent = "✓  " if it["state"] == actions.SENT else ""
-                row.addWidget(label(sent + it["text"], 0.95, QFont.Weight.DemiBold, wrap=True), 1)
+                text = label(("✓  " if it["done"] else "") + it["text"], 0.95, QFont.Weight.DemiBold, wrap=True,
+                             dim=it["done"])
+                row.addWidget(text, 1)
+                if it["state"] == actions.SENT and (it["tracker"] or {}).get("ref"):
+                    row.addWidget(label(it["tracker"]["ref"], 0.85, QFont.Weight.Bold, dim=True), 0,
+                                  Qt.AlignmentFlag.AlignTop)
                 if it["due"]:
                     row.addWidget(label(fmt_due(it["due"]), 0.85, dim=True), 0, Qt.AlignmentFlag.AlignTop)
                 bl.addLayout(row)
@@ -154,7 +164,8 @@ class MinutesCard(QFrame):
 
     def mouseReleaseEvent(self, e: QMouseEvent):
         if e.button() == Qt.MouseButton.LeftButton:
-            self.clicked.emit(self.rid)
+            on_items = self.box is not None and self.box.geometry().contains(e.position().toPoint())
+            (self.items_clicked if on_items else self.clicked).emit(self.rid)
         super().mouseReleaseEvent(e)
 
 
@@ -235,13 +246,15 @@ class ComingUp(QWidget):
 
 class HomeScreen(QWidget):
     """The next meeting in a hero band, then the minutes. `open_minutes(rid)` shows a recording on its
-    minutes; `open_settings()` opens Settings."""
+    minutes, `open_actions(rid)` on its action items; `open_settings()` opens Settings. Unless a
+    recording is being made, the hero has Record now."""
 
-    def __init__(self, window, meetings, open_minutes, open_settings):
+    def __init__(self, window, meetings, open_minutes, open_settings, open_actions=None):
         super().__init__()
         self.window, self.meetings = window, meetings
         self.library = window.library
         self.open_minutes, self.open_settings = open_minutes, open_settings
+        self.open_actions = open_actions or open_minutes
         self._notes_rid = None
         self.setObjectName("content")
         outer = QVBoxLayout(self)
@@ -444,21 +457,20 @@ class HomeScreen(QWidget):
             skip.setToolTip("Do not record this meeting by itself")
             skip.clicked.connect(lambda: self.meetings.set_record(ev, False))
             status.addWidget(skip)
-        elif self.meetings.is_skipped(ev) or (ev.start > datetime.now().astimezone()
-                                               and not self.meetings.was_started(ev)):
+        elif self.meetings.is_skipped(ev) or ev.start > datetime.now().astimezone():
             status.addWidget(label("Not recording this one", 1.0, dim=True))
             undo = QPushButton("Record it")
             theme.set_role(undo, quiet=True)
             undo.setToolTip("Record this meeting when it starts")
             undo.clicked.connect(lambda: self.meetings.set_record(ev, True))
             status.addWidget(undo)
-        else:
-            rec = QPushButton("Record now")
-            theme.set_role(rec, quiet=True)
-            rec.clicked.connect(lambda: self.window.start_recording(ev.title))
-            status.addWidget(rec)
         status.addStretch(1)
         side.addLayout(status)
+        # Under way and not recording (started without Echo, or skipped): record it, named after it.
+        # Otherwise Record now is for something else, so it takes no name from the meeting.
+        under_way = ev.start <= datetime.now().astimezone() < ev.end and not self.meetings.was_started(ev)
+        side.addLayout(self._record_row(ev.title if under_way else None,
+                                        "Record this meeting" if under_way else "Record now"))
         self.hero_lay.addWidget(side_w, 2, Qt.AlignmentFlag.AlignBottom)
 
     def _empty(self):
@@ -469,17 +481,30 @@ class HomeScreen(QWidget):
         if calendar.enabled():
             col.addWidget(label("Nothing else in your calendar", 2.4, QFont.Weight.ExtraBold, wrap=True))
             col.addWidget(label("Your minutes are below. Record when you need to.", 1.1, dim=True))
+            col.addLayout(self._record_row())
         else:
             col.addWidget(label("Your meetings, before and after", 2.4, QFont.Weight.ExtraBold, wrap=True))
             col.addWidget(label("Add your calendar's private address and the next meeting shows here, records "
                                 "by itself and names its recording.", 1.1, dim=True, wrap=True))
-            row = QHBoxLayout()
+            row = self._record_row()
             b = QPushButton("Add your calendar")
             b.clicked.connect(self.open_settings)
-            row.addWidget(b)
-            row.addStretch(1)
+            row.insertWidget(1, b)
             col.addLayout(row)
         self.hero_lay.addLayout(col, 1)
+
+    def _record_row(self, title: str | None = None, text: str = "Record now") -> QHBoxLayout:
+        """Record now, as the rail's Record (Ctrl+R) does; with `title`, the recording is named."""
+        row = QHBoxLayout()
+        row.setSpacing(12)
+        b = QPushButton(text)
+        b.setIcon(theme.tinted("audio-lines", "deep_top"))
+        theme.set_role(b, record=True)
+        b.setToolTip("Start recording (Ctrl+R)")
+        b.clicked.connect(lambda: self.window.start_recording(title))
+        row.addWidget(b)
+        row.addStretch(1)
+        return row
 
     # ---- the minutes ----
     def _fill_minutes(self):
@@ -526,6 +551,7 @@ class HomeScreen(QWidget):
             row.addWidget(TimelineDot(day == today, k == len(recs) - 1))
             card = MinutesCard(rec, self.library)
             card.clicked.connect(self.open_minutes)
+            card.items_clicked.connect(self.open_actions)
             wrap = QVBoxLayout()
             wrap.setContentsMargins(0, 4, 0, 12)
             wrap.addWidget(card)

@@ -76,6 +76,12 @@ def test_home_lists_the_minutes_and_opens_them(swindow, lib, server):
     card.clicked.emit(rec.id)
     assert swindow.page() == "recordings" and swindow.current().id == rec.id
     assert isinstance(swindow.views.stack.currentWidget(), SummaryView)  # opened on its minutes
+    from echo_studio.ui import ActionsView
+
+    swindow.show_page("home")
+    card = next(c for c in home.findChildren(MinutesCard) if c.rid == rec.id)
+    card.items_clicked.emit(rec.id)  # its action items open their own view
+    assert swindow.page() == "recordings" and isinstance(swindow.views.stack.currentWidget(), ActionsView)
     swindow.show_page("home")
     swindow.show_recording(rec.id)  # anything that shows a recording goes to Recordings
     assert swindow.page() == "recordings"
@@ -100,6 +106,7 @@ def test_home_shows_the_next_meeting(swindow, lib, feed, monkeypatch):
     buttons["Don't record"].click()
     assert wait_until(lambda: "Not recording this one" in _texts(home))
     assert echo_studio._meetings.is_skipped(echo_studio._meetings.next_event())
+    assert "Record now" in [b.text() for b in home.findChildren(QPushButton)]  # something else, now
     {b.text(): b for b in home.findChildren(QPushButton)}["Record it"].click()
     assert wait_until(lambda: any(t.startswith("●  Records by itself") for t in _texts(home)))
     # Coming up: the same meeting with its switch, and one without a link, off until turned on.
@@ -111,6 +118,24 @@ def test_home_shows_the_next_meeting(swindow, lib, feed, monkeypatch):
     sw.click()
     assert wait_until(lambda: echo_studio._meetings.is_skipped(echo_studio._meetings.next_event()))
     assert "Not recording this one" in _texts(home)
+
+
+def test_record_heads_the_rail_and_the_briefing(swindow, lib, server):
+    _attach(swindow)
+    lay = swindow.rail.lay
+    assert lay.itemAt(0).widget() is swindow.rail_record  # above Briefing, Recordings and People
+    assert swindow.rail.top.itemAt(0).widget().toolTip().startswith("Briefing")
+    assert swindow.page() == "home" and not swindow.rail.clock.isVisible()
+    home = swindow.pages.currentWidget()
+    next(b for b in home.findChildren(QPushButton) if b.text() == "Record now").click()
+    assert wait_until(lambda: swindow.recording_id() is not None)
+    assert swindow.page() == "home"  # recorded from where the user is
+    assert wait_until(lambda: swindow.rail.clock.isVisible() and swindow.rail.clock.text() == "0:01", 5)
+    assert swindow.rail_record.accessibleName() == "Stop recording"
+    swindow.show_page("people")
+    swindow.rail_record.click()  # stops from any page
+    assert wait_until(lambda: swindow.recording_id() is None)
+    assert not swindow.rail.clock.isVisible() and swindow.rail_record.accessibleName() == "Record"
 
 
 def test_home_while_recording(swindow, lib, feed):

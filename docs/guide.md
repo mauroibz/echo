@@ -341,14 +341,19 @@ models it has. When the server is not on this computer or your network, the page
 transcript of each recording you summarize is sent to it,** as soon as it is ready unless you
 turn automatic summaries off.
 
-**The window.** Once a server or a calendar is set, a rail at the left holds Briefing (Ctrl+1),
-Recordings (Ctrl+2: Echo's window as always), People (Ctrl+3) and Record.
+**The window.** Once a server or a calendar is set, a rail at the left holds Record at the top
+(the coral waveform, Ctrl+R), then Briefing (Ctrl+1), Recordings (Ctrl+2: Echo's window as always)
+and People (Ctrl+3). Record works from any page and records from the input chosen under Record in
+Recordings; while it records, the rail shows the time under it, and pressing it again stops.
 
 **Briefing.** At the top, the next meeting from your calendar: its time, title, invitation, who
 is invited, Join the call, and whether it will record by itself (Don't record / Record it); while
-recording, the time, your notes and who was invited. Below, at the left, the minutes of your last
+recording, the time, your notes and who was invited. **Record now** starts a recording right
+there; while a meeting is under way and not being recorded, it reads Record this meeting and names
+the recording after it. Below, at the left, the minutes of your last
 meetings as cards: the gist, the first action items with their owners and dates, your notes, who
-was there, the tags and a star. Click a card to open it on its minutes. At the right, Coming up:
+was there, the tags and a star. Click a card to open it on its minutes, or its action items to
+open those. At the right, Coming up:
 the meetings of the next 7 days, by day, each with a switch for whether it is recorded when it
 starts. Meetings with a video link start switched on (when "Record the meetings…" is on in
 Settings → Calendar); one without, like an in-person meeting, starts off and can be switched on.
@@ -363,14 +368,15 @@ Each meeting shows its minutes card and their part in it: a line on what they br
 points that make it up (what they reported, proposed, asked, objected to or took on). Star the
 meetings worth finding again and tag them (the recording's own tags, so search finds them too);
 the chips above the list show all of them, the starred ones or one tag. Their action items can be
-polished there as under a meeting's minutes. Each person's part comes from one more short request
+checked off, switched on for the tracker and polished there as in a meeting's Action items. Each person's part comes from one more short request
 per summary, for everyone named in it, and is kept in `parts.json` in the recording's folder; a
 meeting summarized before this version has the line without the points until you summarize it
 again. Stars are kept in `marks.json`.
 
-**Minutes.** Over the transcript, a Transcript / Minutes switch. Minutes shows the selected
-recording's summary, with Summarize (Summarize again once there is one) and Copy, and its action
-items in a column beside it. The summary is grouped by topic and ends with the next steps and who does them,
+**Minutes.** Over the transcript, a Transcript / Minutes / Action items switch. Minutes shows the
+selected recording's summary, with Summarize (Summarize again once there is one) and Copy. Its
+action items have a view of their own, so neither is squeezed when the window is narrow; the
+Action items tab shows how many are left to do. The summary is grouped by topic and ends with the next steps and who does them,
 in the recording's language.
 
 Each recording is summarized as soon as its transcript is ready, one at a time; uncheck "Summarize
@@ -385,34 +391,37 @@ Summaries are included in notes exported to a folder, under "Resumen".
 Your notes and markers lead the summary: each note and marked moment is covered, expanded from
 what was said around it, and editing a note marks the summary out of date.
 
-Each summary's commitments also become action items, beside it: each with a title, a description
+Each summary's commitments also become action items, in the Action items view: each with a
+checkbox, a title, a description
 (what exactly and why, with the details that were said, so it stands on its own in a tracker), its
 owner, the date it was promised for and a button that plays where it came up. They come from a
 request of their own over the summary and the transcript, so they can include commitments the
-summary's next steps leave out. Polish them before they go to your team's tracker: the pencil
-edits the title, description, owner and date, adds context for whoever picks the item up and a
-note only for you; the cross discards it (discarded items fold into one line, where Show lists
-them with Restore), and Add writes one by hand. Echo does not track whether an item got done;
-that is the tracker's job. A person's page in People lists the items assigned to them, to polish
-there too. The items are kept in `actions.json` in the recording's folder; summarizing again keeps
-your edits, context, notes, discards and the items you added. Items from summaries made before
+summary's next steps leave out. Check an item off when it is done: it folds to its title, struck
+through, and stays in the list. The check mark is yours: Echo never marks items late and does not
+remind you. The pencil corrects the title, description, owner and date, adds context for whoever
+picks the item up and a note only for you; the cross discards it (discarded items fold into one
+line, where Show lists them with Restore), and Add writes one by hand. A person's page in People
+lists the items assigned to them, to work on there too. The items are kept in `actions.json` in
+the recording's folder; summarizing again keeps your edits, context, notes, check marks, discards
+and the items you added. Items from summaries made before
 this version have no description until you summarize again.
 
 **Sending them to your tracker.** Echo does not talk to Plane, Trello or Jira itself. Whatever
 you use for that (an agent, a script, a scheduled sync) asks Echo for what you approved and tells
-it what happened. Once you have polished a meeting's items, press **Ready to send…** above them.
-Echo lists the items that will go, and once you confirm they are marked Ready. Discarded ones stay
-out, and until they are sent you can still edit them or take them back with **Back to review**.
+it what happened. Not every item belongs in a tracker, so nothing goes until you choose it: each
+item has a **To tracker** switch, off to begin with. Switch on the ones that should go; until they
+are sent you can still edit them or switch them off again. Discarding an item switches it off.
 
 When something sends them:
 - Each item shows **✓ Sent · REF**, a link to it in the tracker, and can no longer be edited in
-  Echo: from then on the tracker has it.
-- An item that could not be sent says why. Fix it and press Ready to send again.
+  Echo: from then on the tracker has it. You can still check it off.
+- An item that could not be sent says why. Fix it and switch it on again.
 
-When the meeting was marked ready and every item left is sent, the bar above the items and the
-meeting's card on the Briefing say **✓ Processed**: you can archive the call. A meeting with nothing
-to send is processed with **Mark processed**. Summarizing again never changes items that are ready
-or sent.
+When you are through with a meeting's items, press **Mark reviewed** in the bar above them
+(**Reopen** takes it back). Once it is reviewed and every item you switched on is sent, the bar and
+the meeting's card on the Briefing say **✓ Processed**: you can archive the call. A meeting with
+nothing to send is processed as soon as you mark it reviewed. Summarizing again never changes items
+that are switched on or sent.
 
 Follow-up, beside Copy, drafts the email you would send after the meeting: what was agreed and
 who does what by when. Edit it, then Copy it or press Open in mail to start a message in your mail

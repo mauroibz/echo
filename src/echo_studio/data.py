@@ -48,7 +48,7 @@ def action_dict(rec: Recording, it: dict, index: int, lib=None) -> dict:
             "due": it["due"] or None,
             "at": it["at"], "at_stamp": export.stamp(it["at"]) if it["at"] is not None else None,
             "context": it["context"], "note": it["note"], "edited": it["edited"],
-            "added_by_user": it["origin"] == "user", "discarded": it["discarded"],
+            "added_by_user": it["origin"] == "user", "discarded": it["discarded"], "done": it["done"],
             "state": it["state"], "tracker": it["tracker"], "failure": it["failure"] or None,
             "quote": quote(rec, it["at"]), "recording": rec.id}
 

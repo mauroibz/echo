@@ -5,17 +5,20 @@ times, when it fits), so the summary prompt stays the one task 1.8 measured and 
 asked for two formats. Each item has its text (a title), a description (what exactly and why, from
 what was said, so the item stands on its own in a tracker), owner (a name as Echo knows it, or
 ""), due date (ISO, or ""), the time in the audio where it came up (seconds, or None), and what the
-user did to it: context for whoever picks it up, a note only for the user, edited, discarded, or
-added by hand. Items are informative: whether they
-got done is the team tracker's business, so there is no done flag.
+user did to it: context for whoever picks it up, a note only for the user, edited, discarded,
+added by hand, and done. Done is the user's own check mark: Echo never infers it, dates nothing
+as late and does not remind.
 
-Getting them to that tracker is left to whoever the user runs for it (an agent, a script): Echo
-only says what is ready and keeps what came back. The user reviews a meeting's items and marks
-the meeting ready, which makes every item not discarded "ready"; whatever sends them reads those
+Getting items to the team's tracker is left to whoever the user runs for it (an agent, a script):
+Echo only says what is ready and keeps what came back. Sending is opt-in per item: an item is
+"proposed" until the user switches it on for the tracker, which makes it "ready" (off again makes
+it proposed); not every item is meant for a tracker. Whatever sends them reads the ready ones
 (`echo-app actions --ready`) and marks each one "sent" with the tracker's reference, or "failed"
-with why. A sent item is the tracker's from then on and is not changed here. A meeting is
-processed once it was marked ready and every item left is sent. Each item has a `uid` that stays
-put when the meeting is summarized again, so a sender can keep track of it. Summarizing again keeps the
+with why; switching a failed one on again makes it ready. A sent item is the tracker's from then
+on: only its done mark changes here. When the user is through with a meeting's items they mark
+it reviewed (`ready_at`, the name it had when the whole meeting was approved at once); a meeting
+is processed once reviewed with nothing left on its way (no item ready or failed). Each item has
+a `uid` that stays put when the meeting is summarized again, so a sender can keep track of it. Summarizing again keeps the
 user's work on every item the model gives again (matched by the text the model first gave it)
 and keeps the items the user added.
 """
@@ -36,7 +39,8 @@ from . import config, llm, summary
 
 FILE = "actions.json"
 VERSION = 2
-USER_FIELDS = ("text", "description", "owner", "due", "context", "note", "discarded", "edited")  # the user's
+USER_FIELDS = ("text", "description", "owner", "due", "context", "note", "discarded", "edited",
+               "done")  # the user's
 STATE_FIELDS = ("state", "tracker", "failure")  # the way to the tracker
 PROPOSED, READY, SENT, FAILED = "proposed", "ready", "sent", "failed"
 STATES = (PROPOSED, READY, SENT, FAILED)
@@ -97,12 +101,12 @@ def parse(reply: str) -> list[dict]:
 
 def _item(text: str, owner: str = "", due: str = "", at: float | None = None, origin: str = "model") -> dict:
     return {"uid": uuid.uuid4().hex[:10], "text": text, "description": "", "owner": owner, "due": due, "at": at,
-            "context": "", "note": "", "discarded": False, "edited": False, "origin": origin,
+            "context": "", "note": "", "discarded": False, "edited": False, "done": False, "origin": origin,
             "key": fold_tag(text), "state": PROPOSED, "tracker": None, "failure": ""}
 
 
 def _upgrade(it: dict, seen: dict[str, int]) -> dict:
-    """An item as this version has it; a version 1 item (with a done flag) is a model item. An item
+    """An item as this version has it; a version 1 item is a model item, its done flag kept. An item
     saved before uids gets one made from its key (and how many times that key came before), so it
     is the same on every read until the file is saved with it."""
     out = _item(str(it.get("text") or ""), str(it.get("owner") or ""), str(it.get("due") or ""), it.get("at"),
@@ -125,11 +129,12 @@ def _upgrade(it: dict, seen: dict[str, int]) -> dict:
     out["note"] = str(it.get("note") or "")
     out["discarded"] = bool(it.get("discarded"))
     out["edited"] = bool(it.get("edited"))
+    out["done"] = bool(it.get("done"))
     return out
 
 
 def _worked(i: dict) -> bool:
-    return bool(i["edited"] or i["context"] or i["note"] or i["discarded"] or i["state"] != PROPOSED)
+    return bool(i["edited"] or i["context"] or i["note"] or i["discarded"] or i["done"] or i["state"] != PROPOSED)
 
 
 def merge(new: list[dict], old: list[dict]) -> list[dict]:
@@ -155,7 +160,7 @@ def merge(new: list[dict], old: list[dict]) -> list[dict]:
 
 
 def write(rec: Recording, data: dict, cfg: config.Config | None = None) -> dict:
-    """Extract the items from the recording's summary `data` and save actions.json; keeps done flags."""
+    """Extract the items from the recording's summary `data` and save actions.json; keeps the user's work."""
     lang = data.get("language") or summary.language(rec)
     try:
         date = datetime.fromisoformat(rec.meta.created).strftime("%Y-%m-%d (%A)")
@@ -221,8 +226,30 @@ def discard(rec: Recording, index: int, on: bool = True) -> None:
     if it["state"] == SENT:
         return
     it["discarded"] = bool(on)
-    if on and it["state"] == READY:
-        it["state"] = PROPOSED  # not going anywhere now
+    if on and it["state"] in (READY, FAILED):
+        it["state"], it["failure"] = PROPOSED, ""  # not going anywhere now
+    _save(rec, d)
+
+
+def set_done(rec: Recording, index: int, on: bool = True) -> None:
+    """The user's check mark; a sent item takes it too (it changes nothing the tracker has)."""
+    d = load(rec)
+    if d is None or not 0 <= index < len(d["items"]):
+        return
+    d["items"][index]["done"] = bool(on)
+    _save(rec, d)
+
+
+def set_send(rec: Recording, index: int, on: bool = True) -> None:
+    """Switch an item on for the tracker (ready) or off (proposed). A failed item switched on is
+    ready again; a sent or discarded one does not change."""
+    d = load(rec)
+    if d is None or not 0 <= index < len(d["items"]):
+        return
+    it = d["items"][index]
+    if it["state"] == SENT or it["discarded"]:
+        return
+    it["state"], it["failure"] = (READY if on else PROPOSED), ""
     _save(rec, d)
 
 
@@ -260,30 +287,11 @@ def _now() -> str:
     return datetime.now().astimezone().isoformat(timespec="seconds")
 
 
-def mark_ready(rec: Recording) -> list[dict]:
-    """The user reviewed the meeting: every item not discarded and not sent (a failed one too)
-    becomes ready, and the meeting is marked reviewed even with nothing to send. Returns the items
-    made ready."""
+def mark_reviewed(rec: Recording, on: bool = True) -> None:
+    """The user is through with the meeting's items (or takes that back). It changes no item:
+    which ones go to the tracker is each item's switch."""
     d = load(rec) or {"version": VERSION, "created": _now(), "summary_created": None, "items": []}
-    made = []
-    for it in d["items"]:
-        if not it["discarded"] and it["state"] in (PROPOSED, FAILED):
-            it["state"], it["failure"] = READY, ""
-            made.append(it)
-    d["ready_at"] = _now()
-    _save(rec, d)
-    return made
-
-
-def unmark_ready(rec: Recording) -> None:
-    """Back to reviewing: ready items are proposed again (sent ones stay sent)."""
-    d = load(rec)
-    if d is None:
-        return
-    for it in d["items"]:
-        if it["state"] == READY:
-            it["state"] = PROPOSED
-    d["ready_at"] = None
+    d["ready_at"] = _now() if on else None
     _save(rec, d)
 
 
@@ -305,7 +313,7 @@ def mark_sent(rec: Recording, ref: str, tracker_ref: str, url: str = "") -> str 
         return "no such item"
     it = d["items"][k]
     if it["state"] not in (READY, FAILED, SENT) or it["discarded"]:
-        return "the item is not ready to send: the user has not marked its meeting ready"
+        return "the item is not ready to send: the user has not switched it on for the tracker"
     it["state"], it["failure"] = SENT, ""
     it["tracker"] = {"ref": tracker_ref.strip(), "url": url.strip(), "at": _now()}
     _save(rec, d)
@@ -313,8 +321,8 @@ def mark_sent(rec: Recording, ref: str, tracker_ref: str, url: str = "") -> str 
 
 
 def mark_failed(rec: Recording, ref: str, reason: str) -> str | None:
-    """What tried to send the item could not: the user sees why, fixes it and marks the meeting
-    ready again. Returns why not, or None."""
+    """What tried to send the item could not: the user sees why, fixes it and switches it on
+    again. Returns why not, or None."""
     d = load(rec)
     k = find(d, ref) if d else None
     if k is None:
@@ -328,11 +336,12 @@ def mark_failed(rec: Recording, ref: str, reason: str) -> str | None:
 
 
 def status(d: dict | None) -> dict:
-    """A meeting's way to the tracker: how many items are in each state (discarded apart), when it
-    was marked ready, and whether it is processed: marked ready and nothing left but sent ones."""
+    """A meeting's way to the tracker: how many items are in each state (discarded apart) and done,
+    when it was marked reviewed (`ready_at`), and whether it is processed: reviewed, and no item
+    ready or failed (the ones switched on are all sent)."""
     items = (d or {}).get("items", [])
     live = [i for i in items if not i["discarded"]]
     counts = {s: sum(1 for i in live if i["state"] == s) for s in STATES}
     ready_at = (d or {}).get("ready_at")
-    return {"ready_at": ready_at, "processed": bool(ready_at) and counts[SENT] == len(live),
-            "discarded": len(items) - len(live), **counts}
+    return {"ready_at": ready_at, "processed": bool(ready_at) and not counts[READY] and not counts[FAILED],
+            "discarded": len(items) - len(live), "done": sum(1 for i in live if i["done"]), **counts}
