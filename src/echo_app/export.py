@@ -317,14 +317,13 @@ def _people(rec: Recording, text: str) -> list[str]:
     return names
 
 
-def to_markdown(rec: Recording, timestamps: bool = False, audio_link: str | None = None) -> str:
-    """A note for a Markdown vault: title, date, length and tags, people, a link to the audio,
-    and the text, with a heading at each marker and optionally each paragraph's time."""
+def note_head(rec: Recording, audio_link: str | None = None, text: str | None = None) -> str:
+    """How a recording's note starts: title, date, length and tags, the people in it, a link to
+    the audio when given, and the user's notes."""
     try:
         when = datetime.fromisoformat(rec.meta.created).strftime("%Y-%m-%d %H:%M")
     except ValueError:
         when = rec.meta.created
-    text = rec.text().strip()
     head = [f"# {rec.meta.title}", ""]
     line = f"_{when}_"
     if rec.meta.duration:
@@ -332,19 +331,27 @@ def to_markdown(rec: Recording, timestamps: bool = False, audio_link: str | None
     if rec.meta.tags:
         line += " · " + " ".join(_md_tag(t) for t in rec.meta.tags)
     head.append(line)
-    people = _people(rec, text)
+    people = _people(rec, rec.text().strip() if text is None else text)
     if people:
         head.append(f"People: {', '.join(people)}")
     if audio_link:
         head.append(f"Audio: [{Path(audio_link).name}](<{audio_link}>)")
     if rec.meta.notes:
         head += ["", f"> {rec.meta.notes}"]
+    return "\n".join(head)
+
+
+def to_markdown(rec: Recording, timestamps: bool = False, audio_link: str | None = None) -> str:
+    """A note for a Markdown vault: title, date, length and tags, people, a link to the audio,
+    and the text, with a heading at each marker and optionally each paragraph's time."""
+    text = rec.text().strip()
+    head = note_head(rec, audio_link, text)
     body = _markdown_body(rec, text, timestamps)
     from . import extensions
 
     extra = "".join(f"## {heading}\n\n{section.strip()}\n\n"
                     for heading, section in extensions.gather("markdown_sections", rec))
-    return "\n".join(head) + "\n\n" + extra + body.strip() + "\n"
+    return head + "\n\n" + extra + body.strip() + "\n"
 
 
 def _markdown_body(rec: Recording, text: str, timestamps: bool) -> str:

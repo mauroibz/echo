@@ -6,6 +6,7 @@ define any of these hooks, each called only where Echo already does that kind of
     register_cli(subparsers)            add subcommands
     doctor_checks() -> [doctor.Check]   more lines in `echo-app doctor` and Check setup
     markdown_sections(rec) -> [(heading, markdown)]   sections in a recording's exported note
+    bundle_parts(rec) -> [(key, label, heading, markdown)]   parts to choose for a recording's bundle
     settings_pages() -> [(title, QWidget)]   Settings tabs; a page's apply() runs on OK
     window_class() -> type[MainWindow]  open this window instead (the first one returned wins)
     attach_window(window)               called once the window is built; it may call

@@ -5,6 +5,13 @@ tag.
 
 ## Unreleased
 
+### Added
+
+- Bundle (Ctrl+Shift+B): the selected recordings as Markdown to paste into an assistant, with the
+  parts you tick (the transcript and, with Echo Studio, the summary and the action items), copied
+  to the clipboard or saved as a zip with a note per recording. `echo-app bundle ID...` does the
+  same from the command line.
+
 ## 1.6.0 - 2026-11-03
 
 ### Added

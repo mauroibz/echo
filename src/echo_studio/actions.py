@@ -384,6 +384,20 @@ def mark_failed(rec: Recording, ref: str, reason: str) -> str | None:
     return None
 
 
+def markdown(rec: Recording) -> str:
+    """The items the user kept, as a Markdown task list: the action, who and by when, and under it
+    the description and the context written for whoever picks it up. The user's own note stays out,
+    as it does from the tracker."""
+    lines = []
+    for it in (load(rec) or {}).get("items", []):
+        if it["discarded"]:
+            continue
+        who = ", ".join(x for x in (it["owner"], it["due"]) if x)
+        lines.append(f"- [{'x' if it['done'] else ' '}] **{it['text']}**" + (f" ({who})" if who else ""))
+        lines += [f"  {extra}" for extra in (it["description"], it["context"]) if extra]
+    return "\n".join(lines)
+
+
 def status(d: dict | None) -> dict:
     """A meeting's way to the tracker: how many items are in each state (discarded apart) and done,
     when it was marked reviewed (`ready_at`), and whether it is processed: reviewed, and no item

@@ -30,7 +30,7 @@ without any extension.
 
 ### Requirement: Where extensions add
 An extension SHALL be able to add command-line subcommands, setup checks, sections to a
-recording's Markdown note, Settings pages, views next to the transcript, actions to the window,
+recording's Markdown note, parts to choose for a recording's bundle, Settings pages, views next to the transcript, actions to the window,
 the names offered first when naming a recording's speakers, and to replace the main window with
 a subclass that lays out the same parts. The window SHALL signal when a recording's transcript
 is written.
@@ -42,6 +42,10 @@ is written.
 #### Scenario: A section in exported notes
 - **WHEN** an extension returns a section for a recording and the recording is exported as Markdown
 - **THEN** the note has that section after its header and before the transcript
+
+#### Scenario: A part in a bundle
+- **WHEN** an extension offers a "Summary" part for a recording and the user bundles that recording
+- **THEN** the dialog lists Summary beside Transcript, and the bundle has it under its heading before the transcript when ticked
 
 ### Requirement: Recording for an extension
 The window SHALL let an extension start a recording from the current source, with a title, stop

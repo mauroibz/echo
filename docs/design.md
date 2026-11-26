@@ -673,6 +673,8 @@ extension present is loaded. `echo-app doctor` names the loaded ones. Entry poin
 need Echo installed as a distribution, which it is not. An extension's module defines any of a
 few hooks, each called where Echo already does that kind of work: `register_cli` (subcommands),
 `doctor_checks`, `markdown_sections` (sections in a recording's note, after its header),
+`bundle_parts` (the parts of a recording a bundle can carry besides the transcript, each with a
+key, a label for the dialog, a heading and its Markdown),
 `settings_pages` (Settings tabs with an `apply()` run on OK), `window_class`, `attach_window`
 and `person_sections` (sections under a person's notes in People, rebuilt for each person). An import or a hook that raises is logged and skipped, and a window class that
 fails falls back to Echo's own, so recording and transcription never depend on an extension's

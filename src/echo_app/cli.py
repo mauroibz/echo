@@ -197,6 +197,45 @@ def _cmd_export(args) -> int:
     return 0
 
 
+def _cmd_bundle(args) -> int:
+    """Chosen parts of recordings as Markdown, to hand to an assistant: printed, or a zip of notes."""
+    from . import bundle
+    from .library import Library
+    from .settings import load
+
+    lib = Library(load()[0].data_path)
+    try:
+        recs = bundle.expand(lib, args.ids)
+    except KeyError as e:
+        print(f"No recording or linked set {e.args[0]}", file=sys.stderr)
+        return 1
+    known = dict(bundle.available(recs))
+    keys = None
+    if args.parts:
+        keys = [k.strip() for k in args.parts.split(",") if k.strip()]
+        unknown = [k for k in keys if k not in known]
+        if unknown:
+            print(f"No part {', '.join(unknown)} in these recordings; they have: {', '.join(known) or 'nothing yet'}",
+                  file=sys.stderr)
+            return 2
+    if args.out and args.out.lower().endswith(".zip"):
+        n = bundle.write_zip(recs, Path(args.out).expanduser(), keys, args.timestamps)
+        if n:
+            print(f"Saved {args.out}: {n} note(s)")
+    else:
+        text = bundle.text(recs, keys, args.timestamps)
+        n = len(text)
+        if n and args.out:
+            Path(args.out).expanduser().write_text(text, encoding="utf-8")
+            print(f"Saved {args.out}")
+        elif n:
+            sys.stdout.write(text)
+    if not n:
+        print("Nothing to bundle: no transcript or other part yet.", file=sys.stderr)
+        return 1
+    return 0
+
+
 def _cmd_link(args) -> int:
     from . import sets
     from .library import Library
@@ -293,6 +332,16 @@ def build_parser() -> argparse.ArgumentParser:
                    help="default: from the --out suffix, else txt")
     s.add_argument("--out", metavar="PATH", help="file to write; default: standard output")
     s.set_defaults(func=_cmd_export)
+
+    s = sub.add_parser("bundle", help="recordings as Markdown for an assistant: the transcript and, with Echo "
+                                      "Studio, the summary and action items; printed, or a zip of notes")
+    s.add_argument("ids", nargs="+", metavar="ID", help="recordings or linked sets")
+    s.add_argument("--parts", metavar="A,B", help="only these parts (transcript, and with Echo Studio summary "
+                                                  "and actions); default: all there are")
+    s.add_argument("--timestamps", action="store_true", help="start each passage of the transcript with its time")
+    s.add_argument("--out", metavar="PATH", help="a .zip (one note per recording) or a Markdown file; default: "
+                                                 "standard output")
+    s.set_defaults(func=_cmd_bundle)
 
     s = sub.add_parser("link", help="link recordings into one set, read and played in order "
                                     "(a set id among them: add to that set)")

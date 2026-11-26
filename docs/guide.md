@@ -269,6 +269,16 @@ transcript. In the search:
 the speakers' names; subtitles and timed exports use your edited text, placed on the passages it
 came from.
 
+**Bundle for an assistant.** To hand recordings to a language model, select one or several
+(Ctrl+click, Shift+click) and choose Bundle (Ctrl+Shift+B, the list's right-click menu, the bar
+under a selection of several, or Export in the header). Tick the parts you want: the transcript,
+and with Echo Studio the summary and the action items. **Copy** puts them on the clipboard as
+Markdown, a note per recording, oldest first, each with its title, date, tags, people and your
+notes; **Save as zip…** writes the same notes as one file per recording. Echo remembers the
+ticks, so the next bundle is Ctrl+Shift+B and Enter. The message afterwards says about how many
+words went, which tells you whether it fits the assistant you paste it into. A recording with
+none of the ticked parts is left out.
+
 **Notes in a vault.** File → Export library to folder… writes one Markdown note per recording,
 and one per linked set (title, date, tags as nested `#client/Acme` tags, people, markers as
 headings, the text, a link to the audio), into any folder such as an Obsidian vault, and can
@@ -301,6 +311,8 @@ echo-app link ID ID... [--title T]   link recordings into a set (a set id among 
 echo-app unlink ID                a set id dissolves the set; a recording id takes it out of its set
 echo-app export ID [--format txt|md|srt|vtt|json] [--out PATH]   (ID may be a set's)
 echo-app export --all FOLDER [--audio link|copy|none] [--timestamps]   Markdown notes for a vault
+echo-app bundle ID... [--parts transcript,summary,actions] [--timestamps] [--out FILE.zip|FILE.md]
+                                  recordings (or sets) as Markdown for an assistant; printed without --out
 echo-app models download | status
 echo-app recover                  repair recordings interrupted by a crash
 echo-app finalize ID              retry saving a recording whose raw audio was kept
