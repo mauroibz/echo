@@ -538,6 +538,63 @@ class ExportLibraryDialog(FittedDialog):
         super().accept()
 
 
+class BundleDialog(FittedDialog):
+    """Which parts of the selected recordings to bundle, and where to: the clipboard or a zip.
+    Copy is the default button, so with the remembered choices Enter is enough."""
+
+    COPY, ZIP = "copy", "zip"
+
+    def __init__(self, what: str, parts: list[tuple[str, str]], off=(), timestamps: bool = False, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Bundle")
+        self.setFixedWidth(460)
+        self.action = self.COPY
+        lay = QVBoxLayout(self)
+        lay.addWidget(_heading(f"Bundle {what}"))
+        lay.addWidget(_dim("The parts you choose, as Markdown with a note per recording: copied to paste into an "
+                           "assistant, or saved as a zip of notes."))
+        self.checks: dict[str, QCheckBox] = {}
+        for key, label in parts:
+            box = self.checks[key] = QCheckBox(label)
+            box.setChecked(key not in off)
+            box.toggled.connect(self._update)
+            lay.addWidget(box)
+        lay.addSpacing(8)  # an option of the transcript, not another part
+        self.times = QCheckBox("Start each passage of the transcript with its time")
+        self.times.setChecked(timestamps)
+        lay.addWidget(self.times)
+        lay.addSpacing(8)
+        bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel)
+        self.zip_btn = bb.addButton("Save as zip…", QDialogButtonBox.ButtonRole.ActionRole)
+        self.zip_btn.setIcon(icon("export"))
+        self.zip_btn.clicked.connect(lambda: self._finish(self.ZIP))
+        self.copy_btn = bb.addButton("Copy", QDialogButtonBox.ButtonRole.AcceptRole)
+        self.copy_btn.setIcon(icon("copy", "on_accent"))
+        theme.set_role(self.copy_btn, primary=True)
+        self.copy_btn.setDefault(True)
+        bb.accepted.connect(lambda: self._finish(self.COPY))
+        bb.rejected.connect(self.reject)
+        lay.addWidget(bb)
+        self._update()
+
+    def keys(self) -> list[str]:
+        return [k for k, box in self.checks.items() if box.isChecked()]
+
+    def off(self) -> list[str]:
+        return [k for k, box in self.checks.items() if not box.isChecked()]
+
+    def _update(self):
+        some = bool(self.keys())
+        self.copy_btn.setEnabled(some)
+        self.zip_btn.setEnabled(some)
+        box = self.checks.get("transcript")
+        self.times.setEnabled(box is not None and box.isChecked())
+
+    def _finish(self, action: str):
+        self.action = action
+        self.accept()
+
+
 class SettingsDialog(QDialog):
     def __init__(self, recording_active: bool, parent=None, pages=()):
         super().__init__(parent)
@@ -813,6 +870,7 @@ SHORTCUTS = [
     ("Copy with passage times", "Ctrl+Alt+C"),
     ("Show passage times", "Ctrl+T"),
     ("Export transcript", "Ctrl+E"),
+    ("Bundle the selected recordings (copy or zip)", "Ctrl+Shift+B"),
     ("Import audio", "Ctrl+O"),
     ("Search all recordings (titles, notes, transcripts)", "Ctrl+Shift+F or Ctrl+K"),
     ("People: profiles, their recordings and voices", "Ctrl+Shift+P"),

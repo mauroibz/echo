@@ -72,6 +72,21 @@ def markdown_sections(rec) -> list[tuple[str, str]]:
     return [(summary.heading(rec), summary.demoted(data["text"]))] if data else []
 
 
+def bundle_parts(rec) -> list[tuple[str, str, str, str]]:
+    """The minutes and the action items, for a bundle of the recording."""
+    from . import actions, summary
+
+    es = summary.language(rec) == "es"
+    out = []
+    data = summary.load(rec)
+    if data:
+        out.append(("summary", "Summary", summary.heading(rec), summary.demoted(data["text"])))
+    items = actions.markdown(rec)
+    if items:
+        out.append(("actions", "Action items", "Acciones" if es else "Action items", items))
+    return out
+
+
 _window = None
 _jobs = None
 _meetings = None

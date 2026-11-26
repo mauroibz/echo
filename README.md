@@ -35,7 +35,7 @@ Transcribe made by [SURUS](https://huggingface.co/surus-ai).
 | **Imports anything** | Audio, video (only its sound) and WhatsApp voice notes, dated and without duplicates. Watched folders too. |
 | **Edits with the audio** | Edit the text while hearing each passage; unsure passages are marked for checking. |
 | **Finds things** | Search every transcript, by tag (`#client:acme`) or by speaker (`@ana precio`). People have profiles. |
-| **Exports** | Text, Markdown, SRT, VTT, JSON, or a whole Obsidian vault kept up to date. |
+| **Exports** | Text, Markdown, SRT, VTT, JSON, a whole Obsidian vault kept up to date, or a bundle to paste into an assistant. |
 | **Works from scripts** | `echo-app transcribe meeting.mp4 --format md`, for scripts and AI agents. |
 
 Everything Echo does, with its shortcuts, is in the **[user guide](docs/guide.md)**.

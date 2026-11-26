@@ -7,9 +7,9 @@ from pathlib import Path
 
 from PySide6.QtCore import QEvent, QItemSelectionModel, Qt, QUrl
 from PySide6.QtGui import QDesktopServices
-from PySide6.QtWidgets import QFileDialog, QMenu, QMessageBox, QSystemTrayIcon
+from PySide6.QtWidgets import QApplication, QFileDialog, QMenu, QMessageBox, QSystemTrayIcon
 
-from .. import APP_NAME, export, features, sets, transcription
+from .. import APP_NAME, bundle, export, features, sets, transcription
 from ..library import READY, RECORDING, T_QUEUED, T_RUNNING, Recording
 from . import theme
 from .common import icon, run_task
@@ -73,6 +73,7 @@ class LibraryActionsMixin:
         if len(self._selected_keys()) > 1 and self.list.selectionModel().isSelected(idx):
             m = QMenu(self)
             m.addAction(icon("link"), f"Link {len(self._selected_keys())} recordings", self.link_selected)
+            m.addAction(icon("share"), f"Bundle {len(self._selected_keys())} recordings…", self.bundle_selected)
             m.addSeparator()
             m.addAction(icon("delete"), "Delete…", self.delete_selected)
             m.exec(self.list.viewport().mapToGlobal(pos))
@@ -89,6 +90,7 @@ class LibraryActionsMixin:
                         lambda: self._toggle_expanded(st.id))
             m.addAction(icon("copy"), "Copy transcript", self.transcript.copy_all)
             m.addAction(icon("export"), "Export transcript…", self.transcript.export_text)
+            m.addAction(icon("share"), "Bundle…", self.bundle_selected)
             m.addSeparator()
             m.addAction(icon("unlink"), "Unlink", lambda: self.unlink_set(st.id))
             m.addAction(icon("delete"), "Delete…", self.delete_selected)
@@ -117,6 +119,7 @@ class LibraryActionsMixin:
             m.addAction(icon("export"), "Export transcript…", self.transcript.export_text)
         if ready:
             m.addAction(icon("export"), "Export audio…", self.export_audio)
+            m.addAction(icon("share"), "Bundle…", self.bundle_selected)
         m.addAction(icon("folder"), "Show in folder", self.show_in_folder)
         m.addSeparator()
         d = m.addAction(icon("delete"), "Delete…", self.delete_selected)
@@ -133,6 +136,7 @@ class LibraryActionsMixin:
         self.selection_bar.setVisible(n > 1)
         self.selection_label.setText(f"{n} selected")
         self.a_link.setEnabled(n > 1)
+        self.a_bundle.setEnabled(n > 0)
 
     def link_selected(self):
         keys = self._selected_keys()
@@ -296,6 +300,72 @@ class LibraryActionsMixin:
             self.show_message(f"Moved “{recs[0].meta.title}” to the trash.")
         elif done:
             self.show_message(f"Moved {done} recordings to the trash.")
+
+    # ---- bundles: chosen parts of the selection, copied or zipped ----
+    def bundle_selected(self):
+        """Ask which parts of the selected recordings to bundle, then copy them or save a zip. The
+        choices are remembered, so the next bundle is the menu entry and Enter."""
+        from .dialogs import BundleDialog
+
+        keys = self._selected_keys()
+        try:
+            recs = bundle.expand(self.library, keys)
+        except KeyError:
+            recs = []
+        if not recs:
+            return
+        if len(keys) > 1:  # oldest first, as they happened; one set keeps its parts' order
+            recs.sort(key=lambda r: r.meta.created)
+        self.transcript.save()  # the text being edited is the text bundled
+        parts = bundle.available(recs)
+        if not parts:
+            self.show_message("Nothing to bundle yet: no transcript." if len(recs) == 1 else
+                              "Nothing to bundle yet: none of them has a transcript.")
+            return
+        what = f"“{recs[0].meta.title}”" if len(recs) == 1 else f"{len(recs)} recordings"
+        dlg = BundleDialog(what, parts, self.state.get("bundle_off") or (), bool(self.state.get("bundle_times")),
+                           self)
+        if not dlg.exec():
+            return
+        # Parts this selection did not have keep the choice made for them before.
+        shown = {k for k, _label in parts}
+        self.state.set("bundle_off", sorted({k for k in self.state.get("bundle_off") or () if k not in shown}
+                                            | set(dlg.off())))
+        self.state.set("bundle_times", dlg.times.isChecked())
+        dest = None
+        if dlg.action == BundleDialog.ZIP:
+            name = export.suggested_name(recs[0], ".zip") if len(recs) == 1 else \
+                f"Echo {recs[0].meta.created[:10]} ({len(recs)} recordings).zip"
+            path, _ = QFileDialog.getSaveFileName(self, "Save bundle", str(Path.home() / name), "Zip (*.zip)")
+            if not path:
+                return
+            dest = Path(path if path.lower().endswith(".zip") else path + ".zip")
+        self._bundle(recs, dlg.keys(), dlg.times.isChecked(), dest)
+
+    def _bundle(self, recs: list[Recording], keys: list[str], timestamps: bool, dest: Path | None = None):
+        """Lay the notes out off the GUI thread (a long selection takes a moment), then copy or save."""
+        def go():
+            items = bundle.notes(recs, keys, timestamps)
+            if dest is not None:
+                bundle.zip_notes(items, dest)
+            return items
+
+        def done(items):
+            if not items:
+                self.show_message("None of the selected recordings has those parts.")
+                return
+            text = "\n".join(md for _rec, md in items)
+            n = len(items)
+            what = f"{n} recording{'s' if n != 1 else ''}, about {bundle.words(text):,} words"
+            left = len(recs) - n
+            rest = f" {left} had none of those parts." if left else ""
+            if dest is None:
+                QApplication.clipboard().setText(text)
+                self.show_message(f"Copied {what}.{rest}")
+            else:
+                self.show_message(f"Saved {dest}: {what}.{rest}")
+
+        run_task(go, on_done=done, on_error=lambda m: self.show_message(f"Bundle failed: {m}"))
 
     def show_in_folder(self):
         rec = self.current()
