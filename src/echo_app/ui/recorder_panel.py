@@ -7,10 +7,10 @@ import time
 
 from PySide6.QtCore import QEvent, QPointF, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QKeySequence, QPainter, QShortcut
-from PySide6.QtWidgets import (QComboBox, QFrame, QGraphicsDropShadowEffect, QHBoxLayout, QLabel, QLineEdit,
-                               QSizePolicy, QSlider, QToolButton, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QComboBox, QFrame, QGraphicsDropShadowEffect, QHBoxLayout, QInputDialog, QLabel,
+                               QLineEdit, QMenu, QSizePolicy, QSlider, QToolButton, QVBoxLayout, QWidget)
 
-from .. import recorder, settings
+from .. import collections, recorder, settings
 from ..audio import backend, levels, monitor
 from ..audio.backend import DEFAULT_OUTPUT, INPUT, Source
 from ..library import Library
@@ -37,6 +37,7 @@ class RecorderPanel(QWidget):
     stopped = Signal(str)
     message = Signal(str)  # transient status-bar message
     recording_changed = Signal(bool)
+    destination_changed = Signal(str)  # the collection new recordings go to ("": the day-to-day list)
 
     def __init__(self, library: Library, parent=None):
         super().__init__(parent)
@@ -166,7 +167,23 @@ class RecorderPanel(QWidget):
         self.source_btn.setToolTip("Input, level, gain and computer audio")
         self.source_btn.setAccessibleName("Input settings")
         self.source_btn.clicked.connect(self.show_inputs)
-        lay.addWidget(self.source_btn, 0, Qt.AlignmentFlag.AlignHCenter)
+        under = QVBoxLayout()  # the two lines under Record, closer to each other than to it
+        under.setSpacing(0)
+        under.addWidget(self.source_btn, 0, Qt.AlignmentFlag.AlignHCenter)
+        lay.addLayout(under)
+        # Where the next recording is filed, chosen before it starts and kept for the ones after.
+        self.dest_btn = QToolButton()
+        self.dest_btn.setObjectName("sourcebtn")
+        self.dest_btn.setIconSize(QSize(14, 14))
+        self.dest_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.dest_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.dest_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.dest_btn.setStyleSheet("QToolButton::menu-indicator { image: none; width: 0; }")
+        self.dest_menu = QMenu(self.dest_btn)
+        self.dest_menu.aboutToShow.connect(self._fill_destinations)
+        self.dest_btn.setMenu(self.dest_menu)
+        under.addWidget(self.dest_btn, 0, Qt.AlignmentFlag.AlignHCenter)
+        self.update_destination()
 
         self.input_panel = InputPanel(self)
         il = self.input_panel.body
@@ -504,8 +521,48 @@ class RecorderPanel(QWidget):
         else:
             self.start()
 
+    # ---- where new recordings go ----
+    def destination(self) -> str:
+        """The collection the next recording is filed in; "" for the day-to-day list."""
+        return collections.for_new(self.library)
+
+    def set_destination(self, name: str):
+        collections.set_for_new(name)
+        self.update_destination()
+        self.destination_changed.emit(self.destination())
+
+    def update_destination(self):
+        name = self.destination()
+        self.dest_btn.setText(f"Into {name}" if name else "Into Recordings")
+        self.dest_btn.setIcon(icon("folder" if name else "audio-lines", "foam" if name else "on_deep_muted"))
+        self.dest_btn.setToolTip("Where new recordings are filed: your day-to-day list or a collection.\n"
+                                 "Choose before you record; the choice stays until you change it.")
+        self.dest_btn.setAccessibleName(f"New recordings go into {name or 'Recordings'}")
+
+    def _fill_destinations(self):
+        m, now = self.dest_menu, self.destination()
+        m.clear()
+        names = [c.name for c in collections.all_of(self.library)]
+        if now and not any(collections.same(n, now) for n in names):
+            names.append(now)  # chosen, with nothing recorded into it yet
+        for name in ["", *names]:
+            a = m.addAction(name or "Recordings (day to day)", lambda n=name: self.set_destination(n))
+            a.setCheckable(True)
+            a.setChecked(collections.same(name, now))
+            if not name and names:
+                m.addSeparator()
+        m.addSeparator()
+        m.addAction("New collection…", self._new_destination)
+
+    def _new_destination(self):
+        name, ok = QInputDialog.getText(self, "New collection", "New recordings go into:")
+        if ok and collections.clean(name):
+            self.set_destination(name)
+
     def start(self, quick_note: bool = False):
         cfg, _ = settings.load()
+        # A quick note is a dictation to paste somewhere, not part of a client's or a project's work.
+        collection = "" if quick_note else self.destination()
         s = self.current_source()
         source = "" if s is None or (s.is_default and s.kind == INPUT) else s.name
         computer_audio = self.computer_audio_on() and not quick_note  # a quick note is the user alone
@@ -515,7 +572,7 @@ class RecorderPanel(QWidget):
 
         def go():
             return recorder.start(self.library, source=source, rate=cfg.sample_rate, channels=cfg.channels,
-                                  quick_note=quick_note, computer_audio=computer_audio)
+                                  quick_note=quick_note, computer_audio=computer_audio, collection=collection)
 
         def ok(sess):
             self._busy = False
@@ -615,6 +672,7 @@ class RecorderPanel(QWidget):
             w.setVisible(rec)
         self.call_meter.setVisible(rec and getattr(self, "_two_tracks", False))
         self.source_btn.setVisible(not rec)
+        self.dest_btn.setVisible(not rec)
         self.mark_btn.setEnabled(rec and not self._busy)
         if rec:
             self.record_btn.setIcon(icon("stop", "deep_top"))

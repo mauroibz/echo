@@ -64,6 +64,32 @@ def spelling(lib: Library, name: str) -> str:
     return c.name if c is not None else clean(name)
 
 
+def apart(rec: Recording) -> bool:
+    """Whether a recording is a batch filed away from the day's work: in a collection, and brought
+    in from files. One the user recorded is their day's work wherever they chose to file it, so
+    what looks at the day to day (an extension's briefing, its calendar) still counts it."""
+    return bool(clean(rec.meta.collection)) and rec.meta.origin != "recorded"
+
+
+def for_new(lib: Library) -> str:
+    """The collection a new recording goes to: the one chosen under Record, as it is spelled
+    among the recordings; "" for the day-to-day list."""
+    from . import settings
+
+    name = clean(settings.load()[0].record_collection)
+    return spelling(lib, name) if name else ""
+
+
+def set_for_new(name: str) -> str:
+    """Remember where new recordings go ("": the day-to-day list). Returns the name kept."""
+    from . import settings
+
+    cfg, _ = settings.load()
+    cfg.record_collection = clean(name)
+    settings.save(cfg)
+    return cfg.record_collection
+
+
 def file(recs, name: str) -> int:
     """Put the recordings in the collection `name` ("" takes them out). Returns how many changed."""
     name = clean(name)

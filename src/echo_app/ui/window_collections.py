@@ -40,8 +40,10 @@ class CollectionsMixin:
     def _scope_to(self, key: str):
         """Before selecting a recording from elsewhere (a search result opened, an extension's
         page): open the place it is filed in."""
-        if self.search.text() or self.model.row_of(key) >= 0:
-            return
+        if self.search.text():
+            return  # a search shows every place at once
+        # Also when its row is there: the recording being made shows everywhere, and once it stops
+        # it is only where it was filed.
         where = self.model.collection_of(key)
         if where != self.model.collection():
             self.model.set_collection(where)
@@ -107,6 +109,12 @@ class CollectionsMixin:
         if c is None:
             return
         m = QMenu(self)
+        here = collections.same(self.recorder_panel.destination(), name)
+        a = m.addAction(icon("mic"), "File new recordings here", lambda: self.recorder_panel.set_destination(
+            "" if here else name))
+        a.setCheckable(True)
+        a.setChecked(here)
+        m.addSeparator()
         m.addAction(icon("share"), "Bundle…", lambda: self.bundle_collection(name))
         m.addAction(icon("rename"), "Rename…", lambda: self.rename_collection(name))
         m.addSeparator()
@@ -126,6 +134,8 @@ class CollectionsMixin:
             return
         was_open = self.model.collection() is not None and collections.same(self.model.collection(), name)
         collections.rename(self.library, name, new)
+        if collections.same(self.recorder_panel.destination(), name):
+            self.recorder_panel.set_destination(new)  # new recordings follow the collection
         self.model.refresh()
         if was_open:
             self.model.set_collection(new)
@@ -142,6 +152,8 @@ class CollectionsMixin:
                                  "day-to-day list?\nNothing is deleted; the collection goes away.")
         if r == QMessageBox.StandardButton.Yes:
             self.file_recordings(c.recordings, "")
+            if collections.same(self.recorder_panel.destination(), name):
+                self.recorder_panel.set_destination("")  # or the next recording would bring it back
 
     # ---- importing a batch ----
     def import_asking(self, paths: list[Path]):

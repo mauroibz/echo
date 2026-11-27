@@ -122,13 +122,21 @@ list. A dropped folder offers its own name. One file alone is imported without a
 - Right-click a collection: **Bundle…** copies or zips all of it for an assistant, **Rename…**,
   and **Move all back to Recordings…**, which removes the collection and deletes nothing.
 - Search looks everywhere, and opening a result shows it in its collection.
+- **Recording into a collection.** Under Record, the line "Into Recordings" says where new
+  recordings are filed. Click it before a meeting to choose a collection, or New collection… for
+  one that does not exist yet; the choice stays until you change it, so a collection can be your
+  default. It applies to every way of starting a recording (the window, the dock, the tray, the
+  system-wide shortcut, `echo-app record`, and meetings Echo Studio records by itself). A
+  collection's right-click menu has the same switch, "File new recordings here". Quick notes are
+  never filed.
 - Settings → Import → "A subfolder is a collection": a folder made inside a watched folder becomes
   a collection of its name, so a batch copied there files itself. Only folders directly inside.
 
 A collection is a line in each recording's `meta.json`, so it goes wherever the recordings go and
 there is nothing else to back up. With Echo Studio, a collection's recordings are summarized like
-any other, but they stay out of the Briefing and the Action items page and are not matched to
-calendar meetings; their minutes and items are in each recording's own views.
+any other. A batch you imported into a collection stays out of the Briefing and the Action items
+page and is not matched to calendar meetings; its minutes and items are in each recording's own
+views. Meetings you recorded count as your day's work whichever collection they are filed in.
 
 ## Transcripts
 

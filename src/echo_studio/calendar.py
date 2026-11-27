@@ -21,7 +21,7 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timedelta
 
-from echo_app import paths, people
+from echo_app import collections, paths, people
 from echo_app.fsutil import atomic_write_json, atomic_write_text, read_json
 from echo_app.library import Recording, fold_tag
 
@@ -201,9 +201,9 @@ def attach(rec: Recording, event: ics.Event) -> None:
 def attach_if_found(rec: Recording) -> ics.Event | None:
     """The recording's event, saved with it when found in the calendar; None when there is none."""
     ev = event_of(rec)
-    # A recording filed in a collection came in as part of a batch: the meeting that happened to be
-    # in the calendar at its time is not its meeting.
-    if ev is None and enabled() and not rec.meta.collection:
+    # A batch imported into a collection: the meeting that happened to be in the calendar at a
+    # file's time is not its meeting. A recording the user made is matched wherever it is filed.
+    if ev is None and enabled() and not collections.apart(rec):
         ev = match(rec)
         if ev is not None:
             attach(rec, ev)
