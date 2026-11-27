@@ -5,6 +5,8 @@ tag.
 
 ## Unreleased
 
+## 1.7.0 - 2026-11-27
+
 ### Added
 
 - Collections: a batch of recordings kept apart from the day-to-day list. Dropping several files
@@ -17,14 +19,18 @@ tag.
   and for the ones after: a collection can be the default. `echo-app record --collection NAME`.
 - Icons: a symbol in a color for a recording (before its title in the list) or a collection (in
   the sidebar), from Icon… in their right-click menus.
-- Settings → Import: "A subfolder is a collection", for watched folders.
-- Echo Studio: a collection's recordings are summarized like any other; a batch imported into one
-  stays out of the Briefing, the Action items page and calendar matching.
-
 - Bundle (Ctrl+Shift+B): the selected recordings as Markdown to paste into an assistant, with the
   parts you tick (the transcript and, with Echo Studio, the summary and the action items), copied
   to the clipboard or saved as a zip with a note per recording. `echo-app bundle ID...` does the
   same from the command line.
+- Settings → Import: "A subfolder is a collection", for watched folders.
+- Echo Studio: a collection's recordings are summarized like any other; a batch imported into one
+  stays out of the Briefing, the Action items page and calendar matching.
+
+### Changed
+
+- The bar under a selection of several recordings has Bundle, and its Delete is an icon.
+- Dropping or choosing two or more files asks where they go; one file is imported as before.
 
 ## 1.6.0 - 2026-11-03
 
