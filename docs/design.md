@@ -200,7 +200,10 @@ Watched folders (`watch_dirs` in settings) are scanned by `watch.py`, from the w
 five minutes) or from `echo-app import --watch` (polling). A file is imported once its size and
 modification time have stayed the same for 3 seconds. `<data>/watch.json` remembers per folder
 which files were handled, by size and modification time so they are not hashed again, and which
-failed and why; a failure is reported once and retried only when the file changes.
+failed and why; a failure is reported once and retried only when the file changes. With
+`watch_collections` on, each folder directly inside a watched one is scanned too and its files are
+filed in a collection of its name; it is off by default because a phone's or a recorder's sync
+folder has subfolders nobody meant as collections, and one level only for the same reason.
 
 ## Transcription
 
@@ -621,6 +624,25 @@ GNOME and KWin ignore the stay-on-top hint; KWin can keep the dock above by the 
 rule, which the guide explains. Markers from the dock
 or the tray skip the note field, which lives in the hidden window. The window's shortcuts do not
 reach a hidden window, so the dock has its own (Ctrl+R, Ctrl+Shift+R, M, Ctrl+Shift+D).
+
+### Collections
+
+A collection is the `collection` field of each recording's `meta.json` and nothing else: no file
+per collection, no table. It exists while a recording names it, so there is no empty collection to
+clean up, nothing to keep consistent when recordings are deleted or the data folder is copied, and
+the index needs no column (the list model and the command line group the recordings they already
+hold). The cost is that renaming rewrites one small file per member, which for a batch of tens is
+nothing. Names compare folded, as tags do, so "entrevistas" typed later joins "Entrevistas".
+
+One collection per recording, where tags allow many: a collection answers "where is it", which
+decides whether the day-to-day list shows it, and a recording in two places would be in the list
+and out of it. The list model keeps a scope (a collection, or none) next to the search filter; a
+search ignores the scope, because the user looking for a sentence does not know where it was filed,
+and selecting a recording from elsewhere moves the scope to it. The recording being made always
+shows. The bar of rows is hidden until a collection exists, so a library without one is unchanged.
+
+Asking on a drop only from two files up keeps the common case (one voice note, one meeting video)
+free of a dialog, and with a collection open nothing is asked: the open place is the answer.
 
 ### Linked sets
 

@@ -106,6 +106,30 @@ phone sync folder, WhatsApp exports, OBS's recordings folder) are imported while
 they finish copying. The files stay in place. Without the window, `echo-app import --watch` does
 the same.
 
+**Collections: a batch kept apart.** A round of interviews, a course or a client's archive does
+not belong among the day's recordings. Drop several files (or a folder) on the window and Echo
+asks where they go: name a collection, choose one you have, or press Just import for the usual
+list. A dropped folder offers its own name. One file alone is imported without a question.
+
+- The collections show above the list, under **Recordings** (your day-to-day list, which holds
+  everything not filed). Click one to see its recordings; click Recordings to go back. While some
+  of a collection are still to be transcribed its count reads `7/15`.
+- With a collection open, what you drop or import goes into it. You can also drop files on a
+  collection's row, or drag recordings from the list onto a row (onto Recordings takes them out).
+- Right-click a recording, or a selection of several: **Move to collection** files them in one,
+  makes a new one, or sends them back to Recordings. A recording is in one collection at most; tags
+  are for what cuts across.
+- Right-click a collection: **Bundle…** copies or zips all of it for an assistant, **Rename…**,
+  and **Move all back to Recordings…**, which removes the collection and deletes nothing.
+- Search looks everywhere, and opening a result shows it in its collection.
+- Settings → Import → "A subfolder is a collection": a folder made inside a watched folder becomes
+  a collection of its name, so a batch copied there files itself. Only folders directly inside.
+
+A collection is a line in each recording's `meta.json`, so it goes wherever the recordings go and
+there is nothing else to back up. With Echo Studio, a collection's recordings are summarized like
+any other, but they stay out of the Briefing and the Action items page and are not matched to
+calendar meetings; their minutes and items are in each recording's own views.
+
 ## Transcripts
 
 **Transcription.** New recordings and imports are transcribed automatically; progress and time
@@ -297,13 +321,15 @@ echo-app pause | resume | stop | status
 echo-app mark [--note TEXT]       add a marker to the active recording
 echo-app markers ID               list a recording's markers
 echo-app sources                  list inputs (* marks the default)
-echo-app import PATH...           import audio or video files, or folders
+echo-app import PATH... [--collection NAME]   import audio or video files, or folders (into a collection)
 echo-app import --watch [FOLDER...] [--interval S]   keep importing new files (default: watched folders)
 echo-app transcribe ID|FILE|FOLDER... | --all [--wait] [--again] [--format F [--out PATH]]
                   [--timeout S] [--json] [--no-adapter] [--context TEXT] [--language CODE]
 echo-app info ID [--json]         one recording: transcript state, progress, speakers, files
 echo-app cancel ID
-echo-app list [QUERY] [--tag T] [--json]   list or search recordings (#word in QUERY is a tag,
+echo-app collections [--json]     the collections and how many recordings each holds
+echo-app collections ID... --add NAME | --remove   file recordings in a collection, or take them out
+echo-app list [QUERY] [--tag T] [--collection NAME] [--json]   list or search recordings (#word in QUERY is a tag,
                                   #category: any tag of a category, @name a speaker)
 echo-app tag ID [+TAG ...] [-TAG ...]   show, add or remove tags
 echo-app people [--json]          everyone Echo knows: recordings, aliases, tags and notes
@@ -311,7 +337,7 @@ echo-app link ID ID... [--title T]   link recordings into a set (a set id among 
 echo-app unlink ID                a set id dissolves the set; a recording id takes it out of its set
 echo-app export ID [--format txt|md|srt|vtt|json] [--out PATH]   (ID may be a set's)
 echo-app export --all FOLDER [--audio link|copy|none] [--timestamps]   Markdown notes for a vault
-echo-app bundle ID... [--parts transcript,summary,actions] [--timestamps] [--out FILE.zip|FILE.md]
+echo-app bundle ID... | --collection NAME [--parts transcript,summary,actions] [--timestamps] [--out FILE.zip|FILE.md]
                                   recordings (or sets) as Markdown for an assistant; printed without --out
 echo-app models download | status
 echo-app recover                  repair recordings interrupted by a crash
@@ -348,7 +374,8 @@ echo-app transcribe meeting.mp4 --format md --context "Lucía y Martín, presupu
   (`["mic", "computer"]` for a recorded call, else null), `extracted_from`, `state`,
   `transcript_status` (`none`, `queued`, `running`, `done`, `failed`), `progress` (`stage`,
   `fraction`, `eta_s`), `error`, `language`, `speakers` (`count`, `names`), `tags`, `notes`,
-  `folder`, `audio` and `files` (`transcript`, `corrected`, `edited`, absolute paths or null).
+  `folder`, `audio`, `files` (`transcript`, `corrected`, `edited`, absolute paths or null) and
+  `collection` (its name, or null).
   `transcribe --json` lists each input with its `result`, `error`, the `output` file written and
   the `recording`. Keys are added in later versions, never renamed.
 - **Exit codes.** 0 done (or queued, without waiting); 1 a recording failed, a file was not

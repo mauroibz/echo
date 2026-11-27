@@ -7,6 +7,16 @@ tag.
 
 ### Added
 
+- Collections: a batch of recordings kept apart from the day-to-day list. Dropping several files
+  asks for a collection (or "Just import"); collections show above the list with how many of each
+  are transcribed, and open with a click. Move to collection in the list's menu, drag onto a
+  collection, and Bundle, Rename or move everything back from a collection's own menu. Search
+  still looks everywhere. `echo-app collections`, `import --collection`, `list --collection` and
+  `bundle --collection` from the command line; `collection` in the JSON of a recording.
+- Settings → Import: "A subfolder is a collection", for watched folders.
+- Echo Studio: a collection's recordings are summarized like any other and stay out of the
+  Briefing, the Action items page and calendar matching.
+
 - Bundle (Ctrl+Shift+B): the selected recordings as Markdown to paste into an assistant, with the
   parts you tick (the transcript and, with Echo Studio, the summary and the action items), copied
   to the clipboard or saved as a zip with a note per recording. `echo-app bundle ID...` does the

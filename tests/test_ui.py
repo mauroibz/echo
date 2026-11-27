@@ -91,7 +91,10 @@ def wav(path, seconds=1.0, freq=440):
     return path
 
 
-def test_empty_state_then_drop_import(window, lib, tmp_path):
+def test_empty_state_then_drop_import(window, lib, tmp_path, monkeypatch):
+    from echo_app.ui.collections import CollectionDialog
+
+    monkeypatch.setattr(CollectionDialog, "exec", lambda dlg: 1)  # several files: "Just import"
     assert window.empty.isVisible()
     f1 = wav(tmp_path / "PTT-20261023-WA0001.opus")
     f2 = wav(tmp_path / "nota.mp3", freq=300)

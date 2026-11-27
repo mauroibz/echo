@@ -38,20 +38,28 @@ class FolderWatcher(QObject):
         if folders is None:
             folders = settings.load()[0].watch_dirs
         self.folders = [Path(f).expanduser() for f in folders if f]
-        if self._fs.directories():
-            self._fs.removePaths(self._fs.directories())
-        existing = [str(f) for f in self.folders if f.is_dir()]
-        if existing:
-            self._fs.addPaths(existing)
+        self._watch()
         if self.folders:
             self._rescan.start()
             self.scan()
         else:
             self._rescan.stop()
 
+    def _watch(self):
+        """Watch the folders, and their subfolders when those are collections (a subfolder made
+        later is picked up by the next scan, which the change in its parent starts)."""
+        sub = settings.load()[0].watch_collections
+        want = {str(place) for f in self.folders if f.is_dir() for place, _name in self.scanner.places(f, sub)}
+        have = set(self._fs.directories())
+        if have - want:
+            self._fs.removePaths(sorted(have - want))
+        if want - have:
+            self._fs.addPaths(sorted(want - have))
+
     def scan(self):
         if not self.folders:
             return
+        self._watch()
         if self._busy:
             self._again = True  # one more look when the running one ends
             return

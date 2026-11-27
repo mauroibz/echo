@@ -10,9 +10,9 @@ from PySide6.QtCore import QAbstractListModel, QModelIndex, QRect, QRectF, QSize
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QLinearGradient, QPainter
 from PySide6.QtWidgets import QStyle, QStyledItemDelegate, QStyleOptionViewItem
 
-from .. import features, recorder, sets
+from .. import collections, features, recorder, sets
 from ..library import (FAILED, NEEDS_FINALIZE, READY, RECORDING, T_DONE, T_FAILED, T_QUEUED, T_RUNNING,
-                       Library, Recording)
+                       Library, Recording, fold_tag)
 from . import motion, theme
 from .common import date_group, fmt_date, fmt_duration, fmt_eta, fmt_length, fmt_when
 from .common import icon as tinted_icon
@@ -156,6 +156,8 @@ class LibraryModel(QAbstractListModel):
         self._status: dict[str, Status] = {}
         self._rows: list[str] = []
         self._filter: set[str] | None = None
+        self._collection = ""  # the collection shown, folded; "" = the day-to-day recordings
+        self._collections: list[collections.Collection] | None = None  # read again when a folder changes
         self._snippets: dict[str, str] = {}
         self._loaded = False
         self._sets: dict[str, sets.LinkedSet] = {}
@@ -356,6 +358,34 @@ class LibraryModel(QAbstractListModel):
         except ValueError:
             return -1
 
+    # ---- collections: which recordings the list is about ----
+    def collection(self) -> str | None:
+        """The name of the collection shown, or None for the day-to-day recordings."""
+        return next((c.name for c in self.collections() if fold_tag(c.name) == self._collection), None)
+
+    def set_collection(self, name: str | None) -> None:
+        folded = fold_tag(collections.clean(name or ""))
+        if folded != self._collection:
+            self._collection = folded
+            self._rebuild_rows()
+
+    def collections(self) -> list[collections.Collection]:
+        if self._collections is None:
+            self._collections = collections.group(self._all.values())
+        return self._collections
+
+    def collection_of(self, key: str) -> str | None:
+        """The collection a recording is filed in, or a set's first part; None for the day to day."""
+        rec = self._all.get(self._parts[key][0] if key in self._parts else key)
+        return (collections.clean(rec.meta.collection) or None) if rec is not None else None
+
+    def daily(self) -> int:
+        """How many recordings are in no collection."""
+        return len(self._all) - sum(len(c.recordings) for c in self.collections())
+
+    def _here(self, rid: str) -> bool:
+        return fold_tag(collections.clean(self._all[rid].meta.collection)) == self._collection
+
     def set_filter(self, ids: set[str] | None, snippets: dict[str, str] | None = None) -> None:
         """Show only `ids` (None: all); `snippets` are lines of matching speech per recording."""
         self._filter = ids
@@ -397,6 +427,8 @@ class LibraryModel(QAbstractListModel):
         for rid, rec in self._all.items():
             if rid in changed_ids or rec.meta.state == RECORDING:
                 self._status[rid] = status_of(rec)
+        if changed_ids or removed:
+            self._collections = None
         if changed_ids and self._loaded:
             self.recordings_changed.emit(changed_ids)
         self._loaded = True
@@ -435,16 +467,22 @@ class LibraryModel(QAbstractListModel):
         rec = self.library.get(rid)
         if rec is None:
             return
+        moved = rec.meta.collection != self._all[rid].meta.collection if rid in self._all else True
         self._all[rid] = rec
         self._mtimes.pop(rid, None)
         self._status[rid] = status_of(rec)
+        self._collections = None
+        if moved:
+            self._rebuild_rows()
         row = self.row_of(rid)
         if row >= 0:
             idx = self.index(row)
             self.dataChanged.emit(idx, idx)
 
     def _rebuild_rows(self) -> None:
-        visible = {rid for rid in self._all if self._filter is None or rid in self._filter
+        # A search looks everywhere; without one the list is the open collection, or the recordings
+        # in none. The recording being made always shows.
+        visible = {rid for rid in self._all if (rid in self._filter if self._filter is not None else self._here(rid))
                    or self._all[rid].meta.state == RECORDING}
         self._parts = {}
         for sid, st in self._sets.items():

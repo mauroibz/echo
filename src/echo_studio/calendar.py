@@ -201,7 +201,9 @@ def attach(rec: Recording, event: ics.Event) -> None:
 def attach_if_found(rec: Recording) -> ics.Event | None:
     """The recording's event, saved with it when found in the calendar; None when there is none."""
     ev = event_of(rec)
-    if ev is None and enabled():
+    # A recording filed in a collection came in as part of a batch: the meeting that happened to be
+    # in the calendar at its time is not its meeting.
+    if ev is None and enabled() and not rec.meta.collection:
         ev = match(rec)
         if ev is not None:
             attach(rec, ev)

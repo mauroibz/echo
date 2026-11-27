@@ -517,7 +517,8 @@ class HomeScreen(QWidget):
         head.addStretch(1)
         self.minutes.addLayout(head)
         self.minutes.addSpacing(10)
-        recs = sorted((r for r in self.library.all() if summary.load(r) is not None),
+        # The day to day: a collection's recordings are a batch filed apart, not the last meetings.
+        recs = sorted((r for r in self.library.all() if not r.meta.collection and summary.load(r) is not None),
                       key=lambda r: r.meta.created, reverse=True)[:MINUTES_SHOWN]
         if not recs:
             self.minutes.addWidget(label("Minutes appear here once a recording is summarized.", 1.0, dim=True))

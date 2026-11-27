@@ -84,6 +84,11 @@ def _cmd_list(args) -> int:
     idx = Index(lib)
     idx.sync()
     rows = idx.list(args.query or "", tags=args.tag or ())
+    if args.collection is not None:
+        from . import collections
+
+        rows = [r for r in rows if (rec := lib.get(r["id"])) is not None
+                and collections.same(rec.meta.collection, args.collection)]
     if args.json:
         import json
 
@@ -104,7 +109,9 @@ def _cmd_list(args) -> int:
         n = len(rec.meta.markers) if rec else 0
         marks = f"  [{n} marker{'s' if n != 1 else ''}]" if n else ""
         tags = "  " + " ".join(f"#{t}" for t in rec.meta.tags) if rec and rec.meta.tags else ""
-        print(f"{indent}{r['id']}  {_fmt_dur(r['duration']):>8}  {r['transcript_status']:<8}  {r['title']}{marks}{tags}")
+        where = f"  [{rec.meta.collection}]" if rec and rec.meta.collection and args.collection is None else ""
+        print(f"{indent}{r['id']}  {_fmt_dur(r['duration']):>8}  {r['transcript_status']:<8}  {r['title']}"
+              f"{marks}{tags}{where}")
 
     shown = set()
     for r in rows:
@@ -120,7 +127,7 @@ def _cmd_list(args) -> int:
                 if m in by_id:
                     line(by_id[m], "  ")
     if not rows:
-        print("No recordings." if not (args.query or args.tag) else "No matches.")
+        print("No recordings." if not (args.query or args.tag or args.collection) else "No matches.")
     return 0
 
 
@@ -197,6 +204,46 @@ def _cmd_export(args) -> int:
     return 0
 
 
+def _cmd_collections(args) -> int:
+    """The collections with how many recordings each holds; --add and --remove file recordings."""
+    from . import bundle, collections
+    from .library import Library
+    from .settings import load
+
+    lib = Library(load()[0].data_path)
+    if args.add is not None or args.remove:
+        name = collections.spelling(lib, args.add or "")
+        if not args.ids or (args.add is not None and args.remove) or (args.add is not None and not name):
+            print("Give recordings, and either --add NAME or --remove.", file=sys.stderr)
+            return 2
+        try:
+            recs = bundle.expand(lib, args.ids)
+        except KeyError as e:
+            print(f"No recording or linked set {e.args[0]}", file=sys.stderr)
+            return 1
+        n = collections.file(recs, name)
+        print(f"{n} recording(s) moved to {name}" if name else f"{n} recording(s) taken out of their collection")
+        return 0
+    if args.ids:
+        print("Give --add NAME or --remove with recordings.", file=sys.stderr)
+        return 2
+    found = collections.all_of(lib)
+    if args.json:
+        import json
+
+        print(json.dumps({"collections": [{"name": c.name, "recordings": [r.id for r in c.recordings],
+                                           "transcribed": c.transcribed} for c in found]},
+                         ensure_ascii=False, indent=2))
+        return 0
+    for c in found:
+        n = len(c.recordings)
+        done = "" if c.transcribed == n else f", {c.transcribed} transcribed"
+        print(f"{c.name}  ({n} recording{'s' if n != 1 else ''}{done})")
+    if not found:
+        print("No collections.")
+    return 0
+
+
 def _cmd_bundle(args) -> int:
     """Chosen parts of recordings as Markdown, to hand to an assistant: printed, or a zip of notes."""
     from . import bundle
@@ -204,8 +251,20 @@ def _cmd_bundle(args) -> int:
     from .settings import load
 
     lib = Library(load()[0].data_path)
+    ids = list(args.ids)
+    if args.collection:
+        from . import collections
+
+        c = collections.get(lib, args.collection)
+        if c is None:
+            print(f"No collection {args.collection}", file=sys.stderr)
+            return 1
+        ids += [r.id for r in sorted(c.recordings, key=lambda r: r.meta.created)]
+    if not ids:
+        print("Give recordings, or --collection NAME.", file=sys.stderr)
+        return 2
     try:
-        recs = bundle.expand(lib, args.ids)
+        recs = bundle.expand(lib, ids)
     except KeyError as e:
         print(f"No recording or linked set {e.args[0]}", file=sys.stderr)
         return 1
@@ -310,8 +369,16 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("query", nargs="?", help="search titles, notes and transcripts; #word is a tag, @name a speaker "
                                                    "(@name words: only what they said)")
     s.add_argument("--tag", action="append", metavar="TAG", help="only recordings with this tag (repeatable)")
+    s.add_argument("--collection", metavar="NAME", help="only that collection's recordings ('' for those in none)")
     s.add_argument("--json", action="store_true", help="print recordings and linked sets as JSON")
     s.set_defaults(func=_cmd_list)
+
+    s = sub.add_parser("collections", help="list the collections, or with --add / --remove file recordings in one")
+    s.add_argument("ids", nargs="*", metavar="ID", help="recordings or linked sets to file (with --add or --remove)")
+    s.add_argument("--add", metavar="NAME", help="put the recordings in this collection (made if new)")
+    s.add_argument("--remove", action="store_true", help="take the recordings out of their collection")
+    s.add_argument("--json", action="store_true")
+    s.set_defaults(func=_cmd_collections)
 
     s = sub.add_parser("rescan", help="rebuild the library index from the recording folders")
     s.set_defaults(func=_cmd_rescan)
@@ -335,7 +402,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     s = sub.add_parser("bundle", help="recordings as Markdown for an assistant: the transcript and, with Echo "
                                       "Studio, the summary and action items; printed, or a zip of notes")
-    s.add_argument("ids", nargs="+", metavar="ID", help="recordings or linked sets")
+    s.add_argument("ids", nargs="*", metavar="ID", help="recordings or linked sets")
+    s.add_argument("--collection", metavar="NAME", help="every recording of a collection, oldest first")
     s.add_argument("--parts", metavar="A,B", help="only these parts (transcript, and with Echo Studio summary "
                                                   "and actions); default: all there are")
     s.add_argument("--timestamps", action="store_true", help="start each passage of the transcript with its time")
