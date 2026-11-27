@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from types import SimpleNamespace
 
 from PySide6.QtCore import QEvent, QItemSelectionModel, Qt, QUrl
 from PySide6.QtGui import QDesktopServices
@@ -74,6 +75,7 @@ class LibraryActionsMixin:
             m = QMenu(self)
             m.addAction(icon("link"), f"Link {len(self._selected_keys())} recordings", self.link_selected)
             m.addAction(icon("share"), f"Bundle {len(self._selected_keys())} recordings…", self.bundle_selected)
+            self._collection_menu(m)
             m.addSeparator()
             m.addAction(icon("delete"), "Delete…", self.delete_selected)
             m.exec(self.list.viewport().mapToGlobal(pos))
@@ -91,6 +93,7 @@ class LibraryActionsMixin:
             m.addAction(icon("copy"), "Copy transcript", self.transcript.copy_all)
             m.addAction(icon("export"), "Export transcript…", self.transcript.export_text)
             m.addAction(icon("share"), "Bundle…", self.bundle_selected)
+            self._collection_menu(m)
             m.addSeparator()
             m.addAction(icon("unlink"), "Unlink", lambda: self.unlink_set(st.id))
             m.addAction(icon("delete"), "Delete…", self.delete_selected)
@@ -121,6 +124,8 @@ class LibraryActionsMixin:
             m.addAction(icon("export"), "Export audio…", self.export_audio)
             m.addAction(icon("share"), "Bundle…", self.bundle_selected)
         m.addAction(icon("folder"), "Show in folder", self.show_in_folder)
+        if rec.meta.state != RECORDING:
+            self._collection_menu(m)
         m.addSeparator()
         d = m.addAction(icon("delete"), "Delete…", self.delete_selected)
         d.setEnabled(rec.meta.state != RECORDING)
@@ -317,12 +322,17 @@ class LibraryActionsMixin:
         if len(keys) > 1:  # oldest first, as they happened; one set keeps its parts' order
             recs.sort(key=lambda r: r.meta.created)
         self.transcript.save()  # the text being edited is the text bundled
+        self.bundle_recordings(recs, f"“{recs[0].meta.title}”" if len(recs) == 1 else f"{len(recs)} recordings")
+
+    def bundle_recordings(self, recs: list[Recording], what: str, zip_name: str = ""):
+        """The Bundle dialog for `recs`, called `what` in its heading; `zip_name` names the zip offered."""
+        from .dialogs import BundleDialog
+
         parts = bundle.available(recs)
         if not parts:
             self.show_message("Nothing to bundle yet: no transcript." if len(recs) == 1 else
                               "Nothing to bundle yet: none of them has a transcript.")
             return
-        what = f"“{recs[0].meta.title}”" if len(recs) == 1 else f"{len(recs)} recordings"
         dlg = BundleDialog(what, parts, self.state.get("bundle_off") or (), bool(self.state.get("bundle_times")),
                            self)
         if not dlg.exec():
@@ -334,7 +344,8 @@ class LibraryActionsMixin:
         self.state.set("bundle_times", dlg.times.isChecked())
         dest = None
         if dlg.action == BundleDialog.ZIP:
-            name = export.suggested_name(recs[0], ".zip") if len(recs) == 1 else \
+            name = export.suggested_name(SimpleNamespace(meta=SimpleNamespace(title=zip_name), id="Echo"), ".zip") \
+                if zip_name else export.suggested_name(recs[0], ".zip") if len(recs) == 1 else \
                 f"Echo {recs[0].meta.created[:10]} ({len(recs)} recordings).zip"
             path, _ = QFileDialog.getSaveFileName(self, "Save bundle", str(Path.home() / name), "Zip (*.zip)")
             if not path:

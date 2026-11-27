@@ -22,6 +22,10 @@ echo-app meetings --unprocessed --json      # meetings not yet reviewed and full
 echo-app item REC UID --sent REF --url URL  # say an item is in the tracker
 echo-app item REC UID --failed "why"        # say it could not be sent
 echo-app export ID --format md              # the full transcript, with speakers
+echo-app bundle ID... --parts summary,actions   # several meetings as Markdown: transcript, summary, actions
+echo-app collections --json                 # batches the user filed apart from the day-to-day list
+echo-app bundle --collection NAME           # a whole collection as Markdown, oldest first
+echo-app list --collection NAME --json      # a collection's recordings ('' for those in none)
 echo-app info ID --json                     # the recording itself
 ```
 

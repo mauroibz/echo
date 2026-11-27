@@ -78,18 +78,37 @@ class Scanner:
                       if e.is_file() and not e.name.startswith(".")
                       and Path(e.name).suffix.lower() in importer.EXTENSIONS)
 
-    def scan(self, folders, auto_transcribe: bool | None = None) -> ScanResult:
-        """Import every new, settled audio file in `folders` (not their subfolders)."""
+    def places(self, folder: Path, subfolders: bool) -> list[tuple[Path, str]]:
+        """(folder to look in, collection its files go to): the folder itself, filed nowhere, and
+        with `subfolders` each folder directly in it, filed under its name. No deeper: a recorder's
+        or a phone's own tree is not a set of collections."""
+        out = [(folder, "")]
+        if subfolders:
+            try:
+                out += sorted((Path(e.path), e.name) for e in os.scandir(folder)
+                              if e.is_dir() and not e.name.startswith("."))
+            except OSError:
+                pass  # candidates() reports the folder that cannot be read
+        return out
+
+    def scan(self, folders, auto_transcribe: bool | None = None, subfolders: bool | None = None) -> ScanResult:
+        """Import every new, settled audio file in `folders`; with `subfolders` (default: the
+        setting) also those in each one's subfolders, into a collection named after the subfolder."""
+        if subfolders is None:
+            from . import settings
+
+            subfolders = settings.load()[0].watch_collections
         res = ScanResult()
         ledger = self._ledger()
         changed = False
         now = time.monotonic()
         hashes = None
-        ready: list[tuple[str, Path, list[int]]] = []
+        ready: list[tuple[str, Path, list[int], str]] = []
         for folder in folders:
             folder = Path(folder).expanduser()
             book = ledger.setdefault(str(folder), {"handled": {}, "failed": {}})
-            for path in self.candidates(folder):
+            for path, name in ((p, name) for place, name in self.places(folder, subfolders)
+                               for p in self.candidates(place)):
                 try:
                     sig = _signature(path.stat())
                 except OSError:
@@ -108,8 +127,9 @@ class Scanner:
                 if now - first[1] < self.stable_seconds or not _can_open(path):
                     res.waiting += 1
                     continue
-                ready.append((str(folder), path, sig))
-        for folder_key, path, sig in ready:
+                ready.append((str(folder), path, sig, name))
+        spelled: dict[str, str] = {}  # a subfolder's name as its collection is already spelled
+        for folder_key, path, sig, name in ready:
             book = ledger[folder_key]
             if hashes is None:
                 hashes = importer.library_hashes(self.lib)
@@ -126,6 +146,12 @@ class Scanner:
             if r.status == importer.DUPLICATE:
                 res.duplicates += 1
             else:
+                if name:
+                    from . import collections
+
+                    if name not in spelled:
+                        spelled[name] = collections.spelling(self.lib, name)
+                    r.recording.update(collection=spelled[name])
                 res.imported.append(r)
                 log.info("watched %s: imported as %s", path, r.recording.id)
         if res.imported:

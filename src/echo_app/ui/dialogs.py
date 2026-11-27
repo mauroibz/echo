@@ -444,12 +444,12 @@ class DictionaryPage(QWidget):
 class WatchedFoldersPage(QWidget):
     """Folders Echo imports new audio files from by itself."""
 
-    def __init__(self, folders: list[str], parent=None):
+    def __init__(self, folders: list[str], subfolders: bool = False, parent=None):
         super().__init__(parent)
         lay = QVBoxLayout(self)
         lay.addWidget(_dim("New audio files that appear in these folders are imported while Echo runs, for example "
                            "where your phone syncs voice notes or WhatsApp exports land. The files stay where they are; "
-                           "duplicates are skipped. Subfolders are not watched."))
+                           "duplicates are skipped."))
         self.list = QListWidget()
         for f in folders:
             self.list.addItem(f)
@@ -463,6 +463,12 @@ class WatchedFoldersPage(QWidget):
         row.addWidget(self.remove)
         row.addStretch(1)
         lay.addLayout(row)
+        self.subfolders = QCheckBox("A subfolder is a collection: import its files into a collection of its name")
+        self.subfolders.setChecked(subfolders)
+        self.subfolders.setToolTip("Make a folder inside a watched one, drop a batch into it, and it shows as a "
+                                   "collection in the sidebar, apart from your day-to-day recordings. Only folders "
+                                   "directly inside; without this, subfolders are not looked at.")
+        lay.addWidget(self.subfolders)
 
     def _add(self):
         d = QFileDialog.getExistingDirectory(self, "Watch a folder", str(Path.home()))
@@ -610,7 +616,7 @@ class SettingsDialog(QDialog):
         self.tabs.addTab(general, "General")
         self.dictionary = DictionaryPage()
         self.tabs.addTab(self.dictionary, "Dictionary")
-        self.watched = WatchedFoldersPage(self.cfg.watch_dirs)
+        self.watched = WatchedFoldersPage(self.cfg.watch_dirs, self.cfg.watch_collections)
         self.tabs.addTab(self.watched, "Import")
         # Pages from extensions; each one's apply() saves it on OK.
         self.pages = list(pages)
@@ -764,6 +770,7 @@ class SettingsDialog(QDialog):
         self.cfg.auto_transcribe = self.auto.isChecked()
         self.cfg.use_adapter = self.adapter.isChecked()
         self.cfg.watch_dirs = self.watched.folders()
+        self.cfg.watch_collections = self.watched.subfolders.isChecked()
         self.cfg.edit_autopause = self.autopause.isChecked()
         self.cfg.global_shortcuts = self.shortcuts.isChecked()
         self.cfg.language = self.language.currentData() or "es"

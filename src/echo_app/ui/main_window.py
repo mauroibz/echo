@@ -22,7 +22,9 @@ from .recorder_panel import RecorderPanel
 from .tags import TagBar
 from .watch import FolderWatcher
 from .transcript import TranscriptPanel
+from .collections import CollectionBar
 from .window_capture import CaptureMixin
+from .window_collections import CollectionsMixin
 from .window_library import LibraryActionsMixin
 from .window_parts import DropOverlay, Toast, ViewSwitch, _SpaceFilter
 from .window_search import SearchImportMixin
@@ -30,7 +32,7 @@ from .window_search import SearchImportMixin
 log = logging.getLogger(__name__)
 
 
-class MainWindow(LibraryActionsMixin, SearchImportMixin, CaptureMixin, QMainWindow):
+class MainWindow(LibraryActionsMixin, CollectionsMixin, SearchImportMixin, CaptureMixin, QMainWindow):
     """The window: the sidebar with the recorder and the library beside the selected recording.
     Its actions on the list, search and import, and recording from outside the window are in the
     `window_*` mixins; this class builds the parts, keeps the state and follows the selection."""
@@ -152,6 +154,12 @@ class MainWindow(LibraryActionsMixin, SearchImportMixin, CaptureMixin, QMainWind
         self.empty.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         theme.set_role(self.empty, dim=True)
 
+        # Where the list looks: the day-to-day recordings or one collection. Hidden until there is one.
+        self.collection_bar = CollectionBar()
+        self.collection_bar.opened.connect(self.open_collection)
+        self.collection_bar.files_dropped.connect(lambda name, paths: self.import_paths(paths, name or ""))
+        self.collection_bar.recordings_dropped.connect(self._dropped_on_collection)
+        self.collection_bar.menu_requested.connect(self._collection_context)
         self.tag_bar = TagBar()
         self.tag_bar.toggled.connect(self._toggle_tag)
         self.tag_bar.hide()
@@ -296,7 +304,7 @@ class MainWindow(LibraryActionsMixin, SearchImportMixin, CaptureMixin, QMainWind
         sl = QVBoxLayout(sw)
         sl.setContentsMargins(14, 2, 14, 6)
         sl.setSpacing(10)
-        for w in (self.search, self.tag_bar, self.banner):
+        for w in (self.search, self.tag_bar, self.collection_bar, self.banner):
             sl.addWidget(w)
         ll.addWidget(sw)
         ll.addWidget(self.list, 1)
@@ -704,6 +712,7 @@ class MainWindow(LibraryActionsMixin, SearchImportMixin, CaptureMixin, QMainWind
 
     def _update_empty(self):
         self._update_tags()
+        self._update_collections()
         empty = self.model.rowCount() == 0
         if empty:
             self.empty.setText("No matches." if self.search.text() else
@@ -839,6 +848,7 @@ class MainWindow(LibraryActionsMixin, SearchImportMixin, CaptureMixin, QMainWind
 
     def _select(self, rid: str):
         self.model.refresh()
+        self._scope_to(rid)
         row = self.model.row_of(rid)
         if row >= 0:
             self.list.selectionModel().setCurrentIndex(self.model.index(row),

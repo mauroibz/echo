@@ -29,6 +29,7 @@ class Settings:
     language: str = "es"  # default transcription language
     edit_autopause: bool = True  # typing pauses a playing passage, which plays again a second later
     watch_dirs: list[str] = field(default_factory=list)  # folders whose new audio files are imported
+    watch_collections: bool = False  # a watched folder's subfolders too, each into a collection of its name
     export_dir: str = ""  # Markdown folder (a vault) the library was last exported to
     export_sync: bool = False  # rewrite a recording's note there whenever it changes
     export_timestamps: bool = False  # paragraph times in exported notes
@@ -58,7 +59,8 @@ _COMMENTS = {
     "show_timestamps": "Show passage start times next to the transcript",
     "language": "Default transcription language (es, en, pt, fr, it, de, ...)",
     "edit_autopause": "While a passage plays for editing, typing pauses it and it plays again after",
-    "watch_dirs": "Folders whose new audio files are imported automatically (not their subfolders)",
+    "watch_dirs": "Folders whose new audio files are imported automatically",
+    "watch_collections": "Also import from each watched folder's subfolders, into a collection named after the subfolder",
     "export_dir": "Folder of Markdown notes the library is exported to",
     "export_sync": "Keep the exported notes up to date as recordings change (writes outside Echo's folder)",
     "export_timestamps": "Start exported paragraphs with their time",

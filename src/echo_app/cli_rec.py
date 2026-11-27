@@ -270,8 +270,13 @@ def cmd_import(args) -> int:
             pct = f" {frac:4.0%}" if frac is not None else "     "
             print(f"\r  [{i + 1}/{n}] {path.name[:55]:<55}{pct}", end="", flush=True)
 
+    name = ""
+    if args.collection:
+        from . import collections
+
+        name = collections.spelling(lib, args.collection)
     results = importer.import_paths(lib, [Path(p) for p in args.paths], progress=progress,
-                                    auto_transcribe=None if not args.no_transcribe else False)
+                                    auto_transcribe=None if not args.no_transcribe else False, collection=name)
     if sys.stdout.isatty():
         print("\r" + " " * 72 + "\r", end="")
     if not results:
@@ -326,6 +331,8 @@ def register(sub) -> None:
     s = sub.add_parser("import", help="import audio or video files, or folders (a video gives its sound)")
     s.add_argument("paths", nargs="*")
     s.add_argument("--no-transcribe", action="store_true", help="do not queue transcription")
+    s.add_argument("--collection", metavar="NAME", help="file what is imported in this collection (made if new), "
+                                                        "apart from the day-to-day recordings")
     s.add_argument("--watch", action="store_true",
                    help="keep importing new files that appear in the folders (default: the watched folders in settings)")
     s.add_argument("--interval", type=float, default=30.0, help="seconds between looks at the folders (--watch)")

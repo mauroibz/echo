@@ -10,7 +10,8 @@ from typing import Any
 from .library import CORRECTED, EDITED, TRANSCRIPT, Recording
 
 KEYS = ("id", "title", "created", "duration", "source", "tracks", "extracted_from", "state",
-        "transcript_status", "progress", "error", "language", "speakers", "tags", "notes", "folder", "audio", "files")
+        "transcript_status", "progress", "error", "language", "speakers", "tags", "notes", "folder", "audio", "files",
+        "collection")
 
 
 def _file(rec: Recording, name: str) -> str | None:
@@ -63,4 +64,5 @@ def record(rec: Recording) -> dict[str, Any]:
         "audio": str(audio.resolve()) if audio and audio.exists() else None,
         "files": {"transcript": _file(rec, TRANSCRIPT), "corrected": _file(rec, CORRECTED),
                   "edited": _file(rec, EDITED)},
+        "collection": rec.meta.collection or None,
     }

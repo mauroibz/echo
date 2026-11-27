@@ -32,7 +32,7 @@ Transcribe made by [SURUS](https://huggingface.co/surus-ai).
 | **Records calls** | Your microphone and the call (Meet, Teams, Zoom) as two tracks, so it knows which side said what. |
 | **Transcribes long recordings** | Passages and paragraphs with times, punctuation and accents. An hour in about a minute on a recent graphics card. |
 | **Tells who said what** | Speaker labels, names it learns, interruptions as their own paragraphs, and fixes it learns from. |
-| **Imports anything** | Audio, video (only its sound) and WhatsApp voice notes, dated and without duplicates. Watched folders too. |
+| **Imports anything** | Audio, video (only its sound) and WhatsApp voice notes, dated and without duplicates. Watched folders too, and collections that keep a batch out of the day-to-day list. |
 | **Edits with the audio** | Edit the text while hearing each passage; unsure passages are marked for checking. |
 | **Finds things** | Search every transcript, by tag (`#client:acme`) or by speaker (`@ana precio`). People have profiles. |
 | **Exports** | Text, Markdown, SRT, VTT, JSON, a whole Obsidian vault kept up to date, or a bundle to paste into an assistant. |

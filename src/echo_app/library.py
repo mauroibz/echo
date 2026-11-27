@@ -130,6 +130,7 @@ class Meta:
     speaker_fixes: list[dict[str, Any]] = field(default_factory=list)
     extracted_from: dict[str, Any] | None = None  # source video: name, sha256, size, track, method
     tracks: list[str] | None = None  # what each channel is, for a call: ["mic", "computer"]; None = one source
+    collection: str = ""  # the collection it is filed in (collections.py); "" = the day-to-day list
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "Meta":

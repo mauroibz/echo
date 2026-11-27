@@ -276,9 +276,10 @@ def _fmt(sec: float | None) -> str:
 
 def import_paths(lib: Library, paths: Iterable[Path],
                  progress: Callable[..., None] | None = None,
-                 auto_transcribe: bool | None = None) -> list[Result]:
+                 auto_transcribe: bool | None = None, collection: str = "") -> list[Result]:
     """Import files and folders. `progress(i, n, path)` is called before each file and, while a
-    video's sound is extracted, again as `progress(i, n, path, fraction)`."""
+    video's sound is extracted, again as `progress(i, n, path, fraction)`. With `collection`, what
+    is imported is filed there (a file already in the library stays where it is)."""
     if auto_transcribe is None:
         auto_transcribe = features.auto_transcribe()
     files = expand(paths)
@@ -289,6 +290,8 @@ def import_paths(lib: Library, paths: Iterable[Path],
             progress(i, len(files), f)
         within = (lambda frac, i=i, f=f: progress(i, len(files), f, frac)) if progress else None
         r = import_file(lib, f, hashes, within)
+        if r.status == IMPORTED and collection and r.recording:
+            r.recording.update(collection=collection)
         if r.status == IMPORTED and auto_transcribe and r.recording:
             from . import transcription
 

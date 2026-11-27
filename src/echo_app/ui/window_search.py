@@ -98,9 +98,10 @@ class SearchImportMixin:
             self, "Import audio or video", str(Path.home()),
             "Audio and video (" + " ".join(f"*{e}" for e in sorted(importer.EXTENSIONS)) + ");;All files (*)")
         if paths:
-            self.import_paths([Path(p) for p in paths])
+            self.import_asking([Path(p) for p in paths])
 
-    def import_paths(self, paths: list[Path]):
+    def import_paths(self, paths: list[Path], collection: str = ""):
+        """Import files and folders, into `collection` when one is named."""
         if not paths:
             return
         lib = self.library
@@ -111,7 +112,8 @@ class SearchImportMixin:
 
         def work(progress):
             return importer.import_paths(
-                lib, paths, progress=lambda i, n, p, frac=None: progress((i, n, p.name, frac)))
+                lib, paths, progress=lambda i, n, p, frac=None: progress((i, n, p.name, frac)),
+                collection=collection)
 
         def on_progress(v):
             i, n, name, frac = v
@@ -130,7 +132,7 @@ class SearchImportMixin:
                 self._look_for_bursts([r.recording.id for r in imported])
             parts = []
             if imported:
-                parts.append(f"Imported {len(imported)}")
+                parts.append(f"Imported {len(imported)}" + (f" into “{collection}”" if collection else ""))
             if dups:
                 parts.append(f"{len(dups)} already in the library")
             if bad:
@@ -166,4 +168,7 @@ class SearchImportMixin:
             self.show_message("Only files on this computer can be imported; save web audio first.")
         if local:
             e.acceptProposedAction()
-            self.import_paths(local)
+            # After the drop returns: the question is a dialog, and the file manager waits for the drop.
+            from PySide6.QtCore import QTimer
+
+            QTimer.singleShot(0, lambda: self.import_asking(local))
