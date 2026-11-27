@@ -11,7 +11,7 @@ from .library import CORRECTED, EDITED, TRANSCRIPT, Recording
 
 KEYS = ("id", "title", "created", "duration", "source", "tracks", "extracted_from", "state",
         "transcript_status", "progress", "error", "language", "speakers", "tags", "notes", "folder", "audio", "files",
-        "collection")
+        "collection", "icon")
 
 
 def _file(rec: Recording, name: str) -> str | None:
@@ -65,4 +65,5 @@ def record(rec: Recording) -> dict[str, Any]:
         "files": {"transcript": _file(rec, TRANSCRIPT), "corrected": _file(rec, CORRECTED),
                   "edited": _file(rec, EDITED)},
         "collection": rec.meta.collection or None,
+        "icon": rec.meta.icon or None,
     }

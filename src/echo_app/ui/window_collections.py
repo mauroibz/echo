@@ -7,7 +7,7 @@ from pathlib import Path
 from PySide6.QtWidgets import QInputDialog, QMenu, QMessageBox
 
 from .. import bundle, collections, importer
-from .collections import CollectionDialog
+from .collections import CollectionDialog, IconPicker
 from .common import icon
 
 ASK_FROM = 2  # files coming in at once before Echo asks about a collection: one file is the day to day
@@ -117,9 +117,37 @@ class CollectionsMixin:
         m.addSeparator()
         m.addAction(icon("share"), "Bundle…", lambda: self.bundle_collection(name))
         m.addAction(icon("rename"), "Rename…", lambda: self.rename_collection(name))
+        m.addAction("Icon…", lambda: self.pick_collection_icon(name))
         m.addSeparator()
         m.addAction(icon("unlink"), "Move all back to Recordings…", lambda: self.dissolve_collection(name))
         m.exec(pos)
+
+    # ---- icons ----
+    def pick_icon(self):
+        """A symbol before the title of each selected recording, to find it in the list."""
+        recs = self._selected_recordings()
+        if not recs:
+            return
+        what = f"“{recs[0].meta.title}”" if len(recs) == 1 else f"{len(recs)} recordings"
+        chosen = IconPicker.ask(what, recs[0].meta.icon if len(recs) == 1 else "", self)
+        if chosen is None:
+            return
+        for rec in recs:
+            if rec.meta.icon != chosen:
+                rec.update(icon=chosen)
+                self.model.reload(rec.id)
+
+    def pick_collection_icon(self, name: str):
+        c = collections.get(self.library, name)
+        if c is None:
+            return
+        chosen = IconPicker.ask(f"“{c.name}”", c.icon, self)
+        if chosen is None or chosen == c.icon:
+            return
+        collections.set_icon(self.library, c.name, chosen)
+        self.model.forget_collections()
+        self._update_collections()
+        self.recorder_panel.update_destination()
 
     def bundle_collection(self, name: str):
         c = collections.get(self.library, name)
@@ -134,6 +162,7 @@ class CollectionsMixin:
             return
         was_open = self.model.collection() is not None and collections.same(self.model.collection(), name)
         collections.rename(self.library, name, new)
+        self.model.forget_collections()
         if collections.same(self.recorder_panel.destination(), name):
             self.recorder_panel.set_destination(new)  # new recordings follow the collection
         self.model.refresh()
@@ -151,6 +180,8 @@ class CollectionsMixin:
                                  f"Move the {n} recording{'s' if n != 1 else ''} of “{c.name}” back to your "
                                  "day-to-day list?\nNothing is deleted; the collection goes away.")
         if r == QMessageBox.StandardButton.Yes:
+            collections.set_icon(self.library, name, "")
+            self.model.forget_collections()
             self.file_recordings(c.recordings, "")
             if collections.same(self.recorder_panel.destination(), name):
                 self.recorder_panel.set_destination("")  # or the next recording would bring it back

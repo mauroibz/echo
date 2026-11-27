@@ -231,7 +231,8 @@ def _cmd_collections(args) -> int:
     if args.json:
         import json
 
-        print(json.dumps({"collections": [{"name": c.name, "recordings": [r.id for r in c.recordings],
+        print(json.dumps({"collections": [{"name": c.name, "icon": c.icon or None,
+                                           "recordings": [r.id for r in c.recordings],
                                            "transcribed": c.transcribed} for c in found]},
                          ensure_ascii=False, indent=2))
         return 0

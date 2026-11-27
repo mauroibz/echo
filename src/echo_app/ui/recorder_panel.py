@@ -533,8 +533,11 @@ class RecorderPanel(QWidget):
 
     def update_destination(self):
         name = self.destination()
+        mark = collections.icons(self.library).get(collections.fold_tag(name), "") if name else ""
+        symbol, color = collections.icon_parts(mark)
         self.dest_btn.setText(f"Into {name}" if name else "Into Recordings")
-        self.dest_btn.setIcon(icon("folder" if name else "audio-lines", "foam" if name else "on_deep_muted"))
+        self.dest_btn.setIcon(icon(symbol or ("folder" if name else "audio-lines"),
+                                   color or ("foam" if name else "on_deep_muted")))
         self.dest_btn.setToolTip("Where new recordings are filed: your day-to-day list or a collection.\n"
                                  "Choose before you record; the choice stays until you change it.")
         self.dest_btn.setAccessibleName(f"New recordings go into {name or 'Recordings'}")

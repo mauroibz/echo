@@ -15,6 +15,8 @@ tag.
   `bundle --collection` from the command line; `collection` in the JSON of a recording.
 - "Into Recordings" under Record chooses where new recordings are filed, before a meeting starts
   and for the ones after: a collection can be the default. `echo-app record --collection NAME`.
+- Icons: a symbol in a color for a recording (before its title in the list) or a collection (in
+  the sidebar), from Icon… in their right-click menus.
 - Settings → Import: "A subfolder is a collection", for watched folders.
 - Echo Studio: a collection's recordings are summarized like any other; a batch imported into one
   stays out of the Briefing, the Action items page and calendar matching.
