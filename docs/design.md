@@ -649,6 +649,15 @@ recordings too. Extensions tell a batch from the day's work with `collections.ap
 collection and imported), not by the collection alone, so someone who records every meeting into
 a client's collection keeps their briefing and their calendar.
 
+Icons are a symbol and a color (`hospital:coral`), the symbol one of the bundled Lucide icons and
+the color a theme role, so they are drawn like every other icon in the window and follow the
+theme. Emoji were the first idea and do not work: the Qt in Echo's environment resolves emoji to
+the system's color font and draws nothing for it (Qt 6.12 with Noto Color Emoji in COLRv1 on
+Fedora 44, on the Wayland and offscreen platforms alike; forcing a monochrome family did not
+change which font was chosen). A recording's icon is in its `meta.json`. A collection's is in
+`<data>/collections.json`, the one thing about a collection that is not in its recordings: it
+holds only looks, keyed by folded name, and losing it loses icons and nothing else.
+
 Asking on a drop only from two files up keeps the common case (one voice note, one meeting video)
 free of a dialog, and with a collection open nothing is asked: the open place is the answer.
 

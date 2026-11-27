@@ -103,7 +103,7 @@ def test_command_line(tmp_path, capsys):
     assert cli.main(["collections"]) == 0 and "Entrevistas  (2 recordings)" in capsys.readouterr().out
     assert cli.main(["collections", "--json"]) == 0
     got = json.loads(capsys.readouterr().out)["collections"]
-    assert got == [{"name": "Entrevistas", "recordings": [b.id, a.id], "transcribed": 2}]
+    assert got == [{"name": "Entrevistas", "icon": None, "recordings": [b.id, a.id], "transcribed": 2}]
     assert cli.main(["list", "--collection", "entrevistas", "--json"]) == 0
     listed = json.loads(capsys.readouterr().out)["recordings"]
     assert {r["id"] for r in listed} == {a.id, b.id} and listed[0]["collection"] == "Entrevistas"
@@ -359,3 +359,104 @@ def test_record_from_the_command_line_follows_the_choice(tmp_path, capsys):
         time.sleep(0.4)
         assert cli.main(["stop"]) == 0
         capsys.readouterr()
+
+
+def test_icons_for_recordings_and_collections(tmp_path, capsys):
+    from echo_app.ui import theme
+
+    cfg, _ = settings.load()
+    library = Library(cfg.data_path)
+    a, b = _rec(library, "Uno"), _rec(library, "Dos")
+    assert collections.clean_icon("  Target:Coral \n") == "target:coral" and collections.clean_icon("") == ""
+    assert collections.clean_icon("🏥") == "" and collections.clean_icon("a b") == ""  # not a symbol's name
+    assert collections.icon_parts("target:coral") == ("target", "coral")
+    assert collections.icon_parts("target:nope") == ("target", "") and collections.icon_parts("") == ("", "")
+    # Every symbol offered is bundled, and every color is one the theme has.
+    assert len(collections.ICONS) == 40 and len(set(collections.ICONS)) == 40
+    assert all(theme._svg(name) for name in collections.ICONS)
+    assert all(hasattr(theme.current(), role) for role in collections.COLORS if role)
+    a.update(icon="target:coral")
+    assert library.get(a.id).meta.icon == "target:coral" and library.get(b.id).meta.icon == ""
+    collections.file([a, b], "IHSA")
+    assert collections.get(library, "IHSA").icon == ""
+    collections.set_icon(library, "ihsa", "hospital:foam")
+    assert collections.get(library, "IHSA").icon == "hospital:foam"
+    assert json.loads((library.data_dir / collections.LOOKS).read_text()) == {"icons": {"ihsa": "hospital:foam"}}
+    assert cli.main(["collections", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["collections"][0]["icon"] == "hospital:foam"
+    assert cli.main(["info", a.id, "--json"]) == 0 and '"icon": "target:coral"' in capsys.readouterr().out
+    # The icon goes with a rename, and away when the collection does; a broken file is no icons.
+    collections.rename(library, "IHSA", "IHSA 2026")
+    assert collections.get(library, "IHSA 2026").icon == "hospital:foam" and "ihsa" not in collections.icons(library)
+    collections.dissolve(library, "IHSA 2026")
+    assert collections.icons(library) == {}
+    (library.data_dir / collections.LOOKS).write_text("{nope")
+    assert collections.icons(library) == {} and collections.all_of(library) == []
+
+
+def _lit(image, color) -> int:
+    """How many pixels of a grab are close to a color: whether something was drawn in it."""
+    from PySide6.QtGui import QColor
+
+    want = QColor(color)
+    img = image.toImage()
+    return sum(1 for x in range(img.width()) for y in range(img.height())
+               if abs(img.pixelColor(x, y).red() - want.red()) + abs(img.pixelColor(x, y).green() - want.green())
+               + abs(img.pixelColor(x, y).blue() - want.blue()) < 40)
+
+
+def test_icons_in_the_window(window, lib, monkeypatch):
+    from echo_app.ui import theme
+    from echo_app.ui.collections import IconPicker
+
+    a, b = _rec(lib, "Uno"), _rec(lib, "Dos")
+    collections.file([a], "IHSA")
+    window._refresh()
+    window.open_collection("IHSA")
+    answers = iter(["target:coral", "hospital:lime", None, ""])
+    asked = []
+
+    def ask(what, current="", parent=None):
+        asked.append((what, current))
+        return next(answers)
+
+    monkeypatch.setattr(IconPicker, "ask", ask)
+    window._select(a.id)
+    coral, lime = theme.current().coral, theme.current().lime
+    assert _lit(window.list.grab(), coral) == 0
+    window.pick_icon()
+    assert lib.get(a.id).meta.icon == "target:coral"
+    assert _lit(window.list.grab(), coral) > 20  # the row shows its symbol, in its color
+    assert _lit(window.collection_bar.grab(), lime) == 0
+    window.pick_collection_icon("IHSA")
+    row = window.collection_bar.rows[1]
+    assert row.icon == "hospital:lime" and asked == [("“Uno”", ""), ("“IHSA”", "")]
+    assert _lit(window.collection_bar.grab(), lime) > 20
+    window.recorder_panel.set_destination("IHSA")
+    assert window.recorder_panel.dest_btn.text() == "Into IHSA"
+    assert _lit(window.recorder_panel.dest_btn.grab(), lime) > 10  # the collection's own icon
+    window.pick_icon()  # cancelled: kept
+    assert lib.get(a.id).meta.icon == "target:coral" and asked[-1] == ("“Uno”", "target:coral")
+    window.pick_icon()  # "No icon"
+    assert lib.get(a.id).meta.icon == "" and _lit(window.list.grab(), coral) == 0
+
+
+def test_the_icon_picker(qapp):
+    from echo_app.ui.collections import IconPicker
+
+    dlg = IconPicker("“IHSA”", "hospital:coral")
+    assert [n for n, b in dlg.buttons.items() if b.isChecked()] == ["hospital"]
+    assert dlg.swatches["coral"].isChecked() and dlg.none_btn.isEnabled()
+    dlg.swatches["amber"].click()
+    dlg.buttons["rocket"].click()
+    assert dlg.result() and dlg.icon == "rocket:amber"
+    dlg2 = IconPicker("3 recordings")
+    assert not dlg2.none_btn.isEnabled() and dlg2.swatches[""].isChecked()
+    dlg2.buttons["star"].click()
+    assert dlg2.result() and dlg2.icon == "star"  # no color: the text's
+    dlg3 = IconPicker("“IHSA”", "star:lime")
+    dlg3.none_btn.click()
+    assert dlg3.result() and dlg3.icon == ""
+    for d in (dlg, dlg2, dlg3):
+        d.deleteLater()
+    pump(50)

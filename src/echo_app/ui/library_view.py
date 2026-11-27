@@ -371,8 +371,12 @@ class LibraryModel(QAbstractListModel):
 
     def collections(self) -> list[collections.Collection]:
         if self._collections is None:
-            self._collections = collections.group(self._all.values())
+            self._collections = collections.group(self._all.values(), collections.icons(self.library))
         return self._collections
+
+    def forget_collections(self) -> None:
+        """A collection's icon changed (it is not in a recording's folder): read them again."""
+        self._collections = None
 
     def collection_of(self, key: str) -> str | None:
         """The collection a recording is filed in, or a set's first part; None for the day to day."""
@@ -646,10 +650,15 @@ class RowDelegate(QStyledItemDelegate):
             d = 8
             p.drawEllipse(x, r.top() + (bfm.height() - d) // 2, d, d)
             x += d + 7
-        # Line 1: title
+        # Line 1: title, after the icon the user gave the recording
         title = linked[0].title if linked is not None else rec.meta.title
         p.setFont(bold)
         p.setPen(QColor(t.on_deep))
+        name, color = collections.icon_parts(rec.meta.icon) if linked is None and not live else ("", "")
+        if name:
+            sz = 16
+            tinted_icon(name, color or "on_deep").paint(p, QRect(x, r.top() + (bfm.height() - sz) // 2, sz, sz))
+            x += sz + 7
         title_rect = QRect(x, r.top(), right_edge - x, bfm.height())
         p.drawText(title_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
                    bfm.elidedText(title, Qt.TextElideMode.ElideRight, title_rect.width()))

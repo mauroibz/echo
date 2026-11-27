@@ -52,6 +52,8 @@ class Tokens:
     orange: str  # speakers: text-safe on surface
     violet: str
     prose: str  # the transcript's text, a little softer than titles in dark
+    lilac: str = "#c9b8ff"  # with foam, coral and amber: the colors an icon can take on the deep sidebar
+    lime: str = "#b6e36a"
 
 
 LAGOON_LIGHT = Tokens(

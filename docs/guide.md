@@ -132,6 +132,11 @@ list. A dropped folder offers its own name. One file alone is imported without a
 - Settings → Import → "A subfolder is a collection": a folder made inside a watched folder becomes
   a collection of its name, so a batch copied there files itself. Only folders directly inside.
 
+**Icons.** Right-click a recording (or several) or a collection and choose **Icon…** to give it a
+symbol in a color: pick the color at the top, then the symbol. A recording's icon shows before its
+title in the list; a collection's replaces its folder in the sidebar and in the line under Record.
+"No icon" takes it away.
+
 A collection is a line in each recording's `meta.json`, so it goes wherever the recordings go and
 there is nothing else to back up. With Echo Studio, a collection's recordings are summarized like
 any other. A batch you imported into a collection stays out of the Briefing and the Action items
@@ -382,8 +387,8 @@ echo-app transcribe meeting.mp4 --format md --context "Lucía y Martín, presupu
   (`["mic", "computer"]` for a recorded call, else null), `extracted_from`, `state`,
   `transcript_status` (`none`, `queued`, `running`, `done`, `failed`), `progress` (`stage`,
   `fraction`, `eta_s`), `error`, `language`, `speakers` (`count`, `names`), `tags`, `notes`,
-  `folder`, `audio`, `files` (`transcript`, `corrected`, `edited`, absolute paths or null) and
-  `collection` (its name, or null).
+  `folder`, `audio`, `files` (`transcript`, `corrected`, `edited`, absolute paths or null),
+  `collection` (its name, or null) and `icon` (`symbol` or `symbol:color`, or null).
   `transcribe --json` lists each input with its `result`, `error`, the `output` file written and
   the `recording`. Keys are added in later versions, never renamed.
 - **Exit codes.** 0 done (or queued, without waiting); 1 a recording failed, a file was not

@@ -76,6 +76,7 @@ class LibraryActionsMixin:
             m.addAction(icon("link"), f"Link {len(self._selected_keys())} recordings", self.link_selected)
             m.addAction(icon("share"), f"Bundle {len(self._selected_keys())} recordings…", self.bundle_selected)
             self._collection_menu(m)
+            m.addAction("Icon…", self.pick_icon)
             m.addSeparator()
             m.addAction(icon("delete"), "Delete…", self.delete_selected)
             m.exec(self.list.viewport().mapToGlobal(pos))
@@ -126,6 +127,7 @@ class LibraryActionsMixin:
         m.addAction(icon("folder"), "Show in folder", self.show_in_folder)
         if rec.meta.state != RECORDING:
             self._collection_menu(m)
+            m.addAction("Icon…", self.pick_icon)
         m.addSeparator()
         d = m.addAction(icon("delete"), "Delete…", self.delete_selected)
         d.setEnabled(rec.meta.state != RECORDING)

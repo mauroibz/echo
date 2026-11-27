@@ -6,8 +6,8 @@ from pathlib import Path
 
 from PySide6.QtCore import QRectF, QSize, Qt, Signal
 from PySide6.QtGui import QFont, QPainter
-from PySide6.QtWidgets import (QAbstractButton, QComboBox, QDialogButtonBox, QFrame, QLabel, QScrollArea, QVBoxLayout,
-                               QWidget)
+from PySide6.QtWidgets import (QAbstractButton, QComboBox, QDialog, QDialogButtonBox, QFrame, QGridLayout, QHBoxLayout,
+                               QScrollArea, QToolButton, QVBoxLayout, QWidget)
 
 from .. import collections
 from . import theme
@@ -30,6 +30,7 @@ class CollectionRow(QAbstractButton):
     def __init__(self, name: str | None, parent=None):
         super().__init__(parent)
         self.name = name
+        self.icon = ""  # the user's symbol for it ("hospital:coral"), in place of the folder
         self.count, self.done = 0, 0
         self._over = False
         self.setCheckable(True)
@@ -77,7 +78,9 @@ class CollectionRow(QAbstractButton):
             p.setBrush(theme.color("on_deep", 0.08))
             p.drawRoundedRect(r, 8, 8)
         role = "foam" if self.isChecked() else "on_deep"
-        icon("audio-lines" if self.name is None else "folder", role).paint(p, 10, (self.height() - 16) // 2, 16, 16)
+        name, color = collections.icon_parts(self.icon)
+        icon(name or ("audio-lines" if self.name is None else "folder"), color or role).paint(
+            p, 10, (self.height() - 16) // 2, 16, 16)
         badge = self.badge()
         f = theme.display_font(0.85, QFont.Weight.DemiBold, tabular=True)
         p.setFont(f)
@@ -181,6 +184,7 @@ class CollectionBar(QWidget):
             self.set_open(self._open)
         self.rows[0].set_counts(daily, daily)
         for r, c in zip(self.rows[1:], items):
+            r.icon = c.icon
             r.set_counts(len(c.recordings), c.transcribed)
         self.setVisible(bool(items))
 
@@ -189,6 +193,101 @@ class CollectionBar(QWidget):
         r = self.row(name)
         if r is not None:
             r.setChecked(True)
+
+
+class IconPicker(QDialog):
+    """A symbol and a color for a recording or a collection. Pick the color, then the symbol: the
+    click on a symbol is the answer, in `icon` ("" for none)."""
+
+    COLUMNS = 8
+
+    def __init__(self, what: str, current: str = "", parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Icon")
+        self.icon = collections.clean_icon(current)
+        self.symbol, self.color = collections.icon_parts(self.icon)
+        lay = QVBoxLayout(self)
+        lay.addWidget(_heading(f"Icon for {what}", 1.1))
+        # The symbols sit on the sidebar's color, as they will in the list.
+        self.board = QFrame()
+        self.board.setObjectName("iconboard")
+        bl = QVBoxLayout(self.board)
+        bl.setContentsMargins(10, 10, 10, 10)
+        colors = QHBoxLayout()
+        colors.setSpacing(6)
+        self.swatches: dict[str, QToolButton] = {}
+        for role in collections.COLORS:
+            b = QToolButton()
+            b.setObjectName("swatch")
+            b.setFixedSize(26, 26)
+            b.setCheckable(True)
+            b.setAutoExclusive(True)
+            b.setChecked(role == self.color)
+            b.setToolTip("The text's color" if not role else role.capitalize())
+            b.setAccessibleName(b.toolTip())
+            b.clicked.connect(lambda _c=False, r=role: self._set_color(r))
+            colors.addWidget(b)
+            self.swatches[role] = b
+        colors.addStretch(1)
+        bl.addLayout(colors)
+        grid = QGridLayout()
+        grid.setSpacing(2)
+        self.buttons: dict[str, QToolButton] = {}
+        for k, name in enumerate(collections.ICONS):
+            b = QToolButton()
+            b.setObjectName("symbol")
+            b.setFixedSize(38, 38)
+            b.setIconSize(QSize(20, 20))
+            b.setCheckable(True)
+            b.setChecked(name == self.symbol)
+            b.setToolTip(name.replace("-", " "))
+            b.setAccessibleName(b.toolTip())
+            b.clicked.connect(lambda _c=False, n=name: self._finish(n))
+            grid.addWidget(b, k // self.COLUMNS, k % self.COLUMNS)
+            self.buttons[name] = b
+        bl.addLayout(grid)
+        lay.addWidget(self.board)
+        bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel)
+        self.none_btn = bb.addButton("No icon", QDialogButtonBox.ButtonRole.ActionRole)
+        self.none_btn.setEnabled(bool(self.icon))
+        self.none_btn.setAutoDefault(False)  # Enter does not take the icon away
+        self.none_btn.clicked.connect(lambda: self._finish(""))
+        bb.rejected.connect(self.reject)
+        lay.addWidget(bb)
+        self._style()
+        self._set_color(self.color)
+
+    def _style(self):
+        t = theme.current()
+        swatches = "".join(
+            f"QToolButton#swatch[role='{r}'] {{ background: {getattr(t, r or 'on_deep')}; }}" for r in collections.COLORS)
+        self.board.setStyleSheet(f"""
+            QFrame#iconboard {{ background: {t.deep_mid}; border-radius: 12px; }}
+            QToolButton#symbol {{ background: transparent; border: none; border-radius: 9px; }}
+            QToolButton#symbol:hover {{ background: {theme.rgba('on_deep', 0.12)}; }}
+            QToolButton#symbol:checked {{ background: {theme.rgba('foam', 0.28)}; }}
+            QToolButton#swatch {{ border: 2px solid transparent; border-radius: 13px; }}
+            QToolButton#swatch:checked {{ border: 2px solid {t.on_deep}; }}
+            {swatches}""")
+        for role, b in self.swatches.items():
+            b.setProperty("role", role)
+            b.style().unpolish(b)
+            b.style().polish(b)
+
+    def _set_color(self, role: str):
+        self.color = role
+        for name, b in self.buttons.items():
+            b.setIcon(icon(name, role or "on_deep"))
+
+    def _finish(self, symbol: str):
+        self.icon = collections.clean_icon(f"{symbol}:{self.color}" if symbol and self.color else symbol)
+        self.accept()
+
+    @classmethod
+    def ask(cls, what: str, current: str = "", parent=None) -> str | None:
+        """The icon chosen ("" for none), or None when cancelled."""
+        dlg = cls(what, current, parent)
+        return dlg.icon if dlg.exec() else None
 
 
 class CollectionDialog(FittedDialog):
