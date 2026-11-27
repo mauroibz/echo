@@ -641,6 +641,14 @@ search ignores the scope, because the user looking for a sentence does not know 
 and selecting a recording from elsewhere moves the scope to it. The recording being made always
 shows. The bar of rows is hidden until a collection exists, so a library without one is unchanged.
 
+New recordings are filed where `record_collection` in the settings says, chosen under Record and
+passed to `recorder.start`, which writes it with the recording's first `meta.json`: a recording
+killed mid-way is recovered already in its place. It is a setting and not window state because
+the command line, the system-wide shortcut and an extension's automatic recordings start
+recordings too. Extensions tell a batch from the day's work with `collections.apart(rec)` (in a
+collection and imported), not by the collection alone, so someone who records every meeting into
+a client's collection keeps their briefing and their calendar.
+
 Asking on a drop only from two files up keeps the common case (one voice note, one meeting video)
 free of a dialog, and with a collection open nothing is asked: the open place is the answer.
 

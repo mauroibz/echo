@@ -974,8 +974,11 @@ def can_add_computer_audio(source: str = "") -> bool:
 
 def start(lib: Library, source: str = "", rate: int = 48000, channels: int = 1,
           title: str | None = None, timeout: float = 5.0, quick_note: bool = False,
-          computer_audio: bool = False) -> Session:
+          computer_audio: bool = False, collection: str = "") -> Session:
     """Start a detached supervisor for a new recording and wait until it is capturing.
+
+    `collection` files the recording from its first moment, so it is where the user chose even if
+    Echo is killed while it records.
 
     With `computer_audio`, the default output is recorded as a second track next to the input; each
     track is mono, whatever `channels` says.
@@ -1003,7 +1006,7 @@ def start(lib: Library, source: str = "", rate: int = 48000, channels: int = 1,
     now = datetime.now()
     rec = lib.create(title or f"Recording {now:%Y-%m-%d %H:%M}", "recorded", state=RECORDING,
                      source=label, sample_rate=rate, channels=channels, title_auto=not title,
-                     quick_note=quick_note, tags=["nota"] if quick_note else [])
+                     quick_note=quick_note, tags=["nota"] if quick_note else [], collection=collection)
     rec.takes_dir.mkdir()
     atomic_write_json(session_path(rec), {"version": 1, "rate": rate, "channels": channels,
                                           "source": source or None, "state": S_STARTING,

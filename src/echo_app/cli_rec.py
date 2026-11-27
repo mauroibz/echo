@@ -70,14 +70,20 @@ def cmd_record(args) -> int:
     computer_audio = args.computer_audio
     if computer_audio is None:
         computer_audio = cfg.computer_audio and not args.quick_note and recorder.can_add_computer_audio(source)
+    from . import collections
+
+    # Where the window's Record would file it, unless told; a quick note is never filed.
+    where = "" if args.quick_note else (collections.for_new(lib) if args.collection is None
+                                        else collections.spelling(lib, args.collection))
     try:
         sess = recorder.start(lib, source=source, rate=cfg.sample_rate, channels=cfg.channels, title=args.title,
-                              quick_note=args.quick_note, computer_audio=computer_audio)
+                              quick_note=args.quick_note, computer_audio=computer_audio, collection=where)
     except recorder.RecorderError as e:
         print(e, file=sys.stderr)
         return 1
     st = sess.status()
-    print(f"Recording \"{sess.rec.meta.title}\" from {sess.rec.meta.source or 'default input'}")
+    print(f"Recording \"{sess.rec.meta.title}\" from {sess.rec.meta.source or 'default input'}"
+          + (f", into {where}" if where else ""))
     print(f"  id: {sess.rec.id}")
     if not args.wait or args.toggle or args.quick_note:
         print("Stop with: echo-app stop" + (" (or the same command again)" if args.toggle or args.quick_note else ""))
@@ -310,6 +316,9 @@ def register(sub) -> None:
     s.add_argument("--computer-audio", action=argparse.BooleanOptionalAction, default=None,
                    help="also record what the computer plays (a call's other side) as a second track; "
                         "default: as last chosen in the window")
+    s.add_argument("--collection", metavar="NAME",
+                   help="file the recording in this collection ('' for the day-to-day list); default: the one "
+                        "chosen under Record in the window")
     s.set_defaults(func=cmd_record)
     for name, fn, hlp in (("pause", cmd_pause, "pause the active recording"),
                           ("resume", cmd_resume, "resume the paused recording"),

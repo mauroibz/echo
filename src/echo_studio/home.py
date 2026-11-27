@@ -13,6 +13,7 @@ from PySide6.QtGui import QDesktopServices, QFont, QMouseEvent
 from PySide6.QtWidgets import (QFrame, QHBoxLayout, QPlainTextEdit, QPushButton, QScrollArea, QVBoxLayout,
                                QWidget)
 
+from echo_app import collections
 from echo_app.ui import theme
 from echo_app.ui.common import fmt_duration
 
@@ -517,8 +518,9 @@ class HomeScreen(QWidget):
         head.addStretch(1)
         self.minutes.addLayout(head)
         self.minutes.addSpacing(10)
-        # The day to day: a collection's recordings are a batch filed apart, not the last meetings.
-        recs = sorted((r for r in self.library.all() if not r.meta.collection and summary.load(r) is not None),
+        # The day to day: a batch imported into a collection is filed apart, not one of the last
+        # meetings. A meeting the user recorded is, whichever collection they record into.
+        recs = sorted((r for r in self.library.all() if not collections.apart(r) and summary.load(r) is not None),
                       key=lambda r: r.meta.created, reverse=True)[:MINUTES_SHOWN]
         if not recs:
             self.minutes.addWidget(label("Minutes appear here once a recording is summarized.", 1.0, dim=True))

@@ -320,12 +320,14 @@ def assigned_to(library, person: str, discarded: bool = False) -> list[dict]:
 
 
 def open_items(library) -> list[dict]:
-    """Every item not checked off as done (nor discarded) across the day-to-day recordings, newest
-    recording first and in the meeting's order within it; each with its recording's id, title, date
-    and index. A collection's recordings are left out: a batch filed apart keeps its items in its
-    own Action items views, not among the week's."""
+    """Every item not checked off as done (nor discarded) across the day's work, newest recording
+    first and in the meeting's order within it; each with its recording's id, title, date and index.
+    A batch imported into a collection is left out (its items stay in its own Action items views,
+    not among the week's); a meeting the user recorded counts wherever it is filed."""
+    from echo_app import collections
+
     out = []
-    for rec in sorted((r for r in library.all() if not r.meta.collection), key=lambda r: r.meta.created,
+    for rec in sorted((r for r in library.all() if not collections.apart(r)), key=lambda r: r.meta.created,
                       reverse=True):
         for k, it in enumerate((load(rec) or {}).get("items", [])):
             if not it["discarded"] and not it["done"]:

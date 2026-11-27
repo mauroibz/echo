@@ -290,13 +290,72 @@ def test_settings_page_has_the_subfolders_option(qapp):
     pump(50)
 
 
-def test_studio_keeps_a_collection_out_of_the_day_to_day(tmp_path):
+def test_studio_keeps_an_imported_batch_out_of_the_day_to_day(tmp_path):
     from echo_studio import actions
 
     library = Library(tmp_path / "data")
-    daily, filed = _rec(library, "Diaria"), _rec(library, "Archivada")
-    collections.file([filed], "Curso")
+    daily, batch = _rec(library, "Diaria"), _rec(library, "Archivada")
+    mine = library.create("Reunión IHSA", "recorded")
+    collections.file([batch], "Curso")
+    collections.file([mine], "IHSA")
+    assert collections.apart(batch) and not collections.apart(mine) and not collections.apart(daily)
     actions.add(daily, "Llamar a Ana")
-    actions.add(filed, "Repasar la clase")
-    assert [i["text"] for i in actions.open_items(library)] == ["Llamar a Ana"]
-    assert [i["text"] for i in actions.load(filed)["items"]] == ["Repasar la clase"]  # still its own
+    actions.add(batch, "Repasar la clase")
+    actions.add(mine, "Enviar el informe")
+    # A meeting the user recorded is their day's work wherever it is filed; an imported batch is not.
+    assert {i["text"] for i in actions.open_items(library)} == {"Llamar a Ana", "Enviar el informe"}
+    assert [i["text"] for i in actions.load(batch)["items"]] == ["Repasar la clase"]  # still its own
+
+
+def test_new_recordings_go_where_chosen(window, lib, monkeypatch):
+    from PySide6.QtWidgets import QInputDialog
+
+    panel = window.recorder_panel
+    assert panel.destination() == "" and panel.dest_btn.text() == "Into Recordings" and panel.dest_btn.isVisible()
+    # Chosen before anything is in it: the first recording makes the collection.
+    monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: ("  IHSA ", True))
+    panel._new_destination()
+    assert panel.destination() == "IHSA" and panel.dest_btn.text() == "Into IHSA"
+    assert settings.load()[0].record_collection == "IHSA"
+    panel._fill_destinations()
+    entries = [(a.text(), a.isChecked()) for a in panel.dest_menu.actions() if a.text()]
+    assert entries == [("Recordings (day to day)", False), ("IHSA", True), ("New collection…", False)]
+    panel.start()
+    assert wait_until(lambda: panel.session is not None)
+    rid = panel.session.rec.id
+    assert lib.get(rid).meta.collection == "IHSA" and not panel.dest_btn.isVisible()  # filed from the start
+    pump(600)
+    panel.stop()
+    assert wait_until(lambda: lib.get(rid) is not None and lib.get(rid).meta.state == "ready", 20)
+    window._refresh()
+    assert [(c.name, len(c.recordings)) for c in collections.all_of(lib)] == [("IHSA", 1)]
+    assert window.model.collection() == "IHSA" and window.current().id == rid  # shown where it went
+    # A quick note is not filed; the collection's menu switches the choice, and it follows a rename.
+    panel.start(quick_note=True)
+    assert wait_until(lambda: panel.session is not None)
+    note = panel.session.rec.id
+    assert lib.get(note).meta.collection == ""
+    pump(600)
+    panel.stop()
+    assert wait_until(lambda: lib.get(note) is None or lib.get(note).meta.state == "ready", 20)
+    monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: ("IHSA 2026", True))
+    window.rename_collection("IHSA")
+    assert panel.destination() == "IHSA 2026" and panel.dest_btn.text() == "Into IHSA 2026"
+    panel.set_destination("")
+    assert panel.destination() == "" and settings.load()[0].record_collection == ""
+
+
+def test_record_from_the_command_line_follows_the_choice(tmp_path, capsys):
+    from echo_app import recorder
+
+    cfg, _ = settings.load()
+    library = Library(cfg.data_path)
+    collections.set_for_new("IHSA")
+    for args, where in (([], "IHSA"), (["--collection", ""], ""), (["--collection", "Otra"], "Otra")):
+        assert cli.main(["record", *args]) == 0
+        assert (", into " + where if where else "default input\n") in capsys.readouterr().out or not where
+        sess = recorder.active(library)
+        assert sess.rec.meta.collection == where
+        time.sleep(0.4)
+        assert cli.main(["stop"]) == 0
+        capsys.readouterr()

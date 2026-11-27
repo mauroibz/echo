@@ -13,9 +13,11 @@ tag.
   collection, and Bundle, Rename or move everything back from a collection's own menu. Search
   still looks everywhere. `echo-app collections`, `import --collection`, `list --collection` and
   `bundle --collection` from the command line; `collection` in the JSON of a recording.
+- "Into Recordings" under Record chooses where new recordings are filed, before a meeting starts
+  and for the ones after: a collection can be the default. `echo-app record --collection NAME`.
 - Settings → Import: "A subfolder is a collection", for watched folders.
-- Echo Studio: a collection's recordings are summarized like any other and stay out of the
-  Briefing, the Action items page and calendar matching.
+- Echo Studio: a collection's recordings are summarized like any other; a batch imported into one
+  stays out of the Briefing, the Action items page and calendar matching.
 
 - Bundle (Ctrl+Shift+B): the selected recordings as Markdown to paste into an assistant, with the
   parts you tick (the transcript and, with Echo Studio, the summary and the action items), copied
