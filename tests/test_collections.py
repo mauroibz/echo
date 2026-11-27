@@ -345,9 +345,14 @@ def test_new_recordings_go_where_chosen(window, lib, monkeypatch):
     assert panel.destination() == "" and settings.load()[0].record_collection == ""
 
 
-def test_record_from_the_command_line_follows_the_choice(tmp_path, capsys):
-    from echo_app import recorder
+def test_record_from_the_command_line_follows_the_choice(tmp_path, capsys, monkeypatch):
+    import sys
 
+    from echo_app import recorder
+    from test_ui import FAKE
+
+    # The fake capture, as the window tests use: no audio system is needed, and none is recorded from.
+    monkeypatch.setenv("ECHO_CAPTURE_CMD", f"{sys.executable} -P {FAKE} {{path}} {{bps}}")
     cfg, _ = settings.load()
     library = Library(cfg.data_path)
     collections.set_for_new("IHSA")
